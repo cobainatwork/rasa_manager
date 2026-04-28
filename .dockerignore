@@ -1,0 +1,51 @@
+# Git
+.git
+.gitignore
+
+# 環境變數（絕不進 image）
+.env
+.env.*
+*.env
+
+# Node
+node_modules
+frontend/node_modules
+frontend/.npm
+
+# Python
+__pycache__
+**/__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+backend/.venv
+backend/venv
+
+# 測試 / 覆蓋率
+.pytest_cache
+backend/.pytest_cache
+backend/htmlcov
+backend/.coverage
+frontend/coverage
+frontend/.vitest
+
+# Build 產物（前端 build 在容器內進行）
+frontend/dist
+
+# IDE / OS
+.vscode
+.idea
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# 文件（不需進 image）
+*.md
+docs/
+
+# 備份
+*.backup
+*.bak
+data/volumes/
