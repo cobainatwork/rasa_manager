@@ -12,6 +12,7 @@
 #   POSTGRES_PASSWORD  DB password
 #   POSTGRES_DB    DB 名稱
 #   RETAIN_DAYS    保留天數（預設：7）
+#   BACKUP_GPG_RECIPIENT  GPG 收件人 Key ID 或 Email（設定後啟用加密，產生 .sql.gz.gpg）
 
 set -euo pipefail
 
@@ -30,6 +31,7 @@ POSTGRES_PORT="${POSTGRES_PORT:-5432}"
 POSTGRES_USER="${POSTGRES_USER:-rasa_admin}"
 POSTGRES_DB="${POSTGRES_DB:-rasa_knowledge}"
 RETAIN_DAYS="${RETAIN_DAYS:-7}"
+BACKUP_GPG_RECIPIENT="${BACKUP_GPG_RECIPIENT:-}"
 
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 FILENAME="rasa_knowledge_${TIMESTAMP}.sql.gz"
@@ -58,9 +60,22 @@ fi
 SIZE=$(du -sh "$FILEPATH" | cut -f1)
 echo "[backup] 完成：$FILENAME（$SIZE）"
 
+# ── GPG 加密（若有設定 BACKUP_GPG_RECIPIENT）────────────────────────────────
+FINAL_FILEPATH="$FILEPATH"
+if [ -n "$BACKUP_GPG_RECIPIENT" ]; then
+  echo "[backup] 使用 GPG 加密（收件人：$BACKUP_GPG_RECIPIENT）..."
+  gpg --batch --yes --trust-model always \
+    --recipient "$BACKUP_GPG_RECIPIENT" \
+    --output "${FILEPATH}.gpg" \
+    --encrypt "$FILEPATH"
+  rm -f "$FILEPATH"
+  FINAL_FILEPATH="${FILEPATH}.gpg"
+  echo "[backup] 加密完成：$(basename "$FINAL_FILEPATH")"
+fi
+
 # ── 產生 sha256sum 完整性校驗檔 ─────────────────────────────────────────────
-CHECKSUM_FILE="${FILEPATH}.sha256"
-sha256sum "$FILEPATH" > "$CHECKSUM_FILE"
+CHECKSUM_FILE="${FINAL_FILEPATH}.sha256"
+sha256sum "$FINAL_FILEPATH" > "$CHECKSUM_FILE"
 echo "[backup] 校驗碼已寫入：$(basename "$CHECKSUM_FILE")"
 
 # ── 驗證剛寫入的備份完整性 ────────────────────────────────────────────────
@@ -74,6 +89,7 @@ fi
 # ── 清除超過保留天數的舊備份 ────────────────────────────────────────────────
 echo "[backup] 清除 ${RETAIN_DAYS} 天前的舊備份..."
 find "$BACKUP_DIR" -name "rasa_knowledge_*.sql.gz" -mtime +"$RETAIN_DAYS" -delete
-find "$BACKUP_DIR" -name "rasa_knowledge_*.sql.gz.sha256" -mtime +"$RETAIN_DAYS" -delete
-REMAINING=$(find "$BACKUP_DIR" -name "rasa_knowledge_*.sql.gz" | wc -l)
+find "$BACKUP_DIR" -name "rasa_knowledge_*.sql.gz.gpg" -mtime +"$RETAIN_DAYS" -delete
+find "$BACKUP_DIR" -name "rasa_knowledge_*.sha256" -mtime +"$RETAIN_DAYS" -delete
+REMAINING=$(find "$BACKUP_DIR" \( -name "rasa_knowledge_*.sql.gz" -o -name "rasa_knowledge_*.sql.gz.gpg" \) | wc -l)
 echo "[backup] 目前保留 ${REMAINING} 個備份檔案。"

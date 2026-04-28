@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { apiClient, extractErrorMessage } from '@/api/client'
+import { useToastStore } from '@/store/useToastStore'
 
 interface ImportResult {
   imported: number
@@ -12,6 +13,7 @@ interface ImportResult {
 export function ImportExport() {
   const { id: agentId } = useParams<{ id: string }>()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const { addToast } = useToastStore()
 
   const [importing, setImporting] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -70,7 +72,7 @@ export function ImportExport() {
       a.click()
       URL.revokeObjectURL(url)
     } catch (err) {
-      alert(extractErrorMessage(err))
+      addToast(extractErrorMessage(err), 'error')
     } finally {
       setExporting(false)
     }

@@ -40,7 +40,8 @@
       "Bash(python -m pytest --cov=api --cov-report=term-missing --tb=no -q)",
       "Bash(python -m ruff check tests/)",
       "Bash(python -m ruff check tests/ --fix)",
-      "Bash(npx vitest *)"
+      "Bash(npx vitest *)",
+      "Bash(python -m pytest tests/ --co -q)"
     ]
   }
 }

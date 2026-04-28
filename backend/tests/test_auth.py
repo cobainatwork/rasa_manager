@@ -123,3 +123,145 @@ class TestPasswordHashing:
         # 但都能驗證通過
         assert _test_pwd.verify("Admin1234", h1) is True
         assert _test_pwd.verify("Admin1234", h2) is True
+
+
+# ── logout（jti 黑名單）──────────────────────────────────────────────────────────
+
+class TestLogoutJti:
+    """logout 時若帶有效 refresh_token，應將 jti 加入 Redis 黑名單。"""
+
+    def test_logout_with_valid_refresh_token_blacklists_jti(
+        self,
+        client_superadmin: TestClient,
+        mock_redis: MagicMock,
+    ) -> None:
+        from api.routes.auth import _create_token
+        from datetime import timedelta
+        import uuid
+
+        jti = str(uuid.uuid4())
+        refresh_token = _create_token(
+            {"sub": "00000000-0000-0000-0000-000000000001", "jti": jti, "type": "refresh"},
+            timedelta(days=7),
+        )
+
+        resp = client_superadmin.post(
+            "/api/v1/auth/logout",
+            cookies={"refresh_token": refresh_token},
+        )
+        assert resp.status_code == 200
+        # Redis setex 應被呼叫（黑名單 jti）
+        mock_redis.setex.assert_called_once()
+        call_args = mock_redis.setex.call_args[0]
+        assert f"revoked_refresh:{jti}" in call_args[0]
+
+    def test_logout_with_invalid_refresh_token_still_succeeds(
+        self,
+        client_superadmin: TestClient,
+        mock_redis: MagicMock,
+    ) -> None:
+        """無效 refresh token 應被忽略（JWTError catch），logout 仍回 200。"""
+        resp = client_superadmin.post(
+            "/api/v1/auth/logout",
+            cookies={"refresh_token": "invalid.token.here"},
+        )
+        assert resp.status_code == 200
+        mock_redis.setex.assert_not_called()
+
+    def test_logout_without_refresh_token_succeeds(
+        self,
+        client_superadmin: TestClient,
+        mock_redis: MagicMock,
+    ) -> None:
+        resp = client_superadmin.post("/api/v1/auth/logout")
+        assert resp.status_code == 200
+        mock_redis.setex.assert_not_called()
+
+
+# ── refresh token endpoint ────────────────────────────────────────────────────
+
+class TestRefreshToken:
+    def _make_refresh_token(self, sub: str = "00000000-0000-0000-0000-000000000001") -> str:
+        from api.routes.auth import _create_token
+        from datetime import timedelta
+        import uuid
+
+        return _create_token(
+            {"sub": sub, "jti": str(uuid.uuid4()), "type": "refresh"},
+            timedelta(days=7),
+        )
+
+    def test_no_refresh_token_returns_401(self, client_no_auth: TestClient) -> None:
+        resp = client_no_auth.post("/api/v1/auth/refresh")
+        assert resp.status_code == 401
+        assert resp.json()["detail"]["code"] == "UNAUTHORIZED"
+
+    def test_invalid_token_returns_401(self, client_no_auth: TestClient) -> None:
+        resp = client_no_auth.post(
+            "/api/v1/auth/refresh",
+            cookies={"refresh_token": "bad.token.value"},
+        )
+        assert resp.status_code == 401
+
+    def test_wrong_token_type_returns_401(self, client_no_auth: TestClient) -> None:
+        """type != 'refresh' 的 token 應被拒絕。"""
+        from api.routes.auth import _create_token
+        from datetime import timedelta
+        import uuid
+
+        token = _create_token(
+            {"sub": "00000000-0000-0000-0000-000000000001", "jti": str(uuid.uuid4()), "type": "access"},
+            timedelta(minutes=15),
+        )
+        resp = client_no_auth.post(
+            "/api/v1/auth/refresh",
+            cookies={"refresh_token": token},
+        )
+        assert resp.status_code == 401
+        assert resp.json()["detail"]["code"] == "UNAUTHORIZED"
+
+    def test_revoked_token_returns_401(
+        self, client_no_auth: TestClient, mock_redis: MagicMock
+    ) -> None:
+        """jti 已在黑名單，應回傳 401。"""
+        token = self._make_refresh_token()
+        mock_redis.get.return_value = "1"  # 模擬 jti 在黑名單中
+
+        resp = client_no_auth.post(
+            "/api/v1/auth/refresh",
+            cookies={"refresh_token": token},
+        )
+        assert resp.status_code == 401
+        assert resp.json()["detail"]["code"] == "UNAUTHORIZED"
+
+    def test_user_not_found_returns_401(
+        self, client_no_auth: TestClient, mock_db: MagicMock, mock_redis: MagicMock
+    ) -> None:
+        """DB 中找不到使用者，應回傳 401。"""
+        mock_redis.get.return_value = None  # jti 未吊銷
+        mock_db.query.return_value.filter.return_value.first.return_value = None
+
+        token = self._make_refresh_token()
+        resp = client_no_auth.post(
+            "/api/v1/auth/refresh",
+            cookies={"refresh_token": token},
+        )
+        assert resp.status_code == 401
+
+    def test_valid_refresh_token_returns_200_and_new_cookies(
+        self, client_no_auth: TestClient, mock_db: MagicMock, mock_redis: MagicMock,
+        superadmin_user: MagicMock,
+    ) -> None:
+        """有效 refresh token 應回傳 200，並設定新的 access_token cookie。"""
+        mock_redis.get.return_value = None  # jti 未吊銷
+        mock_db.query.return_value.filter.return_value.first.return_value = superadmin_user
+
+        token = self._make_refresh_token(sub=str(superadmin_user.id))
+        resp = client_no_auth.post(
+            "/api/v1/auth/refresh",
+            cookies={"refresh_token": token},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["success"] is True
+        # 新 access_token cookie 應已設定
+        assert "access_token" in resp.cookies

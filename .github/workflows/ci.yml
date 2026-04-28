@@ -87,6 +87,11 @@ jobs:
           pip install pip-audit
           pip-audit -r requirements.txt --ignore-vuln PYSEC-2022-42974 || true
 
+      - name: SAST scan (Bandit)
+        run: |
+          pip install bandit
+          bandit -r api/ -ll -x api/database/migrations/ || true
+
   # ── 前端 ────────────────────────────────────────────────────────────────────
   frontend:
     name: Frontend (TypeScript)
@@ -107,7 +112,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
-        run: npm install --legacy-peer-deps
+        run: npm install
 
       - name: Lint
         run: npm run lint
