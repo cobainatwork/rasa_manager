@@ -4,6 +4,8 @@ import { ProtectedRoute } from '@/routes/ProtectedRoute'
 import { AdminRoute } from '@/routes/AdminRoute'
 import { AppShell } from '@/components/AppShell'
 import { LoginPage } from '@/features/auth/LoginPage'
+import { AgentSelectPage } from '@/features/agents/AgentSelectPage'
+import { AgentSettingsPage } from '@/features/agents/AgentSettingsPage'
 
 const Placeholder = ({ name }: { name: string }) => (
   <div className="p-8">
@@ -18,7 +20,7 @@ export function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route element={<ProtectedRoute />}>
-          <Route path="/agents" element={<Placeholder name="Agent 選擇" />} />
+          <Route path="/agents" element={<AgentSelectPage />} />
           <Route element={<AdminRoute />}>
             <Route path="/admin/users" element={<Placeholder name="使用者管理" />} />
           </Route>
@@ -30,7 +32,7 @@ export function App() {
             <Route path="test-chat" element={<Placeholder name="對話測試" />} />
             <Route path="audit" element={<Placeholder name="稽核日誌" />} />
             <Route element={<AdminRoute />}>
-              <Route path="settings" element={<Placeholder name="Agent 設定" />} />
+              <Route path="settings" element={<AgentSettingsPage />} />
             </Route>
           </Route>
         </Route>

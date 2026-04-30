@@ -16,6 +16,15 @@ export const handlers = [
   http.get('/api/v1/agents', () => ok([
     { id: 'a1', name: 'Demo', txt_output_path: '/opt/sap', rasa_rest_url: null, ingest_script_path: null, created_at: null },
   ])),
+  http.post('/api/v1/agents', () => ok({
+    id: 'a-new', name: 'New Agent', txt_output_path: '/opt/test', rasa_rest_url: null, ingest_script_path: null, created_at: null,
+  })),
+  http.patch('/api/v1/agents/:id', () => ok({
+    id: 'a1', name: 'Updated', txt_output_path: '/opt/test', rasa_rest_url: null, ingest_script_path: null, created_at: null,
+  })),
+  http.delete('/api/v1/agents/:id', () => HttpResponse.json({ success: true })),
+  http.post('/api/v1/agents/:id/test-connection', () => ok({ ok: true, status_code: 200, latency_ms: 42, error: null })),
+  http.post('/api/v1/agents/:id/validate-script', () => ok({ exists: true, executable: true, size_bytes: 1024 })),
 
   // Stats（避免測試噪音）
   http.get('/api/v1/agents/:id/stats', () => ok({
