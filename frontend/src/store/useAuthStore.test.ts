@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useAuthStore } from './useAuthStore'
 import { apiClient } from '@/api/client'
+import type { Agent, User } from '@/api/types'
 
 // mock apiClient
 vi.mock('@/api/client', () => ({
@@ -15,11 +16,21 @@ const mockApiClient = apiClient as unknown as {
   get: ReturnType<typeof vi.fn>
 }
 
-const FAKE_USER = {
+const FAKE_USER: User = {
   id: 'uid-001',
   username: 'admin',
   is_superadmin: true,
   is_active: true,
+  created_at: '2026-01-01T00:00:00Z',
+}
+
+const FAKE_AGENT: Agent = {
+  id: 'ag-1',
+  name: '測試 Agent',
+  txt_output_path: '/opt/test',
+  rasa_rest_url: null,
+  ingest_script_path: null,
+  created_at: null,
 }
 
 beforeEach(() => {
@@ -78,7 +89,7 @@ describe('useAuthStore — login', () => {
 
 describe('useAuthStore — logout', () => {
   it('logout 後清除 user 與 currentAgent', async () => {
-    useAuthStore.setState({ user: FAKE_USER as any, currentAgent: { id: 'ag-1' } as any })
+    useAuthStore.setState({ user: FAKE_USER, currentAgent: FAKE_AGENT })
     mockApiClient.post.mockResolvedValueOnce({})
 
     await useAuthStore.getState().logout()
@@ -88,7 +99,7 @@ describe('useAuthStore — logout', () => {
   })
 
   it('logout 即使後端失敗也清除本地狀態', async () => {
-    useAuthStore.setState({ user: FAKE_USER as any })
+    useAuthStore.setState({ user: FAKE_USER })
     mockApiClient.post.mockRejectedValueOnce(new Error('500'))
 
     await useAuthStore.getState().logout()
@@ -146,13 +157,12 @@ describe('useAuthStore — initialize', () => {
 
 describe('useAuthStore — setCurrentAgent', () => {
   it('setCurrentAgent 更新 currentAgent', () => {
-    const agent = { id: 'ag-1', name: '測試 Agent' } as any
-    useAuthStore.getState().setCurrentAgent(agent)
-    expect(useAuthStore.getState().currentAgent).toEqual(agent)
+    useAuthStore.getState().setCurrentAgent(FAKE_AGENT)
+    expect(useAuthStore.getState().currentAgent).toEqual(FAKE_AGENT)
   })
 
   it('setCurrentAgent null 清除 currentAgent', () => {
-    useAuthStore.setState({ currentAgent: { id: 'ag-1' } as any })
+    useAuthStore.setState({ currentAgent: FAKE_AGENT })
     useAuthStore.getState().setCurrentAgent(null)
     expect(useAuthStore.getState().currentAgent).toBeNull()
   })
