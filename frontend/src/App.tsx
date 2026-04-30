@@ -6,6 +6,7 @@ import { AppShell } from '@/components/AppShell'
 import { LoginPage } from '@/features/auth/LoginPage'
 import { AgentSelectPage } from '@/features/agents/AgentSelectPage'
 import { AgentSettingsPage } from '@/features/agents/AgentSettingsPage'
+import { DashboardPage } from '@/features/dashboard/DashboardPage'
 
 const Placeholder = ({ name }: { name: string }) => (
   <div className="p-8">
@@ -25,7 +26,7 @@ export function App() {
             <Route path="/admin/users" element={<Placeholder name="使用者管理" />} />
           </Route>
           <Route path="/agents/:id" element={<AppShell />}>
-            <Route path="dashboard" element={<Placeholder name="儀表板" />} />
+            <Route path="dashboard" element={<DashboardPage />} />
             <Route path="knowledge" element={<Placeholder name="知識庫" />} />
             <Route path="sync" element={<Placeholder name="同步" />} />
             <Route path="import-export" element={<Placeholder name="匯入匯出" />} />

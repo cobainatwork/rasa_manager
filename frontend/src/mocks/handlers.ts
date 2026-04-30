@@ -31,4 +31,14 @@ export const handlers = [
     total_faqs: 0, pending_count: 0, approved_count: 0, synced_count: 0,
     draft_count: 0, rejected_count: 0, categories_count: 0,
   })),
+
+  // FAQs
+  http.get('/api/v1/agents/:id/faqs', () => ok({
+    items: [], total: 0, page: 1, per_page: 20,
+  })),
+
+  // Audit logs
+  http.get('/api/v1/agents/:id/audit-logs', () => ok({
+    items: [], total: 0, page: 1, per_page: 20,
+  })),
 ]
