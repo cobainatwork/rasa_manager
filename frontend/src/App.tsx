@@ -8,6 +8,10 @@ import { AgentSelectPage } from '@/features/agents/AgentSelectPage'
 import { AgentSettingsPage } from '@/features/agents/AgentSettingsPage'
 import { DashboardPage } from '@/features/dashboard/DashboardPage'
 import { KnowledgePage } from '@/features/knowledge/KnowledgePage'
+import { SyncPage } from '@/features/sync/SyncPage'
+import { ImportExportPage } from '@/features/import-export/ImportExportPage'
+import { AuditPage } from '@/features/audit/AuditPage'
+import { TestChatPage } from '@/features/chat/TestChatPage'
 
 const Placeholder = ({ name }: { name: string }) => (
   <div className="p-8">
@@ -29,10 +33,10 @@ export function App() {
           <Route path="/agents/:id" element={<AppShell />}>
             <Route path="dashboard" element={<DashboardPage />} />
             <Route path="knowledge" element={<KnowledgePage />} />
-            <Route path="sync" element={<Placeholder name="同步" />} />
-            <Route path="import-export" element={<Placeholder name="匯入匯出" />} />
-            <Route path="test-chat" element={<Placeholder name="對話測試" />} />
-            <Route path="audit" element={<Placeholder name="稽核日誌" />} />
+            <Route path="sync" element={<SyncPage />} />
+            <Route path="import-export" element={<ImportExportPage />} />
+            <Route path="test-chat" element={<TestChatPage />} />
+            <Route path="audit" element={<AuditPage />} />
             <Route element={<AdminRoute />}>
               <Route path="settings" element={<AgentSettingsPage />} />
             </Route>

@@ -73,4 +73,24 @@ export const handlers = [
   http.get('/api/v1/agents/:id/audit-logs', () => ok({
     items: [], total: 0, page: 1, per_page: 20,
   })),
+
+  // Sync
+  http.post('/api/v1/agents/:id/sync', () => ok({ task_id: 't1', sync_log_id: 's1', status: 'pending' })),
+  http.get('/api/v1/sync/tasks/:syncLogId', ({ params }) => ok({
+    id: params.syncLogId, agent_id: 'a1', triggered_by: null, celery_task_id: 't1',
+    status: 'completed', items_count: 0, output_file: null, stdout: null, stderr: null,
+    started_at: null, finished_at: null, duration_sec: null, created_at: null,
+  })),
+  http.get('/api/v1/agents/:id/sync/history', () => ok([])),
+
+  // Import / Export
+  http.post('/api/v1/agents/:id/faqs/import', () => ok({
+    imported: 0, skipped: 0, errors: [], new_categories: [],
+  })),
+  http.get('/api/v1/agents/:id/faqs/export', () => new Response(new Blob(), {
+    headers: { 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
+  })),
+
+  // Chat test
+  http.post('/api/v1/agents/:id/chat/test', () => ok([{ text: '測試回覆' }])),
 ]
