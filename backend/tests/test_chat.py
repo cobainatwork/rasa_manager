@@ -118,7 +118,9 @@ class TestChatEndpoint:
             mock_client = MagicMock()
             mock_client.__enter__ = MagicMock(return_value=mock_client)
             mock_client.__exit__ = MagicMock(return_value=False)
-            mock_client.post.side_effect = Exception("Connection refused")
+            # B8：narrow except 後僅攔截 httpx.RequestError 子類
+            import httpx as _httpx
+            mock_client.post.side_effect = _httpx.ConnectError("Connection refused")
             mock_client_cls.return_value = mock_client
 
             resp = client_superadmin.post(CHAT_URL, json=CHAT_PAYLOAD)

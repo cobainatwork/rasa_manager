@@ -127,9 +127,12 @@ class TestRunIngestionSync:
             patch("os.makedirs"),
             patch("os.path.exists", return_value=True),
             patch("shutil.copy2"),
-            patch("subprocess.run") as mock_run,
+            patch("subprocess.Popen") as mock_popen,
         ):
-            mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
+            mock_proc = MagicMock()
+            mock_proc.communicate.return_value = ("ok", "")
+            mock_proc.returncode = 0
+            mock_popen.return_value = mock_proc
             run_ingestion_sync.apply(args=[str(AGENT_ID), str(sync_log.id)])
 
         assert sync_log.status == "completed"
@@ -159,9 +162,12 @@ class TestRunIngestionSync:
             patch("os.makedirs"),
             patch("os.path.exists", return_value=True),
             patch("shutil.copy2"),
-            patch("subprocess.run") as mock_run,
+            patch("subprocess.Popen") as mock_popen,
         ):
-            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            mock_proc = MagicMock()
+            mock_proc.communicate.return_value = ("", "")
+            mock_proc.returncode = 0
+            mock_popen.return_value = mock_proc
             run_ingestion_sync.apply(args=[str(AGENT_ID), str(sync_log.id)])
 
         assert faq.status == "synced"

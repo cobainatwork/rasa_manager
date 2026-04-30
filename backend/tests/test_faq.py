@@ -857,7 +857,9 @@ class TestRollbackFaq:
             if idx == 0:
                 q.filter.return_value.first.return_value = _agent_mock()
             elif idx == 1:
+                # rollback 改用 _get_faq_for_update_or_404，須兼顧 with_for_update 鏈式呼叫
                 q.filter.return_value.first.return_value = faq
+                q.filter.return_value.with_for_update.return_value.first.return_value = faq
             else:
                 q.filter.return_value.first.return_value = history
             return q

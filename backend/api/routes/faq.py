@@ -69,6 +69,41 @@ _ALLOWED_TRANSITIONS: dict[str, set[tuple[str, str]]] = {
 
 # ── 輔助函式 ──────────────────────────────────────────────────────────────
 
+def _get_faq_or_404(
+    db: Session, agent_id: uuid.UUID, faq_id: uuid.UUID
+) -> KnowledgeItem:
+    """取得屬於指定 Agent 的 FAQ，找不到時拋 404。"""
+    item = (
+        db.query(KnowledgeItem)
+        .filter(KnowledgeItem.id == faq_id, KnowledgeItem.agent_id == agent_id)
+        .first()
+    )
+    if not item:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "NOT_FOUND", "message": "FAQ 不存在"},
+        )
+    return item
+
+
+def _get_faq_for_update_or_404(
+    db: Session, agent_id: uuid.UUID, faq_id: uuid.UUID
+) -> KnowledgeItem:
+    """取得 FAQ 並加上 row-level lock（with_for_update），找不到時拋 404。"""
+    item = (
+        db.query(KnowledgeItem)
+        .filter(KnowledgeItem.id == faq_id, KnowledgeItem.agent_id == agent_id)
+        .with_for_update()
+        .first()
+    )
+    if not item:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "NOT_FOUND", "message": "FAQ 不存在"},
+        )
+    return item
+
+
 def _faq_to_dict(
     item: KnowledgeItem, locker_username: Optional[str] = None
 ) -> dict[str, Any]:
@@ -99,12 +134,18 @@ def _is_lock_expired(item: KnowledgeItem) -> bool:
     return (datetime.now(timezone.utc) - locked_at).total_seconds() >= LOCK_EXPIRE_SECONDS
 
 
-def _lazy_clear_lock(item: KnowledgeItem, db: Session) -> None:
-    """Lazy Expire：讀取 / 編輯時惰性清除過期鎖。"""
+def _lazy_clear_lock(item: KnowledgeItem, db: Session) -> bool:
+    """
+    Lazy Expire：讀取 / 編輯時惰性清除過期鎖。
+    僅修改 ORM 物件並 flush，**不自行 commit**，由呼叫端決定 commit 時機。
+    回傳是否實際清除了鎖（True 代表呼叫端在純讀路徑下需 commit）。
+    """
     if _is_lock_expired(item):
         item.locked_by = None
         item.locked_at = None
-        db.commit()
+        db.flush()
+        return True
+    return False
 
 
 def _get_locker_username(item: KnowledgeItem, db: Session) -> Optional[str]:
@@ -188,11 +229,24 @@ def list_faqs(
         .all()
     )
 
+    # I1：批次取得 locker username，避免逐筆 N+1 query
+    locker_ids = {it.locked_by for it in items if it.locked_by}
+    if locker_ids:
+        lockers = (
+            db.query(User.id, User.username)
+            .filter(User.id.in_(locker_ids))
+            .all()
+        )
+        locker_map: dict[Any, str] = {uid: str(uname) for uid, uname in lockers}
+    else:
+        locker_map = {}
+
     return {
         "success": True,
         "data": {
             "items": [
-                _faq_to_dict(i, _get_locker_username(i, db)) for i in items
+                _faq_to_dict(i, locker_map.get(i.locked_by) if i.locked_by else None)
+                for i in items
             ],
             "total": total,
             "page": page,
@@ -210,18 +264,12 @@ def get_faq(
 ) -> dict[str, Any]:
     require_agent_access(agent_id, current_user, db)
 
-    item = (
-        db.query(KnowledgeItem)
-        .filter(KnowledgeItem.id == faq_id, KnowledgeItem.agent_id == agent_id)
-        .first()
-    )
-    if not item:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "NOT_FOUND", "message": "FAQ 不存在"},
-        )
+    item = _get_faq_or_404(db, agent_id, faq_id)
 
-    _lazy_clear_lock(item, db)
+    cleared = _lazy_clear_lock(item, db)
+    if cleared:
+        # 純讀路徑：僅在實際清鎖時才 commit，避免無變動的讀取也觸發 commit。
+        db.commit()
     return {"success": True, "data": _faq_to_dict(item, _get_locker_username(item, db))}
 
 
@@ -280,17 +328,7 @@ def update_faq(
     require_agent_access(agent_id, current_user, db)
 
     # with_for_update() 確保取得鎖定後再進行鎖衝突判斷，消除 TOCTOU 競態
-    item = (
-        db.query(KnowledgeItem)
-        .filter(KnowledgeItem.id == faq_id, KnowledgeItem.agent_id == agent_id)
-        .with_for_update()
-        .first()
-    )
-    if not item:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "NOT_FOUND", "message": "FAQ 不存在"},
-        )
+    item = _get_faq_for_update_or_404(db, agent_id, faq_id)
 
     # Lazy Expire 後檢查鎖
     _lazy_clear_lock(item, db)
@@ -344,16 +382,8 @@ def update_faq_status(
 ) -> dict[str, Any]:
     agent, role = require_agent_access(agent_id, current_user, db)
 
-    item = (
-        db.query(KnowledgeItem)
-        .filter(KnowledgeItem.id == faq_id, KnowledgeItem.agent_id == agent_id)
-        .first()
-    )
-    if not item:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "NOT_FOUND", "message": "FAQ 不存在"},
-        )
+    # I16：寫入路徑加 with_for_update，避免兩個並發 PATCH /status 同時通過狀態機檢查
+    item = _get_faq_for_update_or_404(db, agent_id, faq_id)
 
     new_status = body.status
     old_status = str(item.status)
@@ -408,16 +438,8 @@ def acquire_lock(
 ) -> dict[str, Any]:
     require_agent_access(agent_id, current_user, db)
 
-    item = (
-        db.query(KnowledgeItem)
-        .filter(KnowledgeItem.id == faq_id, KnowledgeItem.agent_id == agent_id)
-        .first()
-    )
-    if not item:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "NOT_FOUND", "message": "FAQ 不存在"},
-        )
+    # I16：取鎖必須 with_for_update，避免兩個並發 acquire 都看到 locked_by=None 都成功取鎖
+    item = _get_faq_for_update_or_404(db, agent_id, faq_id)
 
     _lazy_clear_lock(item, db)
 
@@ -442,16 +464,8 @@ def extend_lock(
 ) -> dict[str, Any]:
     require_agent_access(agent_id, current_user, db)
 
-    item = (
-        db.query(KnowledgeItem)
-        .filter(KnowledgeItem.id == faq_id, KnowledgeItem.agent_id == agent_id)
-        .first()
-    )
-    if not item:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "NOT_FOUND", "message": "FAQ 不存在"},
-        )
+    # I16：寫入路徑加 with_for_update
+    item = _get_faq_for_update_or_404(db, agent_id, faq_id)
 
     if item.locked_by != current_user.id:
         raise HTTPException(
@@ -476,16 +490,8 @@ def release_lock(
 ) -> None:
     require_agent_access(agent_id, current_user, db)
 
-    item = (
-        db.query(KnowledgeItem)
-        .filter(KnowledgeItem.id == faq_id, KnowledgeItem.agent_id == agent_id)
-        .first()
-    )
-    if not item:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "NOT_FOUND", "message": "FAQ 不存在"},
-        )
+    # I16：寫入路徑加 with_for_update
+    item = _get_faq_for_update_or_404(db, agent_id, faq_id)
 
     if (
         item.locked_by
@@ -516,16 +522,7 @@ def delete_faq(
 ) -> None:
     agent, role = require_agent_access(agent_id, current_user, db)
 
-    item = (
-        db.query(KnowledgeItem)
-        .filter(KnowledgeItem.id == faq_id, KnowledgeItem.agent_id == agent_id)
-        .first()
-    )
-    if not item:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "NOT_FOUND", "message": "FAQ 不存在"},
-        )
+    item = _get_faq_or_404(db, agent_id, faq_id)
 
     item_status = str(item.status)
 
@@ -566,16 +563,7 @@ def get_histories(
 ) -> dict[str, Any]:
     require_agent_access(agent_id, current_user, db)
 
-    item = (
-        db.query(KnowledgeItem)
-        .filter(KnowledgeItem.id == faq_id, KnowledgeItem.agent_id == agent_id)
-        .first()
-    )
-    if not item:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "NOT_FOUND", "message": "FAQ 不存在"},
-        )
+    _get_faq_or_404(db, agent_id, faq_id)
 
     histories = (
         db.query(KnowledgeItemHistory)
@@ -616,16 +604,8 @@ def rollback_faq(
 ) -> dict[str, Any]:
     require_agent_access(agent_id, current_user, db)
 
-    item = (
-        db.query(KnowledgeItem)
-        .filter(KnowledgeItem.id == faq_id, KnowledgeItem.agent_id == agent_id)
-        .first()
-    )
-    if not item:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "NOT_FOUND", "message": "FAQ 不存在"},
-        )
+    # I16：rollback 為寫入路徑，加 with_for_update
+    item = _get_faq_for_update_or_404(db, agent_id, faq_id)
 
     target = (
         db.query(KnowledgeItemHistory)

@@ -13,7 +13,7 @@ export function CategoryTree({ result }: Props) {
   const { tree, loading, selectedId, select, rename, addChild, remove } = result
 
   return (
-    <aside className="w-60 border-r border-border-default bg-surface flex flex-col">
+    <aside className="h-full bg-surface flex flex-col">
       <div className="p-3 border-b border-border-default flex items-center justify-between">
         <h2 className="text-sm font-semibold">類別</h2>
         <Button variant="ghost" size="icon" onClick={() => addChild(null)} aria-label="新增根類別">

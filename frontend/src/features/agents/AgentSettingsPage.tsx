@@ -91,7 +91,7 @@ export function AgentSettingsPage() {
     try {
       const result = await validateScript(id)
       if (result.exists && result.executable) toast.success(`腳本存在（${result.size_bytes} bytes）`)
-      else toast.error(`腳本問題：exists=${result.exists}, executable=${result.executable}`)
+      else toast.error(result.error ?? `腳本問題：exists=${result.exists}, executable=${result.executable}`)
     } catch (err) {
       toast.error(extractErrorMessage(err))
     } finally {

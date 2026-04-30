@@ -52,12 +52,15 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     env_file: .env
+    environment:
+      PYTHONPATH: /app   # 確保 celery prefork 子程序能 import api.*
     command: celery -A tasks.celery_app worker --concurrency=2 --loglevel=info
     volumes:
       - ./scripts:/opt/scripts:ro
-      # 外部 ingestion script 目錄（Windows 路徑）
-      # Agent.ingest_script_path 應設為 /opt/rasa_integration/ingest_kb.py
-      - D:/code-coll/rasa_integration:/opt/rasa_integration:ro
+      # 專案根目錄（ingest_kb.py 所在位置）→ 容器內 /opt/project
+      - D:/mini_test:/opt/project:ro
+      # TXT 輸出目錄（D:\SAP）→ 容器內 /opt/sap（需可寫）
+      - D:/SAP:/opt/sap:rw
       - rasa_docs:/opt/rasa_docs
     depends_on:
       db:

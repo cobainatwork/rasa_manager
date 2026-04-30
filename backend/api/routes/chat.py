@@ -8,6 +8,7 @@ import uuid
 from typing import Any
 
 import httpx
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -15,6 +16,8 @@ from api.database.models import User
 from api.database.session import get_db
 from api.dependencies import get_current_user, require_agent_access
 from api.schemas import ChatRequest
+
+logger = structlog.get_logger()
 
 router = APIRouter(prefix="/api/v1/agents/{agent_id}/chat", tags=["chat"])
 
@@ -47,23 +50,44 @@ def test_chat(
             )
             resp.raise_for_status()
             messages: list[Any] = resp.json()
-    except httpx.TimeoutException:
+    except httpx.TimeoutException as exc:
+        logger.warning(
+            "rasa_timeout",
+            agent_id=str(agent_id),
+            url=webhook_url,
+            error=str(exc),
+        )
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             detail={"code": "TIMEOUT", "message": "Rasa 服務回應逾時"},
         )
     except httpx.HTTPStatusError as exc:
+        logger.warning(
+            "rasa_http_error",
+            agent_id=str(agent_id),
+            url=webhook_url,
+            status_code=exc.response.status_code,
+            error=str(exc),
+        )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail={
                 "code": "BAD_GATEWAY",
-                "message": f"Rasa 服務回傳錯誤：{exc.response.status_code}",
+                "message": f"Rasa 服務回應 HTTP {exc.response.status_code}",
             },
         )
-    except Exception as exc:
+    except httpx.RequestError as exc:
+        # 連線錯誤：避免將完整 exc 訊息（可能含內網 URL）洩漏給呼叫端
+        logger.warning(
+            "rasa_request_error",
+            agent_id=str(agent_id),
+            url=webhook_url,
+            error_type=type(exc).__name__,
+            error=str(exc),
+        )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail={"code": "BAD_GATEWAY", "message": f"無法連線至 Rasa 服務：{exc}"},
+            detail={"code": "BAD_GATEWAY", "message": "Rasa 服務連線失敗"},
         )
 
     return {"success": True, "data": messages}

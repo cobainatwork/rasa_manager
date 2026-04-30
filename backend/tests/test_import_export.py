@@ -60,7 +60,8 @@ class TestResolveCategoryPath:
 
         result = _resolve_category_path(db, AGENT_ID, "既有分類")
 
-        assert result == existing.id
+        # I2：簽章改為 (id, created)
+        assert result == (existing.id, False)
         db.add.assert_not_called()
 
     def test_empty_path_raises_value_error(self) -> None:
@@ -102,7 +103,7 @@ class TestImportEndpoint:
 
         with (
             patch("api.routes.import_export.require_agent_access", return_value=(MagicMock(), None)),
-            patch("api.routes.import_export._resolve_category_path", return_value=uuid.uuid4()),
+            patch("api.routes.import_export._resolve_category_path", return_value=(uuid.uuid4(), False)),
         ):
             resp = client_superadmin.post(  # type: ignore[attr-defined]
                 f"/api/v1/agents/{AGENT_ID}/faqs/import",
@@ -153,7 +154,7 @@ class TestImportEndpoint:
 
         with (
             patch("api.routes.import_export.require_agent_access", return_value=(MagicMock(), None)),
-            patch("api.routes.import_export._resolve_category_path", return_value=uuid.uuid4()),
+            patch("api.routes.import_export._resolve_category_path", return_value=(uuid.uuid4(), False)),
         ):
             resp = client_superadmin.post(  # type: ignore[attr-defined]
                 f"/api/v1/agents/{AGENT_ID}/faqs/import",
@@ -177,7 +178,7 @@ class TestImportEndpoint:
 
         with (
             patch("api.routes.import_export.require_agent_access", return_value=(MagicMock(), None)),
-            patch("api.routes.import_export._resolve_category_path", return_value=uuid.uuid4()),
+            patch("api.routes.import_export._resolve_category_path", return_value=(uuid.uuid4(), False)),
         ):
             resp = client_superadmin.post(  # type: ignore[attr-defined]
                 f"/api/v1/agents/{AGENT_ID}/faqs/import",

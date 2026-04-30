@@ -8,6 +8,7 @@ import uuid
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from api.database.models import Category, KnowledgeItem, User
@@ -34,9 +35,10 @@ def _build_tree(
     return sorted(result, key=lambda x: x["sort_order"])
 
 
-def _collect_descendants(
+def _collect_descendants_recursive(
     db: Session, category_id: Any, agent_id: Any
 ) -> set[Any]:
+    """遞迴 fallback（適用 SQLite 等不支援 recursive CTE 的測試場景）。"""
     result: set[Any] = set()
     children = (
         db.query(Category)
@@ -45,8 +47,41 @@ def _collect_descendants(
     )
     for child in children:
         result.add(child.id)
-        result.update(_collect_descendants(db, child.id, agent_id))
+        result.update(_collect_descendants_recursive(db, child.id, agent_id))
     return result
+
+
+def _collect_descendants(
+    db: Session, category_id: Any, agent_id: Any
+) -> set[Any]:
+    """
+    I5：使用 PostgreSQL recursive CTE 一次取得所有子孫節點，避免逐層 N+1 query。
+    SQLite 等不支援的方言則 fallback 至遞迴查詢。
+    """
+    try:
+        dialect_name = db.get_bind().dialect.name
+    except Exception:
+        dialect_name = ""
+    if dialect_name == "postgresql":
+        sql = text(
+            """
+            WITH RECURSIVE descendants AS (
+                SELECT id, parent_id FROM categories
+                WHERE parent_id = :start_id AND agent_id = :agent_id
+                UNION ALL
+                SELECT c.id, c.parent_id FROM categories c
+                JOIN descendants d ON c.parent_id = d.id
+                WHERE c.agent_id = :agent_id
+            )
+            SELECT id FROM descendants
+            """
+        )
+        result = db.execute(
+            sql, {"start_id": str(category_id), "agent_id": str(agent_id)}
+        )
+        return {row.id for row in result}
+
+    return _collect_descendants_recursive(db, category_id, agent_id)
 
 
 @router.get("/api/v1/agents/{agent_id}/categories")

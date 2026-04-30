@@ -37,16 +37,19 @@ MAX_ROWS = 5000
 
 # ── 分類路徑工具函式 ──────────────────────────────────────────────────────────
 
-def _resolve_category_path(db: Session, agent_id: Any, path_str: str) -> Any:
+def _resolve_category_path(
+    db: Session, agent_id: Any, path_str: str
+) -> tuple[Any, bool]:
     """
     解析 / 分隔的 category_path，自動建立缺少的節點。
-    回傳最末層的 category.id。
+    回傳 (最末層 category.id, 本次是否新建任何分類層)。
     """
     parts = [p.strip() for p in path_str.split("/") if p.strip()]
     if not parts:
         raise ValueError(f"category_path 不可為空：{path_str!r}")
 
     parent_id: Optional[Any] = None
+    created = False
     for part in parts:
         cat = (
             db.query(Category)
@@ -67,13 +70,19 @@ def _resolve_category_path(db: Session, agent_id: Any, path_str: str) -> Any:
             )
             db.add(cat)
             db.flush()
+            created = True
         parent_id = cat.id
 
-    return parent_id
+    return parent_id, created
 
 
-def _build_category_path(db: Session, category_id: Any) -> str:
-    """從 category_id 向上追溯，組合完整路徑字串（/ 分隔）。"""
+def _build_category_path(
+    category_id: Any, cat_map: dict[Any, Category]
+) -> str:
+    """
+    從 category_id 向上追溯組合完整路徑字串（/ 分隔）。
+    使用預先載入的 cat_map（id -> Category）避免 N+1 query。
+    """
     parts: list[str] = []
     current_id = category_id
     visited: set[Any] = set()
@@ -81,7 +90,7 @@ def _build_category_path(db: Session, category_id: Any) -> str:
         if current_id in visited:
             break
         visited.add(current_id)
-        cat = db.query(Category).filter(Category.id == current_id).first()
+        cat = cat_map.get(current_id)
         if cat is None:
             break
         parts.insert(0, str(cat.name))
@@ -182,53 +191,46 @@ def import_faqs(
 
         tags_list = [t.strip() for t in tags_raw.split(",") if t.strip()] if tags_raw else []
 
+        # 使用 SAVEPOINT（nested transaction）：單筆失敗只 rollback 該筆，
+        # 不影響先前已 flush 的成功項目。
         try:
-            cat_count_before = (
-                db.query(Category).filter(Category.agent_id == agent_id).count()
-            )
-            category_id = _resolve_category_path(db, agent_id, category_path)
-            cat_count_after = (
-                db.query(Category).filter(Category.agent_id == agent_id).count()
-            )
-            if cat_count_after > cat_count_before:
-                new_categories.add(category_path)
+            with db.begin_nested():
+                # I2：以 _resolve_category_path 回傳的 created flag 取代前後兩次 count()
+                category_id, created = _resolve_category_path(
+                    db, agent_id, category_path
+                )
+                if created:
+                    new_categories.add(category_path)
 
-            item = KnowledgeItem(
-                id=uuid.uuid4(),
-                agent_id=agent_id,
-                category_id=category_id,
-                question=question,
-                answer=answer,
-                tags=tags_list,
-                status="draft",
-                version=1,
-                created_by=current_user.id,
-            )
-            db.add(item)
-            db.flush()
+                item = KnowledgeItem(
+                    id=uuid.uuid4(),
+                    agent_id=agent_id,
+                    category_id=category_id,
+                    question=question,
+                    answer=answer,
+                    tags=tags_list,
+                    status="draft",
+                    version=1,
+                    created_by=current_user.id,
+                )
+                db.add(item)
+                db.flush()
 
-            db.add(AuditLog(
-                id=uuid.uuid4(),
-                agent_id=agent_id,
-                item_id=item.id,
-                action="import",
-                performed_by=current_user.id,
-                diff={"question": question, "category_path": category_path},
-            ))
+                db.add(AuditLog(
+                    id=uuid.uuid4(),
+                    agent_id=agent_id,
+                    item_id=item.id,
+                    action="import",
+                    performed_by=current_user.id,
+                    diff={"question": question, "category_path": category_path},
+                ))
 
             existing_questions.add(question)
             success += 1
 
         except Exception as exc:
-            db.rollback()
+            # SAVEPOINT 已自動 rollback 該筆，無需手動 rollback 整批
             errors.append({"row": row_num, "reason": str(exc)})
-            # 重新載入 existing_questions 避免後續 flush 失效
-            existing_questions = {
-                str(q)
-                for (q,) in db.query(KnowledgeItem.question)
-                .filter(KnowledgeItem.agent_id == agent_id)
-                .all()
-            }
 
     db.commit()
 
@@ -260,6 +262,10 @@ def export_faqs(
         .all()
     )
 
+    # I6：一次性載入該 agent 所有 categories，避免每筆 FAQ 重新遞迴查詢
+    all_cats = db.query(Category).filter(Category.agent_id == agent_id).all()
+    cat_map: dict[Any, Category] = {c.id: c for c in all_cats}
+
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "FAQs"  # type: ignore[union-attr]
@@ -270,7 +276,7 @@ def export_faqs(
     )
 
     for item in items:
-        category_path = _build_category_path(db, item.category_id)
+        category_path = _build_category_path(item.category_id, cat_map)
         tags_str = ",".join(item.tags) if item.tags else ""
         ws.append([  # type: ignore[union-attr]
             str(item.id),

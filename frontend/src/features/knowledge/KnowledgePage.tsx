@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { FileText } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable'
 import { CategoryTree } from './CategoryTree'
 import { FaqList } from './FaqList'
 import { FaqDetail } from './FaqDetail'
@@ -47,41 +48,51 @@ export function KnowledgePage() {
   if (!id) return null
 
   return (
-    <div className="flex h-[calc(100vh-4rem)]">
-      <CategoryTree result={{ ...categoryTree, select: handleCategorySelect }} />
+    <ResizablePanelGroup orientation="horizontal" className="h-[calc(100vh-4rem)]">
+      <ResizablePanel defaultSize={20} minSize="180px" maxSize="320px">
+        <CategoryTree result={{ ...categoryTree, select: handleCategorySelect }} />
+      </ResizablePanel>
 
-      <FaqList
-        key={listVersion}
-        agentId={id}
-        selectedFaqId={selectedFaqId}
-        onSelectFaq={handleSelectFaq}
-        onNewFaq={handleNewFaq}
-      />
+      <ResizableHandle />
 
-      <aside className="w-[480px] border-l border-border-default bg-surface flex flex-col">
-        {rightMode === 'empty' && (
-          <div className="flex-1 flex items-center justify-center">
-            <EmptyState icon={FileText} title="選擇一筆 FAQ" description="從左側列表選一筆 FAQ 以檢視詳情" />
-          </div>
-        )}
-        {rightMode === 'new' && (
-          <NewFaqForm
-            agentId={id}
-            categoryTree={categoryTree.tree}
-            defaultCategoryId={categoryTree.selectedId}
-            onCreated={handleFaqCreated}
-            onCancel={() => setRightMode('empty')}
-          />
-        )}
-        {rightMode === 'detail' && selectedFaqId && (
-          <FaqDetail
-            agentId={id}
-            faqId={selectedFaqId}
-            categoryTree={categoryTree.tree}
-            onChanged={handleFaqChanged}
-          />
-        )}
-      </aside>
-    </div>
+      <ResizablePanel defaultSize={45} minSize={15}>
+        <FaqList
+          key={listVersion}
+          agentId={id}
+          selectedFaqId={selectedFaqId}
+          onSelectFaq={handleSelectFaq}
+          onNewFaq={handleNewFaq}
+        />
+      </ResizablePanel>
+
+      <ResizableHandle withHandle />
+
+      <ResizablePanel defaultSize={35} minSize="320px">
+        <aside className="h-full bg-surface flex flex-col">
+          {rightMode === 'empty' && (
+            <div className="flex-1 flex items-center justify-center">
+              <EmptyState icon={FileText} title="選擇一筆 FAQ" description="從左側列表選一筆 FAQ 以檢視詳情" />
+            </div>
+          )}
+          {rightMode === 'new' && (
+            <NewFaqForm
+              agentId={id}
+              categoryTree={categoryTree.tree}
+              defaultCategoryId={categoryTree.selectedId}
+              onCreated={handleFaqCreated}
+              onCancel={() => setRightMode('empty')}
+            />
+          )}
+          {rightMode === 'detail' && selectedFaqId && (
+            <FaqDetail
+              agentId={id}
+              faqId={selectedFaqId}
+              categoryTree={categoryTree.tree}
+              onChanged={handleFaqChanged}
+            />
+          )}
+        </aside>
+      </ResizablePanel>
+    </ResizablePanelGroup>
   )
 }

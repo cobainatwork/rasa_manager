@@ -48,7 +48,7 @@ export function EditableTags({ tags, onSave }: Props) {
           onKeyDown={onKey}
           onBlur={add}
           placeholder="+ 標籤"
-          className="flex-1 min-w-[100px] border-none shadow-none focus-visible:ring-0 h-7 p-0"
+          className="flex-1 min-w-[60px] border-none shadow-none focus-visible:ring-0 h-7 p-0"
         />
       </div>
     </div>

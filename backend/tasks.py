@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import os
 import shlex
+import signal
 import subprocess
+import sys
 import uuid
 from datetime import datetime, timezone
 
@@ -100,29 +102,43 @@ def run_ingestion_sync(self, agent_id: str, sync_log_id: str) -> None:  # type: 
         stderr_data = ""
 
         if agent.ingest_script_path:
-            script_name = str(agent.ingest_script_path)
-            if "/" in script_name or "\\" in script_name or ".." in script_name:
+            script_path = str(agent.ingest_script_path)
+            # 防止路徑穿越攻擊，允許完整絕對路徑（如 /opt/rasa_integration/ingest_kb.py）
+            if ".." in script_path:
                 raise RuntimeError(
-                    f"ingest_script_path 包含不允許的字元（路徑分隔符或上級目錄引用）：{script_name}"
+                    f"ingest_script_path 包含不允許的上級目錄引用：{script_path}"
                 )
-            script_path = f"/opt/scripts/{script_name}"
             # 安全性：禁止 shell=True，使用 shlex.split 解析
             cmd = shlex.split(f"python {script_path}")
+            # 使用 Popen + start_new_session=True，逾時時可透過 killpg 一併回收孫進程
+            popen_kwargs: dict = {
+                "stdout": subprocess.PIPE,
+                "stderr": subprocess.PIPE,
+                "text": True,
+            }
+            if sys.platform != "win32":
+                popen_kwargs["start_new_session"] = True
+            proc = subprocess.Popen(cmd, **popen_kwargs)  # noqa: S603
             try:
-                result = subprocess.run(  # noqa: S603
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=280,
-                    check=False,
-                )
-                stdout_data = result.stdout
-                stderr_data = result.stderr
-                if result.returncode != 0:
+                stdout_data, stderr_data = proc.communicate(timeout=280)
+                returncode = proc.returncode
+                if returncode != 0:
                     raise RuntimeError(
-                        f"Ingestion script 退出碼 {result.returncode}"
+                        f"Ingestion script 退出碼 {returncode}"
                     )
             except subprocess.TimeoutExpired:
+                # 強制終止整個 process group，回收子 / 孫進程，避免殭屍
+                if sys.platform != "win32":
+                    try:
+                        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                    except (ProcessLookupError, PermissionError):
+                        proc.kill()
+                else:
+                    proc.kill()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    pass
                 raise RuntimeError("Ingestion script 執行逾時（280 秒）")
 
         # 標記所有項目為 synced
@@ -144,22 +160,25 @@ def run_ingestion_sync(self, agent_id: str, sync_log_id: str) -> None:  # type: 
         )
         db.commit()
 
-    except Exception as exc:
+    except (RuntimeError, OSError, subprocess.SubprocessError, IOError) as exc:
         logger.exception(
             "sync_task_failed",
             agent_id=agent_id,
             sync_log_id=sync_log_id,
             error=str(exc),
         )
-        if sync_log:
-            sync_log.status = "failed"
-            sync_log.stderr = "同步任務執行失敗，請查閱系統日誌"
-            sync_log.finished_at = datetime.now(timezone.utc)
-            db.commit()
+        # 在 retry 前不可寫入 'failed'：retry 成功的下一次執行會將狀態改回 running/completed，
+        # 但中間若觀測 DB 仍會看到錯誤的最終狀態。
+        # 僅在達到最大 retry 次數後才把 sync_log 標記為 failed（最終狀態）。
         try:
             countdown = 10 * (2 ** self.request.retries)
             raise self.retry(exc=exc, countdown=countdown)
         except self.MaxRetriesExceededError:
-            pass
+            if sync_log:
+                sync_log.status = "failed"
+                # 截斷至 1000 字元防 DB 欄位爆量；保留具體錯誤類型與訊息
+                sync_log.stderr = str(exc)[:1000]
+                sync_log.finished_at = datetime.now(timezone.utc)
+                db.commit()
     finally:
         db.close()

@@ -24,7 +24,7 @@ export const handlers = [
   })),
   http.delete('/api/v1/agents/:id', () => HttpResponse.json({ success: true })),
   http.post('/api/v1/agents/:id/test-connection', () => ok({ ok: true, status_code: 200, latency_ms: 42, error: null })),
-  http.post('/api/v1/agents/:id/validate-script', () => ok({ exists: true, executable: true, size_bytes: 1024 })),
+  http.post('/api/v1/agents/:id/validate-script', () => ok({ exists: true, executable: true, size_bytes: 1024, error: null })),
 
   // Stats（避免測試噪音）
   http.get('/api/v1/agents/:id/stats', () => ok({

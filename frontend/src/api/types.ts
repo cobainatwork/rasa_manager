@@ -153,4 +153,5 @@ export interface ValidateScriptResult {
   exists: boolean
   executable: boolean
   size_bytes: number
+  error: string | null
 }

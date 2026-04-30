@@ -8,6 +8,7 @@ import { EditableCategory } from './EditableCategory'
 import { EditableTags } from './EditableTags'
 import { StatusActions } from './StatusActions'
 import { VersionTimeline } from './VersionTimeline'
+import { FAQ_STATUS_LABEL } from './faqStatus'
 import type { CategoryNode } from '@/api/types'
 
 interface Props {
@@ -15,10 +16,6 @@ interface Props {
   faqId: string
   categoryTree: CategoryNode[]
   onChanged: () => void
-}
-
-const STATUS_LABEL: Record<string, string> = {
-  draft: '草稿', pending: '待審核', approved: '已核准', rejected: '已退回', synced: '已同步',
 }
 
 export function FaqDetail({ agentId, faqId, categoryTree, onChanged }: Props) {
@@ -35,11 +32,11 @@ export function FaqDetail({ agentId, faqId, categoryTree, onChanged }: Props) {
   }
 
   return (
-    <ScrollArea className="h-full">
-      <div className="p-6 space-y-5">
-        <div className="flex items-center gap-2 sticky top-0 bg-surface py-2 -mx-6 px-6 border-b border-border-default z-sticky">
-          <span className="font-semibold truncate flex-1">{faq.question || '（未命名）'}</span>
-          <Badge variant="outline">{STATUS_LABEL[faq.status]}</Badge>
+    <ScrollArea className="h-full w-full">
+      <div className="p-4 space-y-5 min-w-0 w-full overflow-x-hidden">
+        <div className="flex items-center gap-2 sticky top-0 bg-surface py-2 -mx-4 px-4 border-b border-border-default z-sticky min-w-0">
+          <span className="font-semibold truncate flex-1 min-w-0">{faq.question || '（未命名）'}</span>
+          <Badge variant="outline" className="shrink-0">{FAQ_STATUS_LABEL[faq.status]}</Badge>
         </div>
 
         <EditableQuestion value={faq.question} onSave={(v) => update({ question: v })} />
