@@ -32,6 +32,16 @@ export const handlers = [
     draft_count: 0, rejected_count: 0, categories_count: 0,
   })),
 
+  // Categories
+  http.get('/api/v1/agents/:id/categories', () => ok([])),
+  http.post('/api/v1/agents/:id/categories', () => ok({
+    id: 'c1', name: '新分類', parent_id: null, sort_order: 0, created_at: null, updated_at: null, children: [],
+  })),
+  http.patch('/api/v1/agents/:id/categories/:cid', () => ok({
+    id: 'c1', name: '更新後', parent_id: null, sort_order: 0, created_at: null, updated_at: null, children: [],
+  })),
+  http.delete('/api/v1/agents/:id/categories/:cid', () => HttpResponse.json({ success: true })),
+
   // FAQs
   http.get('/api/v1/agents/:id/faqs', () => ok({
     items: [], total: 0, page: 1, per_page: 20,

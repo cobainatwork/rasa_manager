@@ -7,6 +7,7 @@ import { LoginPage } from '@/features/auth/LoginPage'
 import { AgentSelectPage } from '@/features/agents/AgentSelectPage'
 import { AgentSettingsPage } from '@/features/agents/AgentSettingsPage'
 import { DashboardPage } from '@/features/dashboard/DashboardPage'
+import { KnowledgePage } from '@/features/knowledge/KnowledgePage'
 
 const Placeholder = ({ name }: { name: string }) => (
   <div className="p-8">
@@ -27,7 +28,7 @@ export function App() {
           </Route>
           <Route path="/agents/:id" element={<AppShell />}>
             <Route path="dashboard" element={<DashboardPage />} />
-            <Route path="knowledge" element={<Placeholder name="知識庫" />} />
+            <Route path="knowledge" element={<KnowledgePage />} />
             <Route path="sync" element={<Placeholder name="同步" />} />
             <Route path="import-export" element={<Placeholder name="匯入匯出" />} />
             <Route path="test-chat" element={<Placeholder name="對話測試" />} />
