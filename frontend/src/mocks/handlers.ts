@@ -93,4 +93,19 @@ export const handlers = [
 
   // Chat test
   http.post('/api/v1/agents/:id/chat/test', () => ok([{ text: '測試回覆' }])),
+
+  // Users
+  http.get('/api/v1/users', () => ok([
+    { id: 'u1', username: 'admin', is_superadmin: true, is_active: true, created_at: '2026-01-01T00:00:00Z' },
+  ])),
+  http.post('/api/v1/users', () => ok({
+    id: 'u-new', username: 'new', is_superadmin: false, is_active: true, created_at: null,
+  })),
+  http.patch('/api/v1/users/:userId', () => ok({
+    id: 'u1', username: 'admin', is_superadmin: false, is_active: false, created_at: null,
+  })),
+  http.delete('/api/v1/users/:userId', () => HttpResponse.json({ success: true })),
+  http.post('/api/v1/users/:userId/reset-password', () => HttpResponse.json({ success: true })),
+  http.put('/api/v1/users/:userId/agents/:agentId/role', () => HttpResponse.json({ success: true })),
+  http.delete('/api/v1/users/:userId/agents/:agentId/role', () => HttpResponse.json({ success: true })),
 ]

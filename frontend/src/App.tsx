@@ -12,13 +12,7 @@ import { SyncPage } from '@/features/sync/SyncPage'
 import { ImportExportPage } from '@/features/import-export/ImportExportPage'
 import { AuditPage } from '@/features/audit/AuditPage'
 import { TestChatPage } from '@/features/chat/TestChatPage'
-
-const Placeholder = ({ name }: { name: string }) => (
-  <div className="p-8">
-    <h1 className="text-2xl font-bold">{name}</h1>
-    <p className="text-text-muted mt-2">此頁面尚未實作（Phase 進行中）</p>
-  </div>
-)
+import { UserManagementPage } from '@/features/users/UserManagementPage'
 
 export function App() {
   return (
@@ -28,7 +22,7 @@ export function App() {
         <Route element={<ProtectedRoute />}>
           <Route path="/agents" element={<AgentSelectPage />} />
           <Route element={<AdminRoute />}>
-            <Route path="/admin/users" element={<Placeholder name="使用者管理" />} />
+            <Route path="/admin/users" element={<UserManagementPage />} />
           </Route>
           <Route path="/agents/:id" element={<AppShell />}>
             <Route path="dashboard" element={<DashboardPage />} />
