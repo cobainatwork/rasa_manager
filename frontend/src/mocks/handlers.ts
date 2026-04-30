@@ -46,6 +46,28 @@ export const handlers = [
   http.get('/api/v1/agents/:id/faqs', () => ok({
     items: [], total: 0, page: 1, per_page: 20,
   })),
+  http.get('/api/v1/agents/:id/faqs/:faqId', ({ params }) => ok({
+    id: params.faqId, agent_id: params.id, category_id: 'c1', question: 'Q', answer: 'A',
+    tags: [], status: 'draft', version: 1, locked_by: null, locked_by_username: null,
+    locked_at: null, created_by: 'u1', created_at: null, updated_at: null,
+  })),
+  http.post('/api/v1/agents/:id/faqs', () => ok({
+    id: 'new-faq', agent_id: 'a1', category_id: 'c1', question: 'Q', answer: 'A',
+    tags: [], status: 'draft', version: 1, locked_by: null, locked_by_username: null,
+    locked_at: null, created_by: 'u1', created_at: null, updated_at: null,
+  })),
+  http.patch('/api/v1/agents/:id/faqs/:faqId', () => ok({
+    id: 'a-faq', agent_id: 'a1', category_id: 'c1', question: 'Q', answer: 'A',
+    tags: [], status: 'draft', version: 2, locked_by: null, locked_by_username: null,
+    locked_at: null, created_by: 'u1', created_at: null, updated_at: null,
+  })),
+  http.delete('/api/v1/agents/:id/faqs/:faqId', () => HttpResponse.json({ success: true })),
+  http.post('/api/v1/agents/:id/faqs/:faqId/submit', () => ok({})),
+  http.post('/api/v1/agents/:id/faqs/:faqId/approve', () => ok({})),
+  http.post('/api/v1/agents/:id/faqs/:faqId/reject', () => ok({})),
+  http.post('/api/v1/agents/:id/faqs/:faqId/unapprove', () => ok({})),
+  http.get('/api/v1/agents/:id/faqs/:faqId/history', () => ok([])),
+  http.post('/api/v1/agents/:id/faqs/:faqId/rollback', () => ok({})),
 
   // Audit logs
   http.get('/api/v1/agents/:id/audit-logs', () => ok({
