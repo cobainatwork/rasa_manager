@@ -1,9 +1,9 @@
 import { ReactNode, useEffect } from 'react'
-import { Navigate, useLocation } from 'react-router-dom'
+import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useAuthStore } from '@/store/useAuthStore'
 
 interface Props {
-  children: ReactNode
+  children?: ReactNode
   requireSuperadmin?: boolean
 }
 
@@ -37,5 +37,5 @@ export function ProtectedRoute({ children, requireSuperadmin = false }: Props) {
     )
   }
 
-  return <>{children}</>
+  return <>{children ?? <Outlet />}</>
 }
