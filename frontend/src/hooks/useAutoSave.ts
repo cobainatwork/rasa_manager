@@ -18,7 +18,11 @@ export function useAutoSave<T>(
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null)
   const initial = useRef(true)
   const valueRef = useRef(value)
-  valueRef.current = value
+
+  // 同步 valueRef 至最新 value（不在 render 期間直接寫 ref）
+  useEffect(() => {
+    valueRef.current = value
+  }, [value])
 
   async function doSave(v: T) {
     setStatus('saving')

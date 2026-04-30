@@ -7,7 +7,8 @@ describe('cn (className merger)', () => {
   })
 
   it('條件 class（false 過濾）', () => {
-    expect(cn('foo', false && 'bar', 'baz')).toBe('foo baz')
+    const flag: boolean = false
+    expect(cn('foo', flag && 'bar', 'baz')).toBe('foo baz')
   })
 
   it('衝突的 tailwind class 後者覆蓋前者', () => {
