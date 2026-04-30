@@ -3,6 +3,7 @@ import { Toaster } from 'sonner'
 import { ProtectedRoute } from '@/routes/ProtectedRoute'
 import { AdminRoute } from '@/routes/AdminRoute'
 import { AppShell } from '@/components/AppShell'
+import { LoginPage } from '@/features/auth/LoginPage'
 
 const Placeholder = ({ name }: { name: string }) => (
   <div className="p-8">
@@ -15,7 +16,7 @@ export function App() {
   return (
     <>
       <Routes>
-        <Route path="/login" element={<Placeholder name="登入" />} />
+        <Route path="/login" element={<LoginPage />} />
         <Route element={<ProtectedRoute />}>
           <Route path="/agents" element={<Placeholder name="Agent 選擇" />} />
           <Route element={<AdminRoute />}>
