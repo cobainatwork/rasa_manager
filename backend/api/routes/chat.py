@@ -35,7 +35,9 @@ def test_chat(
         )
 
     sender = f"{agent_id}_{current_user.id}"
-    webhook_url = f"{str(agent.rasa_rest_url).rstrip('/')}/webhooks/rest/webhook"
+    # rasa_rest_url 儲存完整 webhook URL（例如 http://host:5555/webhooks/myio/webhook）
+    # 直接使用，不再拼接路徑
+    webhook_url = str(agent.rasa_rest_url).rstrip("/")
 
     try:
         with httpx.Client(timeout=30.0) as client:

@@ -4,10 +4,13 @@ RUN addgroup -S buildgroup && adduser -S builduser -G buildgroup
 
 WORKDIR /app
 
-COPY --chown=builduser:buildgroup package.json package-lock.json ./
+COPY package.json package-lock.json ./
 RUN npm install
 
-COPY --chown=builduser:buildgroup . .
+COPY . .
+
+# 確保 builduser 對整個 /app（含 node_modules）有寫入權限
+RUN chown -R builduser:buildgroup /app
 
 USER builduser
 

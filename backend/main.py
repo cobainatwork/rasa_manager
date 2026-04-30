@@ -23,7 +23,8 @@ structlog.configure(
         structlog.processors.JSONRenderer(),
     ],
     wrapper_class=structlog.make_filtering_bound_logger(
-        int(os.environ.get("LOG_LEVEL", "20"))  # 20 = INFO
+        # 支援數字字串（"20"）或具名層級（"INFO"、"DEBUG"）
+        getattr(__import__("logging"), os.environ.get("LOG_LEVEL", "INFO").upper(), 20)
     ),
     context_class=dict,
     logger_factory=structlog.PrintLoggerFactory(),

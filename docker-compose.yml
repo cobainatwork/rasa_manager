@@ -55,6 +55,9 @@ services:
     command: celery -A tasks.celery_app worker --concurrency=2 --loglevel=info
     volumes:
       - ./scripts:/opt/scripts:ro
+      # 外部 ingestion script 目錄（Windows 路徑）
+      # Agent.ingest_script_path 應設為 /opt/rasa_integration/ingest_kb.py
+      - D:/code-coll/rasa_integration:/opt/rasa_integration:ro
       - rasa_docs:/opt/rasa_docs
     depends_on:
       db:
