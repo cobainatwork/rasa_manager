@@ -10,6 +10,12 @@ describe('formatBytes', () => {
   it('0 bytes', () => expect(formatBytes(0)).toBe('0 B'))
   it('1024 bytes → 1 KB', () => expect(formatBytes(1024)).toBe('1 KB'))
   it('1MB', () => expect(formatBytes(1048576)).toBe('1 MB'))
+  // I15 guards
+  it('負值回傳 dash', () => expect(formatBytes(-1)).toBe('—'))
+  it('NaN 回傳 dash', () => expect(formatBytes(NaN)).toBe('—'))
+  it('Infinity 回傳 dash', () => expect(formatBytes(Infinity)).toBe('—'))
+  it('TB 量級正常顯示', () => expect(formatBytes(1024 ** 4)).toBe('1 TB'))
+  it('超過 PB 量級 clamp 至 PB', () => expect(formatBytes(1024 ** 6)).toMatch(/PB$/))
 })
 
 describe('relativeTime', () => {

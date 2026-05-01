@@ -2,6 +2,8 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import { ProtectedRoute } from '@/routes/ProtectedRoute'
 import { AdminRoute } from '@/routes/AdminRoute'
+import { AuthProvider } from '@/routes/AuthProvider'
+import { ROUTE_PATHS } from '@/routes/paths'
 import { AppShell } from '@/components/AppShell'
 import { LoginPage } from '@/features/auth/LoginPage'
 import { AgentSelectPage } from '@/features/agents/AgentSelectPage'
@@ -16,13 +18,13 @@ import { UserManagementPage } from '@/features/users/UserManagementPage'
 
 export function App() {
   return (
-    <>
+    <AuthProvider>
       <Routes>
-        <Route path="/login" element={<LoginPage />} />
+        <Route path={ROUTE_PATHS.login} element={<LoginPage />} />
         <Route element={<ProtectedRoute />}>
-          <Route path="/agents" element={<AgentSelectPage />} />
+          <Route path={ROUTE_PATHS.agents} element={<AgentSelectPage />} />
           <Route element={<AdminRoute />}>
-            <Route path="/admin/users" element={<UserManagementPage />} />
+            <Route path={ROUTE_PATHS.adminUsers} element={<UserManagementPage />} />
           </Route>
           <Route path="/agents/:id" element={<AppShell />}>
             <Route path="dashboard" element={<DashboardPage />} />
@@ -36,9 +38,9 @@ export function App() {
             </Route>
           </Route>
         </Route>
-        <Route path="*" element={<Navigate to="/agents" replace />} />
+        <Route path="*" element={<Navigate to={ROUTE_PATHS.agents} replace />} />
       </Routes>
       <Toaster richColors position="bottom-right" />
-    </>
+    </AuthProvider>
   )
 }

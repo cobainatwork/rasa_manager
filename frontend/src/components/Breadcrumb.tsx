@@ -18,8 +18,9 @@ export function Breadcrumb({ className }: { className?: string }) {
   if (!id) return null
 
   const segments = pathname.split('/').filter(Boolean)
-  const lastSeg = segments[segments.length - 1]
-  const label = PAGE_LABELS[lastSeg]
+  const lastSeg = segments[segments.length - 1] ?? ''
+  // N5：未匹配時 fallback 至首字大寫的 segment 原文，避免整個 breadcrumb 消失
+  const label = PAGE_LABELS[lastSeg] ?? (lastSeg ? lastSeg.charAt(0).toUpperCase() + lastSeg.slice(1) : '')
   if (!label) return null
 
   return (

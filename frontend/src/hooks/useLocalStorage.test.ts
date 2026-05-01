@@ -22,4 +22,12 @@ describe('useLocalStorage', () => {
     const { result } = renderHook(() => useLocalStorage('k', 'default'))
     expect(result.current[0]).toBe('saved')
   })
+
+  it('functional updater 支援（I10）', () => {
+    const { result } = renderHook(() => useLocalStorage<number>('counter', 0))
+    act(() => result.current[1]((prev) => prev + 1))
+    act(() => result.current[1]((prev) => prev + 2))
+    expect(result.current[0]).toBe(3)
+    expect(localStorage.getItem('counter')).toBe('3')
+  })
 })

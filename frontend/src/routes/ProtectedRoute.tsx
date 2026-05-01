@@ -1,13 +1,11 @@
-import { ReactNode, useEffect } from 'react'
+import { useEffect } from 'react'
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useAuthStore } from '@/store/useAuthStore'
+import { ROUTE_PATHS } from '@/routes/paths'
 
-interface Props {
-  children?: ReactNode
-  requireSuperadmin?: boolean
-}
-
-export function ProtectedRoute({ children, requireSuperadmin = false }: Props) {
+// B3：移除 requireSuperadmin / children 死碼，固定 <Outlet /> 模式。
+// Superadmin 限制改由 <AdminRoute /> 巢狀路由負責，避免雙路徑判斷。
+export function ProtectedRoute() {
   const { user, isInitialized, initialize } = useAuthStore()
   const location = useLocation()
 
@@ -19,23 +17,15 @@ export function ProtectedRoute({ children, requireSuperadmin = false }: Props) {
 
   if (!isInitialized) {
     return (
-      <div className="flex h-screen items-center justify-center text-slate-500">
+      <div className="flex h-screen items-center justify-center text-text-secondary">
         載入中...
       </div>
     )
   }
 
   if (!user) {
-    return <Navigate to="/login" state={{ from: location }} replace />
+    return <Navigate to={ROUTE_PATHS.login} state={{ from: location }} replace />
   }
 
-  if (requireSuperadmin && !user.is_superadmin) {
-    return (
-      <div className="flex h-screen items-center justify-center text-red-600">
-        權限不足，僅 Superadmin 可存取此頁面。
-      </div>
-    )
-  }
-
-  return <>{children ?? <Outlet />}</>
+  return <Outlet />
 }

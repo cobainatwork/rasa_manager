@@ -3,7 +3,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { useKeyboardShortcut } from '@/hooks/useKeyboardShortcut'
 import { Kbd } from './Kbd'
 
-const SHORTCUTS: Array<{ keys: string[]; desc: string; section: string }> = [
+interface Shortcut { keys: string[]; desc: string; section: string }
+
+const SHORTCUTS: Shortcut[] = [
   { section: '全域', keys: ['/'], desc: '聚焦搜尋框' },
   { section: '全域', keys: ['n'], desc: '新增 FAQ' },
   { section: '全域', keys: ['?'], desc: '顯示此速查表' },
@@ -18,21 +20,25 @@ const SHORTCUTS: Array<{ keys: string[]; desc: string; section: string }> = [
   { section: 'FAQ 編輯', keys: ['⌘/Ctrl', 'Enter'], desc: '儲存並下一筆' },
 ]
 
+// N11：分群在模組層計算一次，避免每次 render 都 reduce
+const SHORTCUTS_BY_GROUP: Record<string, Shortcut[]> = SHORTCUTS.reduce<Record<string, Shortcut[]>>(
+  (acc, s) => {
+    (acc[s.section] ??= []).push(s)
+    return acc
+  },
+  {},
+)
+
 export function KeyboardShortcuts() {
   const [open, setOpen] = useState(false)
   useKeyboardShortcut('?', () => setOpen(true), { shift: true })
-
-  const grouped = SHORTCUTS.reduce<Record<string, typeof SHORTCUTS>>((acc, s) => {
-    (acc[s.section] ??= []).push(s)
-    return acc
-  }, {})
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent className="max-w-lg">
         <DialogHeader><DialogTitle>鍵盤快捷鍵</DialogTitle></DialogHeader>
         <div className="space-y-4">
-          {Object.entries(grouped).map(([section, items]) => (
+          {Object.entries(SHORTCUTS_BY_GROUP).map(([section, items]) => (
             <div key={section}>
               <h4 className="text-sm font-semibold text-text-secondary mb-2">{section}</h4>
               <ul className="space-y-1.5">

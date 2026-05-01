@@ -1,17 +1,24 @@
+// N8：locale 常數集中
+const LOCALE = 'zh-TW'
 const DASH = '—'
 
 export function formatDate(iso: string | null | undefined): string {
   if (!iso) return DASH
-  return new Date(iso).toLocaleString('zh-TW', {
+  return new Date(iso).toLocaleString(LOCALE, {
     year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit',
   })
 }
 
+/**
+ * I15：保護極大值與 NaN／負值。
+ */
 export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return DASH
   if (bytes === 0) return '0 B'
-  const units = ['B', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(1024))
+  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
+  const rawIndex = Math.floor(Math.log(bytes) / Math.log(1024))
+  const i = Math.min(Math.max(rawIndex, 0), units.length - 1)
   return `${(bytes / Math.pow(1024, i)).toFixed(0)} ${units[i]}`
 }
 

@@ -1,31 +1,30 @@
 import { apiClient } from '../client'
-import type { Faq, FaqListResponse, FaqHistory } from '../types'
+import { unwrap } from '../request'
+import type { Faq, FaqHistory } from '../types'
+import type { PaginationParams, Paginated } from './_helpers'
 
-export interface FaqListParams {
-  page?: number
-  per_page?: number
+export interface FaqListParams extends PaginationParams {
   status?: string
   category_id?: string
   q?: string
   tag?: string
 }
 
+export type FaqListResponse = Paginated<Faq>
+
 export async function listFaqs(agentId: string, params: FaqListParams = {}): Promise<FaqListResponse> {
-  const resp = await apiClient.get(`/api/v1/agents/${agentId}/faqs`, { params })
-  return resp.data.data as FaqListResponse
+  return unwrap(apiClient.get(`/api/v1/agents/${agentId}/faqs`, { params }))
 }
 
 export async function getFaq(agentId: string, faqId: string): Promise<Faq> {
-  const resp = await apiClient.get(`/api/v1/agents/${agentId}/faqs/${faqId}`)
-  return resp.data.data as Faq
+  return unwrap(apiClient.get(`/api/v1/agents/${agentId}/faqs/${faqId}`))
 }
 
 export async function createFaq(
   agentId: string,
   payload: { category_id: string; question: string; answer: string; tags: string[] }
 ): Promise<Faq> {
-  const resp = await apiClient.post(`/api/v1/agents/${agentId}/faqs`, payload)
-  return resp.data.data as Faq
+  return unwrap(apiClient.post(`/api/v1/agents/${agentId}/faqs`, payload))
 }
 
 export async function updateFaq(
@@ -33,8 +32,7 @@ export async function updateFaq(
   faqId: string,
   payload: Partial<Pick<Faq, 'question' | 'answer' | 'category_id' | 'tags'>>
 ): Promise<Faq> {
-  const resp = await apiClient.patch(`/api/v1/agents/${agentId}/faqs/${faqId}`, payload)
-  return resp.data.data as Faq
+  return unwrap(apiClient.patch(`/api/v1/agents/${agentId}/faqs/${faqId}`, payload))
 }
 
 export async function deleteFaq(agentId: string, faqId: string): Promise<void> {
@@ -52,27 +50,21 @@ export async function releaseLock(agentId: string, faqId: string): Promise<void>
 }
 
 export async function submit(agentId: string, faqId: string): Promise<Faq> {
-  const resp = await apiClient.post(`/api/v1/agents/${agentId}/faqs/${faqId}/submit`)
-  return resp.data.data as Faq
+  return unwrap(apiClient.post(`/api/v1/agents/${agentId}/faqs/${faqId}/submit`))
 }
 export async function approve(agentId: string, faqId: string): Promise<Faq> {
-  const resp = await apiClient.post(`/api/v1/agents/${agentId}/faqs/${faqId}/approve`)
-  return resp.data.data as Faq
+  return unwrap(apiClient.post(`/api/v1/agents/${agentId}/faqs/${faqId}/approve`))
 }
 export async function reject(agentId: string, faqId: string, reason: string): Promise<Faq> {
-  const resp = await apiClient.post(`/api/v1/agents/${agentId}/faqs/${faqId}/reject`, { reason })
-  return resp.data.data as Faq
+  return unwrap(apiClient.post(`/api/v1/agents/${agentId}/faqs/${faqId}/reject`, { reason }))
 }
 export async function unapprove(agentId: string, faqId: string): Promise<Faq> {
-  const resp = await apiClient.post(`/api/v1/agents/${agentId}/faqs/${faqId}/unapprove`)
-  return resp.data.data as Faq
+  return unwrap(apiClient.post(`/api/v1/agents/${agentId}/faqs/${faqId}/unapprove`))
 }
 
 export async function getHistory(agentId: string, faqId: string): Promise<FaqHistory[]> {
-  const resp = await apiClient.get(`/api/v1/agents/${agentId}/faqs/${faqId}/history`)
-  return resp.data.data ?? []
+  return unwrap(apiClient.get(`/api/v1/agents/${agentId}/faqs/${faqId}/history`), [])
 }
 export async function rollback(agentId: string, faqId: string, versionId: string): Promise<Faq> {
-  const resp = await apiClient.post(`/api/v1/agents/${agentId}/faqs/${faqId}/rollback`, { version_id: versionId })
-  return resp.data.data as Faq
+  return unwrap(apiClient.post(`/api/v1/agents/${agentId}/faqs/${faqId}/rollback`, { version_id: versionId }))
 }

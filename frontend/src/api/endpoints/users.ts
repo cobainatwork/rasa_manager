@@ -1,19 +1,17 @@
 import { apiClient } from '../client'
+import { unwrap } from '../request'
 import type { User } from '../types'
 
 export async function listUsers(): Promise<User[]> {
-  const resp = await apiClient.get('/api/v1/users')
-  return resp.data.data ?? []
+  return unwrap(apiClient.get('/api/v1/users'), [])
 }
 
 export async function createUser(payload: { username: string; password: string }): Promise<User> {
-  const resp = await apiClient.post('/api/v1/users', payload)
-  return resp.data.data as User
+  return unwrap(apiClient.post('/api/v1/users', payload))
 }
 
 export async function updateUser(userId: string, payload: { is_active?: boolean }): Promise<User> {
-  const resp = await apiClient.patch(`/api/v1/users/${userId}`, payload)
-  return resp.data.data as User
+  return unwrap(apiClient.patch(`/api/v1/users/${userId}`, payload))
 }
 
 export async function deleteUser(userId: string): Promise<void> {

@@ -16,6 +16,6 @@ export const useUiPreferences = create<UiPreferences>()(
       knowledgeRightPaneWidth: 480,
       setKnowledgeRightPaneWidth: (n) => set({ knowledgeRightPaneWidth: n }),
     }),
-    { name: 'rasa-kb-ui-prefs' }
+    { name: 'rasa-kb-ui-prefs', version: 1 }
   )
 )

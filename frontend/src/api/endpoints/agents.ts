@@ -1,19 +1,17 @@
 import { apiClient } from '../client'
+import { unwrap } from '../request'
 import type { Agent, AgentStats, TestConnectionResult, ValidateScriptResult } from '../types'
 
 export async function listAgents(): Promise<Agent[]> {
-  const resp = await apiClient.get('/api/v1/agents')
-  return resp.data.data ?? []
+  return unwrap(apiClient.get('/api/v1/agents'), [])
 }
 
 export async function createAgent(payload: Omit<Agent, 'id' | 'created_at'>): Promise<Agent> {
-  const resp = await apiClient.post('/api/v1/agents', payload)
-  return resp.data.data as Agent
+  return unwrap(apiClient.post('/api/v1/agents', payload))
 }
 
 export async function updateAgent(id: string, payload: Partial<Agent>): Promise<Agent> {
-  const resp = await apiClient.patch(`/api/v1/agents/${id}`, payload)
-  return resp.data.data as Agent
+  return unwrap(apiClient.patch(`/api/v1/agents/${id}`, payload))
 }
 
 export async function deleteAgent(id: string): Promise<void> {
@@ -21,16 +19,13 @@ export async function deleteAgent(id: string): Promise<void> {
 }
 
 export async function getAgentStats(id: string): Promise<AgentStats> {
-  const resp = await apiClient.get(`/api/v1/agents/${id}/stats`)
-  return resp.data.data as AgentStats
+  return unwrap(apiClient.get(`/api/v1/agents/${id}/stats`))
 }
 
 export async function testConnection(id: string): Promise<TestConnectionResult> {
-  const resp = await apiClient.post(`/api/v1/agents/${id}/test-connection`)
-  return resp.data.data as TestConnectionResult
+  return unwrap(apiClient.post(`/api/v1/agents/${id}/test-connection`))
 }
 
 export async function validateScript(id: string): Promise<ValidateScriptResult> {
-  const resp = await apiClient.post(`/api/v1/agents/${id}/validate-script`)
-  return resp.data.data as ValidateScriptResult
+  return unwrap(apiClient.post(`/api/v1/agents/${id}/validate-script`))
 }

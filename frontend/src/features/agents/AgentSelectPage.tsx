@@ -7,6 +7,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { EmptyState } from '@/components/EmptyState'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useAgentContext } from '@/store/useAgentContext'
+import { ROUTE_PATHS } from '@/routes/paths'
 import { useAgentList } from './useAgentList'
 import { AgentCard } from './AgentCard'
 import { CreateAgentInlinePanel } from './CreateAgentInlinePanel'
@@ -23,12 +24,13 @@ export function AgentSelectPage() {
 
   function handleSelect(agent: Agent) {
     setCurrent(agent)
-    navigate(`/agents/${agent.id}/dashboard`)
+    navigate(ROUTE_PATHS.dashboard(agent.id))
   }
 
   async function handleLogout() {
     await logout()
-    navigate('/login')
+    setCurrent(null)
+    navigate(ROUTE_PATHS.login)
   }
 
   return (
@@ -40,7 +42,7 @@ export function AgentSelectPage() {
         </div>
         <div className="flex items-center gap-3">
           <span className="text-sm text-text-secondary">{username}</span>
-          {isSuper && <Button variant="outline" size="sm" onClick={() => navigate('/admin/users')}>使用者管理</Button>}
+          {isSuper && <Button variant="outline" size="sm" onClick={() => navigate(ROUTE_PATHS.adminUsers)}>使用者管理</Button>}
           <Button variant="ghost" size="sm" onClick={handleLogout}>登出</Button>
         </div>
       </header>

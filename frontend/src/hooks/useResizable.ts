@@ -7,6 +7,10 @@ export interface ResizableOptions {
   storageKey?: string
 }
 
+/**
+ * I7：避免 width 出現在 effect 依賴造成事件監聽反覆掛載／移除。
+ * 改以 widthRef 同步最新值，effect 只依賴設定（min/max/storageKey）。
+ */
 export function useResizable({ initial, min, max, storageKey }: ResizableOptions) {
   const initFromStorage = (): number => {
     if (!storageKey) return initial
@@ -16,15 +20,20 @@ export function useResizable({ initial, min, max, storageKey }: ResizableOptions
     } catch { return initial }
   }
   const [width, setWidth] = useState(initFromStorage)
+  const widthRef = useRef(width)
   const dragging = useRef(false)
   const startX = useRef(0)
   const startW = useRef(0)
 
+  useEffect(() => {
+    widthRef.current = width
+  }, [width])
+
   const onMouseDown = useCallback((e: React.MouseEvent) => {
     dragging.current = true
     startX.current = e.clientX
-    startW.current = width
-  }, [width])
+    startW.current = widthRef.current
+  }, [])
 
   useEffect(() => {
     function onMove(e: MouseEvent) {
@@ -35,7 +44,7 @@ export function useResizable({ initial, min, max, storageKey }: ResizableOptions
     }
     function onUp() {
       if (dragging.current && storageKey) {
-        try { localStorage.setItem(storageKey, String(width)) } catch { /* noop */ }
+        try { localStorage.setItem(storageKey, String(widthRef.current)) } catch { /* noop */ }
       }
       dragging.current = false
     }
@@ -45,7 +54,7 @@ export function useResizable({ initial, min, max, storageKey }: ResizableOptions
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
     }
-  }, [min, max, storageKey, width])
+  }, [min, max, storageKey])
 
   return { width, onMouseDown }
 }
