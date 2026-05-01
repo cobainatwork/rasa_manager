@@ -1,6 +1,10 @@
 """
 分類節點 CRUD：Adjacency List 模型，支援無限層級樹狀結構。
 GET 回傳嵌套 JSON 樹；DELETE 禁止刪除含 FAQ 的節點。
+
+註：分類「不」套用編輯鎖（CLAUDE.md §五.2 的 lazy expire 機制僅作用於
+knowledge_items；分類為輕量元資料，併發改名衝突由 DB 唯一約束
+uq_cat_agent_parent_name 兜底）。
 """
 from __future__ import annotations
 
@@ -60,8 +64,9 @@ def _collect_descendants(
     SQLite 等不支援的方言則 fallback 至遞迴查詢。
     """
     try:
+        # mock 場景下 db 可能無 bind（例如 MagicMock spec=Session），fallback 至遞迴
         dialect_name = db.get_bind().dialect.name
-    except Exception:
+    except (AttributeError, TypeError):
         dialect_name = ""
     if dialect_name == "postgresql":
         sql = text(

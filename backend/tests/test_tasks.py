@@ -268,6 +268,7 @@ class TestCeleryRetryRegression:
         return db
 
     def test_subprocess_failure_during_retry_does_not_set_failed(self) -> None:
+        """retries=1（未達 max_retries=3）失敗時不可標 failed；改 mock Popen 實際觸發失敗分支。"""
         sync_log = self._make_sync_log()
         agent = self._make_agent()
         faq = self._make_faq()
@@ -277,16 +278,23 @@ class TestCeleryRetryRegression:
             patch(self.SESSION_PATCH, return_value=db),
             patch("builtins.open", mock_open()),
             patch("os.makedirs"),
-            patch("subprocess.run") as mock_run,
+            patch("subprocess.Popen") as mock_popen,
         ):
-            mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="boom")
+            mock_proc = MagicMock()
+            mock_proc.communicate.return_value = ("", "boom")
+            mock_proc.returncode = 1
+            mock_popen.return_value = mock_proc
+            # retries=1：仍有 retry 額度（max_retries=3），應走 self.retry() 路徑
             try:
-                run_ingestion_sync.apply(args=[str(AGENT_ID), str(sync_log.id)])
+                run_ingestion_sync.apply(
+                    args=[str(AGENT_ID), str(sync_log.id)], retries=1,
+                )
             except Exception:
-                pass
+                pass  # self.retry 在 EAGER 模式會冒出，忽略
 
+        # 關鍵斷言：retry 中途 sync_log 不能被標 failed（B1 規格）
         assert sync_log.status != "failed", (
-            f"retry 路徑下 sync_log.status 不可立刻被設為 failed，"
+            f"retries=1（未達 max_retries）時 sync_log.status 不可被標為 failed，"
             f"實際為 {sync_log.status!r}"
         )
 
@@ -403,6 +411,8 @@ class TestSubprocessNarrowExceptRegression:
         def popen_side_effect(*args: Any, **kwargs: Any) -> MagicMock:
             raise KeyboardInterrupt()
 
+        # narrow except 只接住 RuntimeError/OSError/SubprocessError/IOError；
+        # KeyboardInterrupt 應原樣冒出，不可被吞掉。
         raised = False
         try:
             with (
@@ -413,16 +423,20 @@ class TestSubprocessNarrowExceptRegression:
                 patch("subprocess.Popen", side_effect=popen_side_effect),
             ):
                 result = run_ingestion_sync.apply(args=[str(AGENT_ID), str(sync_log.id)])
+                # Celery EAGER 模式會把 BaseException 收進 result；手動取出再 raise
                 if result.failed():
                     inner = result.result
                     if isinstance(inner, KeyboardInterrupt):
                         raise inner
         except KeyboardInterrupt:
             raised = True
-        except BaseException:
-            pass
 
-        assert raised or sync_log.stderr is None or sync_log.status != "failed"
+        # 關鍵斷言：KeyboardInterrupt 必須冒出（不可被 narrow except 吞掉）
+        assert raised, "KeyboardInterrupt 必須原樣冒出，不可被 narrow except 吞掉"
+        # 同時確認沒有錯把 KeyboardInterrupt 當業務錯誤寫進 sync_log
+        assert sync_log.status != "failed", (
+            "KeyboardInterrupt 不是業務錯誤，sync_log 不應被標 failed"
+        )
 
 
 # ── Regression: B3 (subprocess timeout must kill process group) ─────────────

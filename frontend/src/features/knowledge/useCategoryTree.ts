@@ -5,15 +5,32 @@ import { extractErrorMessage } from '@/api/client'
 import { toast } from 'sonner'
 import type { CategoryNode } from '@/api/types'
 
+/** 攤平 nested tree 用的內部型別，明示「無子節點」避免與 CategoryNode 混淆 */
+interface FlatCategoryRow {
+  id: string
+  name: string
+  parent_id: string | null
+  sort_order: number
+  created_at: string | null
+  updated_at: string | null
+}
+
 /**
  * 後端 list_categories 已回傳 nested tree（含 children 陣列）；
- * 此處攤平回 flat 以便 buildCategoryTree 與其他工具函式正確處理。
+ * 此處攤平回扁平列以便 buildCategoryTree 統一從 parent_id 重建關係。
  */
-function flattenNested(nodes: CategoryNode[]): CategoryNode[] {
-  const out: CategoryNode[] = []
+function flattenNested(nodes: CategoryNode[]): FlatCategoryRow[] {
+  const out: FlatCategoryRow[] = []
   function walk(list: CategoryNode[]) {
     for (const n of list) {
-      out.push({ ...n, children: [] })
+      out.push({
+        id: n.id,
+        name: n.name,
+        parent_id: n.parent_id,
+        sort_order: n.sort_order,
+        created_at: n.created_at,
+        updated_at: n.updated_at,
+      })
       if (n.children && n.children.length > 0) walk(n.children)
     }
   }
@@ -23,7 +40,6 @@ function flattenNested(nodes: CategoryNode[]): CategoryNode[] {
 
 export interface UseCategoryTreeResult {
   tree: CategoryNode[]
-  flat: CategoryNode[]
   loading: boolean
   selectedId: string | null
   pendingRenameId: string | null
@@ -36,7 +52,7 @@ export interface UseCategoryTreeResult {
 }
 
 export function useCategoryTree(agentId: string | undefined): UseCategoryTreeResult {
-  const [flat, setFlat] = useState<CategoryNode[]>([])
+  const [rows, setRows] = useState<FlatCategoryRow[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [pendingRenameId, setPendingRenameId] = useState<string | null>(null)
@@ -45,14 +61,14 @@ export function useCategoryTree(agentId: string | undefined): UseCategoryTreeRes
     if (!agentId) return
     setLoading(true)
     api.listCategories(agentId)
-      .then((nested) => setFlat(flattenNested(nested)))
+      .then((nested) => setRows(flattenNested(nested)))
       .catch((err) => toast.error(extractErrorMessage(err)))
       .finally(() => setLoading(false))
   }, [agentId])
 
   useEffect(() => { reload() }, [reload])
 
-  const tree = buildCategoryTree(flat)
+  const tree = buildCategoryTree(rows)
 
   async function rename(id: string, name: string) {
     if (!agentId) return
@@ -64,9 +80,11 @@ export function useCategoryTree(agentId: string | undefined): UseCategoryTreeRes
 
   async function addChild(parentId: string | null) {
     if (!agentId) return
-    // 同層級不允許同名（DB 唯一約束）；以時分秒後綴保證每次唯一，不依賴 flat 即時性
-    const ts = new Date().toLocaleTimeString('zh-TW', { hour12: false }).replace(/:/g, '')
-    const name = `新分類_${ts}`
+    // 同層唯一名稱限制（DB 唯一約束 uq_cat_agent_parent_name）：
+    // 以毫秒級 timestamp + 4 位亂數，降低快速雙擊或同秒併發碰撞的機率。
+    // 若仍碰撞，後端會回 409，前端 toast.error 顯示友善訊息。
+    const suffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+    const name = `新分類_${suffix}`
     try {
       const created = await api.createCategory(agentId, { name, parent_id: parentId })
       setPendingRenameId(created.id)
@@ -86,7 +104,7 @@ export function useCategoryTree(agentId: string | undefined): UseCategoryTreeRes
   function clearPendingRename() { setPendingRenameId(null) }
 
   return {
-    tree, flat, loading, selectedId, pendingRenameId,
+    tree, loading, selectedId, pendingRenameId,
     select: setSelectedId, reload, rename, addChild, remove,
     clearPendingRename,
   }

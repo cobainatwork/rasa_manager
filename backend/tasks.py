@@ -21,15 +21,31 @@ logger = structlog.get_logger()
 
 REDIS_URL: str = os.environ.get("REDIS_URL", "redis://redis:6379/0")
 
+# ── Tunable constants ────────────────────────────────────────────────────────
+# Celery 層
+TASK_SOFT_TIME_LIMIT_SEC = 300        # Celery soft time limit
+TASK_MAX_RETRIES = 3                  # 重試次數上限
+TASK_RETRY_DELAY_SEC = 10             # 第一次重試延遲（後續指數退避）
+RETRY_BACKOFF_BASE_SEC = 10           # 指數退避基數：base * (2 ** retries)
+
+# Ingest subprocess 層
+# 比 task_soft_time_limit 早 20 秒，留餘裕讓我們自行 kill 並寫 sync_log
+INGEST_SUBPROCESS_TIMEOUT_SEC = 280
+INGEST_KILL_GRACE_SEC = 5             # SIGKILL 後等待子程序回收的寬限
+
+# 寫 sync_log.stderr 的長度上限（避免 DB 欄位爆量）
+STDERR_MAX_CHARS = 1000
+
+
 celery_app = Celery("tasks", broker=REDIS_URL)
 celery_app.conf.update(
     task_ignore_result=True,
-    task_soft_time_limit=300,
+    task_soft_time_limit=TASK_SOFT_TIME_LIMIT_SEC,
     task_acks_late=True,
 )
 
 
-@celery_app.task(bind=True, max_retries=3, default_retry_delay=10)
+@celery_app.task(bind=True, max_retries=TASK_MAX_RETRIES, default_retry_delay=TASK_RETRY_DELAY_SEC)
 def run_ingestion_sync(self, agent_id: str, sync_log_id: str) -> None:  # type: ignore[misc]
     """
     1. 取出 approved/synced 的 FAQ
@@ -133,7 +149,7 @@ def run_ingestion_sync(self, agent_id: str, sync_log_id: str) -> None:  # type: 
                 popen_kwargs["start_new_session"] = True
             proc = subprocess.Popen(cmd, **popen_kwargs)  # noqa: S603
             try:
-                stdout_data, stderr_data = proc.communicate(timeout=280)
+                stdout_data, stderr_data = proc.communicate(timeout=INGEST_SUBPROCESS_TIMEOUT_SEC)
                 returncode = proc.returncode
                 if returncode != 0:
                     raise RuntimeError(
@@ -149,10 +165,12 @@ def run_ingestion_sync(self, agent_id: str, sync_log_id: str) -> None:  # type: 
                 else:
                     proc.kill()
                 try:
-                    proc.wait(timeout=5)
+                    proc.wait(timeout=INGEST_KILL_GRACE_SEC)
                 except subprocess.TimeoutExpired:
                     pass
-                raise RuntimeError("Ingestion script 執行逾時（280 秒）")
+                raise RuntimeError(
+                    f"Ingestion script 執行逾時（{INGEST_SUBPROCESS_TIMEOUT_SEC} 秒）"
+                )
 
         # 標記所有項目為 synced
         for item in items:
@@ -183,17 +201,17 @@ def run_ingestion_sync(self, agent_id: str, sync_log_id: str) -> None:  # type: 
         # B1 修法：先判斷 retry 是否已用盡，再決定是否標 failed。
         # self.retry(exc=...) 用盡 max_retries 時會「重拋原本 exc」，不是 MaxRetriesExceededError，
         # 所以不能單靠 try/except MaxRetriesExceededError 攔截。
-        max_retries = self.max_retries if self.max_retries is not None else 3
+        max_retries = self.max_retries if self.max_retries is not None else TASK_MAX_RETRIES
         if self.request.retries >= max_retries:
             # 已是最後一次失敗，寫入終態
             if sync_log:
                 sync_log.status = "failed"
-                sync_log.stderr = str(exc)[:1000]
+                sync_log.stderr = str(exc)[:STDERR_MAX_CHARS]
                 sync_log.finished_at = datetime.now(timezone.utc)
                 db.commit()
             raise  # 讓 Celery 也標記任務為 FAILURE
         # 仍有 retry 額度，排程重試（中間狀態維持 running）
-        countdown = 10 * (2 ** self.request.retries)
+        countdown = RETRY_BACKOFF_BASE_SEC * (2 ** self.request.retries)
         raise self.retry(exc=exc, countdown=countdown)
     finally:
         db.close()

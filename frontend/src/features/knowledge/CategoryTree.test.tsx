@@ -11,7 +11,6 @@ const sample = buildCategoryTree([
 
 const baseResult = {
   tree: sample,
-  flat: [],
   loading: false,
   selectedId: null,
   pendingRenameId: null,
