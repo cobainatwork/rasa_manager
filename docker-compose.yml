@@ -1,5 +1,10 @@
 name: rasa_rag
 
+networks:
+  app:
+  data:
+    internal: true
+
 services:
 
   db:
@@ -11,20 +16,31 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-rasa_knowledge}
     volumes:
       - pg_data:/var/lib/postgresql/data
+    networks:
+      - data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U rasa_admin -d rasa_knowledge"]
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
 
   redis:
     image: redis:7
     restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD 必須在 .env 設定}
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    volumes:
+      - redis_data:/data
+    networks:
+      - data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 5s
 
   backend:
     build:
@@ -32,8 +48,14 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     env_file: .env
+    environment:
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET 必須在 .env 設定}
     ports:
+      # 僅 dev 環境需要對外暴露；production 應由 frontend nginx 反代
       - "8000:8000"
+    networks:
+      - app
+      - data
     depends_on:
       db:
         condition: service_healthy
@@ -53,15 +75,22 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET 必須在 .env 設定}
       PYTHONPATH: /app   # 確保 celery prefork 子程序能 import api.*
     command: celery -A tasks.celery_app worker --concurrency=2 --loglevel=info
+    healthcheck:
+      # celery worker 不開 HTTP 8000，停用 backend image 繼承來的 HEALTHCHECK
+      disable: true
     volumes:
       - ./scripts:/opt/scripts:ro
       # 專案根目錄（ingest_kb.py 所在位置）→ 容器內 /opt/project
-      - D:/mini_test:/opt/project:ro
-      # TXT 輸出目錄（D:\SAP）→ 容器內 /opt/sap（需可寫）
-      - D:/SAP:/opt/sap:rw
+      - ${PROJECT_ROOT:-.}:/opt/project:ro
+      # TXT 輸出目錄（host 真實磁碟）→ 容器內 /opt/sap（需可寫）
+      - ${TXT_OUTPUT_HOST_PATH:?TXT_OUTPUT_HOST_PATH 必須在 .env 設定}:/opt/sap:rw
       - rasa_docs:/opt/rasa_docs
+    networks:
+      - app
+      - data
     depends_on:
       db:
         condition: service_healthy
@@ -77,11 +106,21 @@ services:
     restart: unless-stopped
     ports:
       - "5173:8080"
+    networks:
+      - app
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/ >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
 volumes:
   pg_data:
+  redis_data:
 
   rasa_docs:
     driver: local

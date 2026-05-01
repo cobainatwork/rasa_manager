@@ -1,0 +1,9 @@
+-r requirements.txt
+
+# 測試與工具鏈（僅本機與 CI 安裝；production 容器不安裝）
+pytest==9.0.3
+pytest-cov==7.1.0
+ruff>=0.6.0
+mypy>=1.11.0
+bandit>=1.7.9
+pip-audit>=2.7.3

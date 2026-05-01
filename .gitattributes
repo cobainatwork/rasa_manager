@@ -1,6 +1,9 @@
 # 強制所有文字檔以 LF 儲存，避免 Windows CRLF 污染 Linux 容器
 * text=auto eol=lf
 
+# Shell scripts 必須維持 LF（容器執行所需）
+*.sh text eol=lf
+
 # 明確指定二進位檔，不轉換換行
 *.png binary
 *.jpg binary

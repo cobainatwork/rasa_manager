@@ -15,10 +15,17 @@ from jose import JWTError, jwt
 
 _jwt_secret_raw = os.environ.get("JWT_SECRET", "")
 _UNSAFE_JWT_DEFAULTS = {"", "changeme-please-set-env", "change_me", "secret"}
+_MIN_JWT_SECRET_LENGTH = 32
 if _jwt_secret_raw in _UNSAFE_JWT_DEFAULTS:
     raise RuntimeError(
         "JWT_SECRET 環境變數未設定或使用不安全的預設值，服務拒絕啟動。"
         "請設定至少 64 字元的隨機字串（建議使用：openssl rand -hex 32）。"
+    )
+if len(_jwt_secret_raw) < _MIN_JWT_SECRET_LENGTH:
+    raise RuntimeError(
+        f"JWT_SECRET 長度不足（目前 {len(_jwt_secret_raw)} 字元，最少需 "
+        f"{_MIN_JWT_SECRET_LENGTH} 字元），服務拒絕啟動。"
+        "建議使用：openssl rand -hex 32 產生 64 字元隨機字串。"
     )
 
 SECRET_KEY: str = _jwt_secret_raw

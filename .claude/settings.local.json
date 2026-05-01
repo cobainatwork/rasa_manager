@@ -100,8 +100,17 @@
       "Bash(python -m pytest *)",
       "Bash(python -m bandit -r api/ tasks.py main.py -ll)",
       "Bash(python -m bandit *)",
-      "Bash(python -m ruff check api/routes/sync.py)",
-      "Bash(python -m bandit api/routes/sync.py -ll)"
+      "Bash(git *)",
+      "Bash(python -c *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8000/api/v1/health)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(grep -v \":0$\")",
+      "Bash(PYTHONUTF8=1 python -m *)",
+      "Bash(PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -X utf8 -m mypy api/)",
+      "Bash(xxd)",
+      "Bash(echo \"---exit:$?---\")",
+      "Bash(echo *)",
+      "Bash(curl *)"
     ]
   }
 }

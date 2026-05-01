@@ -5,6 +5,10 @@ __pycache__/
 .venv/
 *.egg-info/
 .pytest_cache/
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.coverage
 coverage/
 .coverage
 htmlcov/
@@ -14,5 +18,6 @@ data/volumes/
 .vscode/
 .idea/
 *.swp
+*.log
 .DS_Store
 Thumbs.db
