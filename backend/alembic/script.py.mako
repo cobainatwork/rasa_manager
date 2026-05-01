@@ -4,6 +4,7 @@ Revision ID: ${up_revision}
 Revises: ${down_revision | comma,n}
 Create Date: ${create_date}
 
+# TODO: 以繁體中文補寫本次變更原因與範圍
 """
 from __future__ import annotations
 from typing import Sequence, Union
