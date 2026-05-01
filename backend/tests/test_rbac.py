@@ -13,73 +13,51 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-from tests.conftest import AGENT_ID
+from tests.conftest import AGENT_ID, build_agent_access_query_se
 
 
-def _agent_mock() -> MagicMock:
-    a = MagicMock()
-    a.id = AGENT_ID
-    return a
-
-
-def _role_mock(role: str) -> MagicMock:
-    r = MagicMock()
-    r.role = role
-    return r
-
-
-def _make_query_se(*first_returns: object) -> object:
-    """
-    產生 side_effect 函式，依呼叫順序回傳不同的 first()。
-    first_returns[0] 供第一次 db.query(...) 使用，以此類推。
-    """
-    counter = [0]
-
-    def query_se(model: object) -> MagicMock:
-        q = MagicMock()
-        idx = counter[0]
-        counter[0] += 1
-        value = first_returns[idx] if idx < len(first_returns) else None
-        q.filter.return_value.first.return_value = value
-        return q
-
-    return query_se
+@pytest.fixture
+def _agent_mock(agent_factory):
+    """檔內 fixture，回傳建立極簡 Agent mock 的 callable。"""
+    def _make() -> MagicMock:
+        return agent_factory()
+    return _make
 
 
 # ── require_agent_access ──────────────────────────────────────────────────────
 
 class TestRequireAgentAccess:
     def test_superadmin_always_allowed(
-        self, mock_db: MagicMock, superadmin_user: MagicMock
+        self, mock_db: MagicMock, superadmin_user: MagicMock, _agent_mock
     ) -> None:
         from api.dependencies import require_agent_access
 
-        mock_db.query.side_effect = _make_query_se(_agent_mock())
+        mock_db.query.side_effect = build_agent_access_query_se(
+            agent=_agent_mock()
+        )
         agent, role = require_agent_access(AGENT_ID, superadmin_user, mock_db)
         assert agent is not None
         assert role is None  # superadmin 無角色
 
     def test_editor_with_role_allowed(
-        self, mock_db: MagicMock, editor_user: MagicMock
+        self, mock_db: MagicMock, editor_user: MagicMock, _agent_mock
     ) -> None:
         from api.dependencies import require_agent_access
 
-        mock_db.query.side_effect = _make_query_se(
-            _agent_mock(),           # 第一次查詢：Agent
-            _role_mock("editor"),    # 第二次查詢：UserAgentRole
+        mock_db.query.side_effect = build_agent_access_query_se(
+            agent=_agent_mock(), uar_role="editor"
         )
         agent, role = require_agent_access(AGENT_ID, editor_user, mock_db)
         assert role == "editor"
 
     def test_user_without_role_forbidden(
-        self, mock_db: MagicMock, editor_user: MagicMock
+        self, mock_db: MagicMock, editor_user: MagicMock, _agent_mock
     ) -> None:
         from api.dependencies import require_agent_access
         from fastapi import HTTPException
 
-        mock_db.query.side_effect = _make_query_se(
-            _agent_mock(),  # Agent 存在
-            None,           # UserAgentRole 不存在 → 403
+        mock_db.query.side_effect = build_agent_access_query_se(
+            agent=_agent_mock(), uar_role=None  # UAR 不存在 → 403
         )
 
         with pytest.raises(HTTPException) as exc_info:
@@ -93,7 +71,9 @@ class TestRequireAgentAccess:
         from api.dependencies import require_agent_access
         from fastapi import HTTPException
 
-        mock_db.query.side_effect = _make_query_se(None)  # Agent 不存在
+        mock_db.query.side_effect = build_agent_access_query_se(
+            agent=None  # Agent 不存在 → 404
+        )
 
         with pytest.raises(HTTPException) as exc_info:
             require_agent_access(AGENT_ID, editor_user, mock_db)
@@ -105,34 +85,34 @@ class TestRequireAgentAccess:
 
 class TestRequireReviewerOrSuperadmin:
     def test_superadmin_passes(
-        self, mock_db: MagicMock, superadmin_user: MagicMock
+        self, mock_db: MagicMock, superadmin_user: MagicMock, _agent_mock
     ) -> None:
         from api.dependencies import require_reviewer_or_superadmin
 
-        mock_db.query.side_effect = _make_query_se(_agent_mock())
+        mock_db.query.side_effect = build_agent_access_query_se(
+            agent=_agent_mock()
+        )
         require_reviewer_or_superadmin(AGENT_ID, superadmin_user, mock_db)
 
     def test_reviewer_passes(
-        self, mock_db: MagicMock, reviewer_user: MagicMock
+        self, mock_db: MagicMock, reviewer_user: MagicMock, _agent_mock
     ) -> None:
         from api.dependencies import require_reviewer_or_superadmin
 
-        mock_db.query.side_effect = _make_query_se(
-            _agent_mock(),
-            _role_mock("reviewer"),
+        mock_db.query.side_effect = build_agent_access_query_se(
+            agent=_agent_mock(), uar_role="reviewer"
         )
         agent, role = require_reviewer_or_superadmin(AGENT_ID, reviewer_user, mock_db)
         assert role == "reviewer"
 
     def test_editor_forbidden(
-        self, mock_db: MagicMock, editor_user: MagicMock
+        self, mock_db: MagicMock, editor_user: MagicMock, _agent_mock
     ) -> None:
         from api.dependencies import require_reviewer_or_superadmin
         from fastapi import HTTPException
 
-        mock_db.query.side_effect = _make_query_se(
-            _agent_mock(),
-            _role_mock("editor"),
+        mock_db.query.side_effect = build_agent_access_query_se(
+            agent=_agent_mock(), uar_role="editor"
         )
 
         with pytest.raises(HTTPException) as exc_info:

@@ -8,10 +8,11 @@ from __future__ import annotations
 import uuid
 from unittest.mock import MagicMock
 
+import pytest
 
 from api.routes.categories import _build_tree, _collect_descendants
+from tests.conftest import AGENT_ID
 
-AGENT_ID = uuid.UUID("00000000-0000-0000-0000-000000000010")
 CAT_ID   = uuid.UUID("00000000-0000-0000-0000-000000000020")
 CHILD_ID = uuid.UUID("00000000-0000-0000-0000-000000000021")
 
@@ -33,11 +34,12 @@ def _cat_mock(
     return c
 
 
-def _agent_mock() -> MagicMock:
-    a = MagicMock()
-    a.id = AGENT_ID
-    a.name = "TestAgent"
-    return a
+@pytest.fixture
+def _agent_mock(agent_factory):
+    """檔內 fixture，回傳建立 Agent mock 的 callable。"""
+    def _make() -> MagicMock:
+        return agent_factory(name="TestAgent")
+    return _make
 
 
 def _make_superadmin_se(
@@ -67,11 +69,11 @@ def _make_superadmin_se(
 # ─── _build_tree ──────────────────────────────────────────────────────────────
 
 class TestBuildTree:
-    def test_empty_list_returns_empty(self):
+    def test_empty_list_returns_empty(self) -> None:
         assert _build_tree([]) == []
 
-    def test_single_root_node(self):
-        rows = [
+    def test_single_root_node(self) -> None:
+        rows: list[dict] = [
             {
                 "id": CAT_ID, "parent_id": None, "name": "Root",
                 "sort_order": 0, "children": [], "created_at": None, "updated_at": None,
@@ -82,8 +84,8 @@ class TestBuildTree:
         assert result[0]["name"] == "Root"
         assert result[0]["children"] == []
 
-    def test_nested_tree_parent_child(self):
-        rows = [
+    def test_nested_tree_parent_child(self) -> None:
+        rows: list[dict] = [
             {
                 "id": CAT_ID, "parent_id": None, "name": "Parent",
                 "sort_order": 0, "children": [], "created_at": None, "updated_at": None,
@@ -99,10 +101,10 @@ class TestBuildTree:
         assert len(result[0]["children"]) == 1
         assert result[0]["children"][0]["name"] == "Child"
 
-    def test_sort_order_ascending(self):
+    def test_sort_order_ascending(self) -> None:
         id_a = uuid.uuid4()
         id_b = uuid.uuid4()
-        rows = [
+        rows: list[dict] = [
             {
                 "id": id_b, "parent_id": None, "name": "B",
                 "sort_order": 2, "children": [], "created_at": None, "updated_at": None,
@@ -116,8 +118,8 @@ class TestBuildTree:
         assert result[0]["name"] == "A"
         assert result[1]["name"] == "B"
 
-    def test_multiple_root_nodes(self):
-        rows = [
+    def test_multiple_root_nodes(self) -> None:
+        rows: list[dict] = [
             {
                 "id": uuid.uuid4(), "parent_id": None, "name": f"Node{i}",
                 "sort_order": i, "children": [], "created_at": None, "updated_at": None,
@@ -131,7 +133,7 @@ class TestBuildTree:
 # ─── _collect_descendants ─────────────────────────────────────────────────────
 
 class TestCollectDescendants:
-    def test_no_children_returns_empty_set(self):
+    def test_no_children_returns_empty_set(self) -> None:
         db = MagicMock()
         db.query.return_value.filter.return_value.all.return_value = []
         result = _collect_descendants(db, CAT_ID, AGENT_ID)
@@ -182,7 +184,7 @@ class TestCollectDescendants:
 # ─── list_categories ──────────────────────────────────────────────────────────
 
 class TestListCategories:
-    def test_superadmin_returns_200_with_tree(self, client_superadmin, mock_db):
+    def test_superadmin_returns_200_with_tree(self, client_superadmin, mock_db, _agent_mock):
         agent = _agent_mock()
         cat = _cat_mock()
         counter = [0]
@@ -203,7 +205,7 @@ class TestListCategories:
         assert data["success"] is True
         assert isinstance(data["data"], list)
 
-    def test_empty_returns_empty_tree(self, client_superadmin, mock_db):
+    def test_empty_returns_empty_tree(self, client_superadmin, mock_db, _agent_mock):
         counter = [0]
 
         def se(*args):
@@ -220,12 +222,12 @@ class TestListCategories:
         assert resp.status_code == 200
         assert resp.json()["data"] == []
 
-    def test_agent_not_found_returns_404(self, client_superadmin, mock_db):
+    def test_agent_not_found_returns_404(self, client_superadmin, mock_db) -> None:
         mock_db.query.return_value.filter.return_value.first.return_value = None
         resp = client_superadmin.get(f"/api/v1/agents/{AGENT_ID}/categories")
         assert resp.status_code == 404
 
-    def test_editor_with_role_returns_200(self, client_editor, mock_db):
+    def test_editor_with_role_returns_200(self, client_editor, mock_db, _agent_mock):
         agent = _agent_mock()
         counter = [0]
 
@@ -246,7 +248,7 @@ class TestListCategories:
         resp = client_editor.get(f"/api/v1/agents/{AGENT_ID}/categories")
         assert resp.status_code == 200
 
-    def test_editor_no_role_returns_403(self, client_editor, mock_db):
+    def test_editor_no_role_returns_403(self, client_editor, mock_db, _agent_mock):
         agent = _agent_mock()
         counter = [0]
 
@@ -267,7 +269,7 @@ class TestListCategories:
 # ─── create_category ──────────────────────────────────────────────────────────
 
 class TestCreateCategory:
-    def test_superadmin_creates_root_category(self, client_superadmin, mock_db):
+    def test_superadmin_creates_root_category(self, client_superadmin, mock_db, _agent_mock) -> None:
         mock_db.query.return_value.filter.return_value.first.return_value = _agent_mock()
         mock_db.refresh.return_value = None
         resp = client_superadmin.post(
@@ -277,7 +279,7 @@ class TestCreateCategory:
         assert resp.status_code == 201
         assert resp.json()["success"] is True
 
-    def test_superadmin_creates_child_category(self, client_superadmin, mock_db):
+    def test_superadmin_creates_child_category(self, client_superadmin, mock_db, _agent_mock):
         counter = [0]
 
         def se(*args):
@@ -297,7 +299,7 @@ class TestCreateCategory:
         )
         assert resp.status_code == 201
 
-    def test_parent_not_found_returns_404(self, client_superadmin, mock_db):
+    def test_parent_not_found_returns_404(self, client_superadmin, mock_db, _agent_mock):
         counter = [0]
 
         def se(*args):
@@ -317,7 +319,7 @@ class TestCreateCategory:
         assert resp.status_code == 404
         assert resp.json()["detail"]["code"] == "NOT_FOUND"
 
-    def test_editor_returns_403(self, client_editor, mock_db):
+    def test_editor_returns_403(self, client_editor, mock_db, _agent_mock):
         """Editor 角色無法建立分類（需要 reviewer 以上）。"""
         counter = [0]
 
@@ -339,7 +341,7 @@ class TestCreateCategory:
         )
         assert resp.status_code == 403
 
-    def test_missing_name_returns_422(self, client_superadmin, mock_db):
+    def test_missing_name_returns_422(self, client_superadmin, mock_db, _agent_mock) -> None:
         mock_db.query.return_value.filter.return_value.first.return_value = _agent_mock()
         resp = client_superadmin.post(
             f"/api/v1/agents/{AGENT_ID}/categories",
@@ -351,7 +353,7 @@ class TestCreateCategory:
 # ─── update_category ──────────────────────────────────────────────────────────
 
 class TestUpdateCategory:
-    def test_update_name_succeeds(self, client_superadmin, mock_db):
+    def test_update_name_succeeds(self, client_superadmin, mock_db, _agent_mock):
         cat = _cat_mock()
         counter = [0]
 
@@ -373,7 +375,7 @@ class TestUpdateCategory:
         assert resp.status_code == 200
         assert resp.json()["success"] is True
 
-    def test_update_sort_order_succeeds(self, client_superadmin, mock_db):
+    def test_update_sort_order_succeeds(self, client_superadmin, mock_db, _agent_mock):
         cat = _cat_mock()
         counter = [0]
 
@@ -394,7 +396,7 @@ class TestUpdateCategory:
         )
         assert resp.status_code == 200
 
-    def test_category_not_found_returns_404(self, client_superadmin, mock_db):
+    def test_category_not_found_returns_404(self, client_superadmin, mock_db, _agent_mock):
         counter = [0]
 
         def se(*args):
@@ -413,7 +415,7 @@ class TestUpdateCategory:
         )
         assert resp.status_code == 404
 
-    def test_editor_returns_403(self, client_editor, mock_db):
+    def test_editor_returns_403(self, client_editor, mock_db, _agent_mock):
         counter = [0]
 
         def se(*args):
@@ -438,7 +440,7 @@ class TestUpdateCategory:
 # ─── delete_category ──────────────────────────────────────────────────────────
 
 class TestDeleteCategory:
-    def test_delete_empty_category_returns_204(self, client_superadmin, mock_db):
+    def test_delete_empty_category_returns_204(self, client_superadmin, mock_db, _agent_mock):
         cat = _cat_mock()
         counter = [0]
 
@@ -465,7 +467,7 @@ class TestDeleteCategory:
         )
         assert resp.status_code == 204
 
-    def test_category_not_found_returns_404(self, client_superadmin, mock_db):
+    def test_category_not_found_returns_404(self, client_superadmin, mock_db, _agent_mock):
         counter = [0]
 
         def se(*args):
@@ -483,7 +485,7 @@ class TestDeleteCategory:
         )
         assert resp.status_code == 404
 
-    def test_has_faq_returns_422(self, client_superadmin, mock_db):
+    def test_has_faq_returns_422(self, client_superadmin, mock_db, _agent_mock):
         cat = _cat_mock()
         faq_mock = MagicMock()  # 代表 KnowledgeItem
         counter = [0]
@@ -511,7 +513,7 @@ class TestDeleteCategory:
         assert resp.status_code == 422
         assert resp.json()["detail"]["code"] == "UNPROCESSABLE"
 
-    def test_editor_returns_403(self, client_editor, mock_db):
+    def test_editor_returns_403(self, client_editor, mock_db, _agent_mock):
         counter = [0]
 
         def se(*args):
@@ -530,3 +532,39 @@ class TestDeleteCategory:
             f"/api/v1/agents/{AGENT_ID}/categories/{CAT_ID}"
         )
         assert resp.status_code == 403
+
+
+# ── Regression: I5 (_collect_descendants must use recursive CTE on PG) ──────
+
+class TestCollectDescendantsRecursiveCTERegression:
+    """Regression: I5 (_collect_descendants 在 PostgreSQL 走 recursive CTE)."""
+
+    def test_postgresql_dialect_uses_cte(self) -> None:
+        from typing import Any
+
+        db = MagicMock()
+        db.get_bind.return_value.dialect.name = "postgresql"
+
+        executed_sql: list[str] = []
+
+        def exec_side_effect(stmt: Any, params: Any = None) -> Any:
+            executed_sql.append(str(stmt))
+            res = MagicMock()
+            res.__iter__ = lambda self: iter([])  # type: ignore[misc]
+            return res
+
+        db.execute.side_effect = exec_side_effect
+
+        result = _collect_descendants(db, uuid.uuid4(), AGENT_ID)
+        assert result == set()
+        assert len(executed_sql) == 1
+        assert "WITH RECURSIVE" in executed_sql[0].upper()
+
+    def test_non_postgresql_falls_back_to_recursion(self) -> None:
+        db = MagicMock()
+        db.get_bind.return_value.dialect.name = "sqlite"
+        db.query.return_value.filter.return_value.all.return_value = []
+
+        result = _collect_descendants(db, uuid.uuid4(), AGENT_ID)
+        assert result == set()
+        db.execute.assert_not_called()

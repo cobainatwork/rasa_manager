@@ -20,7 +20,7 @@ os.environ.setdefault(
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 
 import uuid
-from typing import Generator
+from typing import Callable, Generator
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -47,10 +47,11 @@ HASHED_PASSWORD = _test_pwd.hash(PLAIN_PASSWORD)
 
 # ── Redis mock（全域套用，阻止所有測試真正連線 Redis）────────────────────────
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def mock_redis() -> Generator[MagicMock, None, None]:
+    """opt-in：需要 assert redis 行為或避免真實連線的測試明確注入。"""
     r = MagicMock()
-    r.get.return_value = None       # 無限速限制
+    r.get.return_value = None
     r.incr.return_value = 1
     r.expire.return_value = True
     r.setex.return_value = True
@@ -63,6 +64,8 @@ def mock_redis() -> Generator[MagicMock, None, None]:
         yield r
 
 
+
+
 # ── DB mock ───────────────────────────────────────────────────────────────────
 
 @pytest.fixture
@@ -72,7 +75,7 @@ def mock_db() -> MagicMock:
 
 # ── 使用者 fixtures ────────────────────────────────────────────────────────────
 
-def _make_user(uid: uuid.UUID, username: str, is_superadmin: bool) -> MagicMock:
+def _user_factory(uid: uuid.UUID, username: str, is_superadmin: bool) -> MagicMock:
     u = MagicMock()
     u.id = uid
     u.username = username
@@ -84,17 +87,17 @@ def _make_user(uid: uuid.UUID, username: str, is_superadmin: bool) -> MagicMock:
 
 @pytest.fixture
 def superadmin_user() -> MagicMock:
-    return _make_user(SUPERADMIN_ID, "admin", is_superadmin=True)
+    return _user_factory(SUPERADMIN_ID, "admin", is_superadmin=True)
 
 
 @pytest.fixture
 def editor_user() -> MagicMock:
-    return _make_user(EDITOR_ID, "editor", is_superadmin=False)
+    return _user_factory(EDITOR_ID, "editor", is_superadmin=False)
 
 
 @pytest.fixture
 def reviewer_user() -> MagicMock:
-    return _make_user(REVIEWER_ID, "reviewer", is_superadmin=False)
+    return _user_factory(REVIEWER_ID, "reviewer", is_superadmin=False)
 
 
 # ── TestClient factories ───────────────────────────────────────────────────────
@@ -132,3 +135,95 @@ def client_no_auth(mock_db: MagicMock) -> Generator[TestClient, None, None]:
     app.dependency_overrides[get_db] = lambda: mock_db
     yield TestClient(app, raise_server_exceptions=False)
     app.dependency_overrides.clear()
+
+
+# ── Agent mock factory ────────────────────────────────────────────────────────
+
+@pytest.fixture
+def agent_factory():
+    """建立 Agent MagicMock 的 factory，可覆寫任意欄位。
+
+    預設值適用於大多數測試；對 Rasa 測試可覆寫 rasa_rest_url、
+    對 ingestion 測試可覆寫 txt_output_path / ingest_script_path。
+    """
+    def _factory(
+        agent_id: uuid.UUID = AGENT_ID,
+        name: str = "TestAgent",
+        txt_output_path: str = "/opt/rasa_docs/test",
+        rasa_rest_url: str | None = "http://rasa:5005/webhooks/rest/webhook",
+        ingest_script_path: str | None = "ingest.py",
+        **kwargs,
+    ) -> MagicMock:
+        a = MagicMock()
+        a.id = agent_id
+        a.name = name
+        a.txt_output_path = txt_output_path
+        a.rasa_rest_url = rasa_rest_url
+        a.ingest_script_path = ingest_script_path
+        for k, v in kwargs.items():
+            setattr(a, k, v)
+        return a
+    return _factory
+
+
+# ── 共用 query.side_effect helper（require_agent_access 序列）─────────────────
+
+def build_agent_access_query_se(
+    *,
+    agent: MagicMock,
+    uar_role: str | None = None,
+    extra_results: list | None = None,
+) -> Callable:
+    """模擬 require_agent_access 的 query 序：第 0 次回 Agent，第 1 次回 UAR。
+
+    Args:
+        agent: Agent MagicMock（通常由 agent_factory 建立）
+        uar_role: UAR 角色字串
+            - None: 沒有 UAR（superadmin 路徑或無權限）
+            - 'reviewer' / 'editor': 一般使用者
+        extra_results: 第 2 次起的查詢結果（依序對應）
+            每個元素若為 list 則該次回傳 .all() 結果；
+            若為單一物件則回傳 .first() 結果；
+            若為 None 則回傳 None（first）或 [] (all)
+
+    範例：
+        # 純 require_agent_access（無後續查詢）
+        mock_db.query.side_effect = build_agent_access_query_se(
+            agent=agent, uar_role='reviewer')
+
+        # require_agent_access + 後續取 SyncLog list 與 user list
+        mock_db.query.side_effect = build_agent_access_query_se(
+            agent=agent, uar_role=None,
+            extra_results=[logs, users])
+    """
+    counter = [0]
+    extras = extra_results or []
+
+    def se(*args, **kwargs):  # noqa: ARG001
+        q = MagicMock()
+        idx = counter[0]
+        counter[0] += 1
+
+        if idx == 0:
+            q.filter.return_value.first.return_value = agent
+        elif idx == 1:
+            if uar_role is None:
+                q.filter.return_value.first.return_value = None
+            else:
+                uar = MagicMock()
+                uar.role = uar_role
+                q.filter.return_value.first.return_value = uar
+        else:
+            extra_idx = idx - 2
+            if extra_idx < len(extras):
+                result = extras[extra_idx]
+                if isinstance(result, list):
+                    q.filter.return_value.all.return_value = result
+                elif result is None:
+                    q.filter.return_value.first.return_value = None
+                    q.filter.return_value.all.return_value = []
+                else:
+                    q.filter.return_value.first.return_value = result
+        return q
+
+    return se
