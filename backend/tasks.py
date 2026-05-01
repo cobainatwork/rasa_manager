@@ -180,18 +180,20 @@ def run_ingestion_sync(self, agent_id: str, sync_log_id: str) -> None:  # type: 
             sync_log_id=sync_log_id,
             error=str(exc),
         )
-        # 在 retry 前不可寫入 'failed'：retry 成功的下一次執行會將狀態改回 running/completed，
-        # 但中間若觀測 DB 仍會看到錯誤的最終狀態。
-        # 僅在達到最大 retry 次數後才把 sync_log 標記為 failed（最終狀態）。
-        try:
-            countdown = 10 * (2 ** self.request.retries)
-            raise self.retry(exc=exc, countdown=countdown)
-        except self.MaxRetriesExceededError:
+        # B1 修法：先判斷 retry 是否已用盡，再決定是否標 failed。
+        # self.retry(exc=...) 用盡 max_retries 時會「重拋原本 exc」，不是 MaxRetriesExceededError，
+        # 所以不能單靠 try/except MaxRetriesExceededError 攔截。
+        max_retries = self.max_retries if self.max_retries is not None else 3
+        if self.request.retries >= max_retries:
+            # 已是最後一次失敗，寫入終態
             if sync_log:
                 sync_log.status = "failed"
-                # 截斷至 1000 字元防 DB 欄位爆量；保留具體錯誤類型與訊息
                 sync_log.stderr = str(exc)[:1000]
                 sync_log.finished_at = datetime.now(timezone.utc)
                 db.commit()
+            raise  # 讓 Celery 也標記任務為 FAILURE
+        # 仍有 retry 額度，排程重試（中間狀態維持 running）
+        countdown = 10 * (2 ** self.request.retries)
+        raise self.retry(exc=exc, countdown=countdown)
     finally:
         db.close()

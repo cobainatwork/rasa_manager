@@ -10,7 +10,10 @@ interface Props {
 }
 
 export function CategoryTree({ result }: Props) {
-  const { tree, loading, selectedId, select, rename, addChild, remove } = result
+  const {
+    tree, loading, selectedId, pendingRenameId,
+    select, rename, addChild, remove, clearPendingRename,
+  } = result
 
   return (
     <aside className="h-full bg-surface flex flex-col">
@@ -40,10 +43,12 @@ export function CategoryTree({ result }: Props) {
                   node={node}
                   depth={0}
                   selectedId={selectedId}
+                  pendingRenameId={pendingRenameId}
                   onSelect={select}
                   onRename={rename}
                   onAddChild={addChild}
                   onRemove={remove}
+                  onClearPendingRename={clearPendingRename}
                 />
               ))}
             </ul>

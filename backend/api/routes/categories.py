@@ -9,6 +9,7 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from api.database.models import Category, KnowledgeItem, User
@@ -147,7 +148,14 @@ def create_category(
         sort_order=body.sort_order,
     )
     db.add(cat)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "DUPLICATE_NAME", "message": "同層級已有相同名稱的分類"},
+        ) from None
     db.refresh(cat)
     return {
         "success": True,
@@ -194,7 +202,14 @@ def update_category(
     if "parent_id" in body.model_fields_set:
         cat.parent_id = body.parent_id
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "DUPLICATE_NAME", "message": "同層級已有相同名稱的分類"},
+        ) from None
     db.refresh(cat)
     return {
         "success": True,

@@ -14,20 +14,24 @@ interface Props {
   node: CategoryNode
   depth: number
   selectedId: string | null
+  pendingRenameId: string | null
   onSelect: (id: string) => void
   onRename: (id: string, name: string) => void
   onAddChild: (parentId: string) => void
   onRemove: (id: string) => void
+  onClearPendingRename: () => void
 }
 
 export function CategoryTreeNode({
   node,
   depth,
   selectedId,
+  pendingRenameId,
   onSelect,
   onRename,
   onAddChild,
   onRemove,
+  onClearPendingRename,
 }: Props) {
   const [expanded, setExpanded] = useState(true)
   const [editing, setEditing] = useState(false)
@@ -36,6 +40,14 @@ export function CategoryTreeNode({
 
   const isSelected = selectedId === node.id
   const hasChildren = node.children.length > 0
+
+  // 新建分類後自動進入 rename 模式（解決：使用者點「新增子目錄」看不出反應而連按）
+  useEffect(() => {
+    if (pendingRenameId === node.id) {
+      setEditing(true)
+      onClearPendingRename()
+    }
+  }, [pendingRenameId, node.id, onClearPendingRename])
 
   useEffect(() => {
     if (editing && inputRef.current) {
@@ -133,10 +145,12 @@ export function CategoryTreeNode({
               node={child}
               depth={depth + 1}
               selectedId={selectedId}
+              pendingRenameId={pendingRenameId}
               onSelect={onSelect}
               onRename={onRename}
               onAddChild={onAddChild}
               onRemove={onRemove}
+              onClearPendingRename={onClearPendingRename}
             />
           ))}
         </ul>

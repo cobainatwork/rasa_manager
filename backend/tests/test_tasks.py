@@ -291,8 +291,7 @@ class TestCeleryRetryRegression:
         )
 
     def test_max_retries_exceeded_writes_failed(self) -> None:
-        from celery.exceptions import MaxRetriesExceededError
-
+        """retries 達上限時應標記 failed 並重拋（不可吞錯）。"""
         sync_log = self._make_sync_log()
         agent = self._make_agent()
         faq = self._make_faq()
@@ -302,16 +301,19 @@ class TestCeleryRetryRegression:
             patch(self.SESSION_PATCH, return_value=db),
             patch("builtins.open", mock_open()),
             patch("os.makedirs"),
-            patch("subprocess.run") as mock_run,
-            patch.object(
-                run_ingestion_sync,
-                "retry",
-                side_effect=MaxRetriesExceededError(),
-            ),
+            patch("subprocess.Popen") as mock_popen,
         ):
-            mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="boom")
-            run_ingestion_sync.apply(args=[str(AGENT_ID), str(sync_log.id)])
+            mock_proc = MagicMock()
+            mock_proc.communicate.return_value = ("", "boom")
+            mock_proc.returncode = 1
+            mock_popen.return_value = mock_proc
+            # retries=3 模擬已用盡（max_retries=3）
+            result = run_ingestion_sync.apply(
+                args=[str(AGENT_ID), str(sync_log.id)],
+                retries=3,
+            )
 
+        assert result.failed(), "達 max_retries 時 task 應標記為失敗"
         assert sync_log.status == "failed"
         assert sync_log.finished_at is not None
 
@@ -333,8 +335,6 @@ class TestSubprocessNarrowExceptRegression:
         )
 
     def test_max_retries_stderr_contains_specific_message(self, _regression_make_agent) -> None:
-        from celery.exceptions import MaxRetriesExceededError
-
         sync_log = _b23_make_sync_log()
         agent = _regression_make_agent()
         faq = MagicMock()
@@ -353,12 +353,11 @@ class TestSubprocessNarrowExceptRegression:
             patch("builtins.open", mock_open()),
             patch("os.makedirs"),
             patch("subprocess.Popen", side_effect=popen_side_effect),
-            patch.object(
-                run_ingestion_sync, "retry",
-                side_effect=MaxRetriesExceededError(),
-            ),
         ):
-            run_ingestion_sync.apply(args=[str(AGENT_ID), str(sync_log.id)])
+            # retries=3 模擬已達 max_retries
+            run_ingestion_sync.apply(
+                args=[str(AGENT_ID), str(sync_log.id)], retries=3,
+            )
 
         assert sync_log.status == "failed"
         assert sync_log.stderr is not None
@@ -367,8 +366,6 @@ class TestSubprocessNarrowExceptRegression:
         assert len(sync_log.stderr) <= 1000
 
     def test_stderr_truncated_to_1000_chars(self, _regression_make_agent) -> None:
-        from celery.exceptions import MaxRetriesExceededError
-
         sync_log = _b23_make_sync_log()
         agent = _regression_make_agent()
         faq = MagicMock()
@@ -387,12 +384,10 @@ class TestSubprocessNarrowExceptRegression:
             patch("builtins.open", mock_open()),
             patch("os.makedirs"),
             patch("subprocess.Popen", side_effect=popen_side_effect),
-            patch.object(
-                run_ingestion_sync, "retry",
-                side_effect=MaxRetriesExceededError(),
-            ),
         ):
-            run_ingestion_sync.apply(args=[str(AGENT_ID), str(sync_log.id)])
+            run_ingestion_sync.apply(
+                args=[str(AGENT_ID), str(sync_log.id)], retries=3,
+            )
 
         assert sync_log.stderr is not None
         assert len(sync_log.stderr) == 1000
@@ -607,8 +602,6 @@ class TestIngestScriptMissingQdrantUrl:
     SESSION_PATCH = "api.database.session.SessionLocal"
 
     def test_missing_qdrant_url_raises_runtime_error(self) -> None:
-        from celery.exceptions import MaxRetriesExceededError
-
         sync_log = MagicMock()
         sync_log.id = uuid.UUID("00000000-0000-0000-0000-0000000000c1")
         sync_log.status = "pending"
@@ -651,12 +644,11 @@ class TestIngestScriptMissingQdrantUrl:
             patch("builtins.open", mock_open()),
             patch("os.makedirs"),
             patch("subprocess.Popen") as mock_popen,
-            patch.object(
-                run_ingestion_sync, "retry",
-                side_effect=MaxRetriesExceededError(),
-            ),
         ):
-            run_ingestion_sync.apply(args=[str(AGENT_ID), str(sync_log.id)])
+            # retries=3 模擬已達 max_retries
+            run_ingestion_sync.apply(
+                args=[str(AGENT_ID), str(sync_log.id)], retries=3,
+            )
 
             # Popen 不應被呼叫，因為提早拋 RuntimeError
             assert not mock_popen.called

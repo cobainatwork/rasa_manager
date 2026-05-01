@@ -14,11 +14,13 @@ const baseResult = {
   flat: [],
   loading: false,
   selectedId: null,
+  pendingRenameId: null,
   select: vi.fn(),
   reload: vi.fn(),
   rename: vi.fn(),
   addChild: vi.fn(),
   remove: vi.fn(),
+  clearPendingRename: vi.fn(),
 }
 
 describe('CategoryTree', () => {
