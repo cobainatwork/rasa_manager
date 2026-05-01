@@ -37,9 +37,18 @@
    - `POSTGRES_PASSWORD`：PostgreSQL 密碼
    - `JWT_SECRET`：JWT 簽章用，至少 64 字元隨機字串
    - `REDIS_PASSWORD`：Redis 密碼
-   - `SEED_ADMIN_USERNAME` / `SEED_ADMIN_PASSWORD`：第一個 Superadmin 帳密（密碼需含大小寫與數字、至少 8 字元）
+   - `SEED_ADMIN_USERNAME` / `SEED_ADMIN_PASSWORD`：第一個 Superadmin 帳密
+     - **密碼必須符合**：8 字元以上、含大寫字母、含小寫字母、含數字（規格 §五.6）
+     - 違規時 seed 會 ERROR 結束，後續無法登入；必須改 `.env` 後再 `docker compose down -v && docker compose up -d` 重新 seed
    - `TXT_OUTPUT_HOST_PATH`：主機端 `.txt` 匯出目錄絕對路徑（會 bind mount 至 worker container）
+     - Windows 範例：`D:/SAP`
+     - Linux 範例：`/var/lib/rasa_docs`
+     - **此目錄必須事先存在於主機**，否則 docker compose up 會失敗
    - `CORS_ORIGIN`：前端 origin（預設 `http://localhost:5173`）
+   - `OPENAI_API_KEY`：OpenAI API Key（一鍵同步觸發 `ingest_kb.py` 時需要）
+     - 若僅測試 `.txt` 匯出而不接 Qdrant，可填占位字串如 `sk-test-placeholder`，並把 Agent 的 `ingest_script_path` 留空
+   - `QDRANT_URL`：Qdrant 向量資料庫 URL，例 `http://10.2.66.88:6333`
+     - 若僅測 `.txt` 不接 Qdrant，同樣可填占位 URL；Agent.ingest_script_path 留空即不會觸發
 2. 啟動全部服務：
 
    ```bash
@@ -127,6 +136,119 @@ docker compose up --build -d         # 啟動
 docker compose ps                    # 健康檢查
 docker compose logs -f backend       # 看後端日誌
 docker compose down -v               # 全部關閉並刪除 volume
+```
+
+## 主機路徑與容器路徑對應
+
+理解此表，可避免「容器內路徑」與「主機檔案位置」混淆造成的部署問題：
+
+| 容器內路徑 | 主機端對應位置 | 用途 |
+|------------|----------------|------|
+| `/opt/sap/*` | `${TXT_OUTPUT_HOST_PATH}/*` | **匯出 `.txt` 的最終位置**，可從主機直接讀寫 |
+| `/opt/rasa_docs/*` | `${TXT_OUTPUT_HOST_PATH}/*` | 同上（向後相容舊的 `txt_output_path` 設定） |
+| `/opt/scripts/*` | `./scripts/*` | 使用者 ingestion scripts，唯讀 |
+| `/opt/project/*` | `${PROJECT_ROOT}/*` | 整個專案根目錄，內含 `ingest_kb.py`，唯讀 |
+
+範例：Agent.txt_output_path 設為 `/opt/sap/agent1`，匯出後主機端可看到 `${TXT_OUTPUT_HOST_PATH}/agent1/faq_export.txt`。
+
+## 常見問題
+
+### Q1：admin 帳密錯誤無法登入
+
+通常是 seed 失敗導致 admin 沒被建立。檢查順序：
+
+```bash
+# 1. 看 seed log 找原因
+docker compose logs backend | grep -i "seed"
+
+# 2. 確認 DB 是否實際有 admin
+docker compose exec db psql -U rasa_admin -d rasa_knowledge -c "SELECT username, is_superadmin FROM users;"
+```
+
+最常見原因：`SEED_ADMIN_PASSWORD` 不符規格（§五.6）。改 `.env` 後須重建（清資料）：
+
+```bash
+docker compose down -v && docker compose up -d
+```
+
+### Q2：本機只想測 `.txt` 匯出，不接真實 Qdrant
+
+1. `.env` 的 `OPENAI_API_KEY` 與 `QDRANT_URL` 填占位字串即可（不會真連線）
+2. UI 進入 Agent 設定頁，把 `ingest_script_path` **留空**
+3. 觸發一鍵同步時，後端只寫 `.txt`、不呼叫 ingest，sync_log 立即標 `completed`
+4. `.txt` 會出現在 `${TXT_OUTPUT_HOST_PATH}/<txt_output_path 的最後一段>/faq_export.txt`
+
+### Q3：同步任務一直顯示「執行中」卡住
+
+通常是 `ingest_script_path` 設了但 `OPENAI_API_KEY` / `QDRANT_URL` 為占位值。診斷：
+
+```bash
+# 看 celery_worker 日誌找 RuntimeError
+docker compose logs celery_worker --tail 50
+
+# 看 sync_logs 狀態
+docker compose exec db psql -U rasa_admin -d rasa_knowledge -c \
+  "SELECT id, status, stderr FROM sync_logs ORDER BY created_at DESC LIMIT 3;"
+```
+
+修復：先按 Q2 步驟清空 `ingest_script_path`，把卡住的 sync_log 手動標 failed：
+
+```bash
+docker compose exec db psql -U rasa_admin -d rasa_knowledge -c \
+  "UPDATE sync_logs SET status='failed', finished_at=NOW() WHERE status='running';"
+```
+
+### Q4：docker compose up 失敗，提示 mount volume 失敗
+
+通常是 `.env` 的 `TXT_OUTPUT_HOST_PATH` 指向的目錄主機端不存在。先建立：
+
+```bash
+# Linux
+sudo mkdir -p /var/lib/rasa_docs
+sudo chown -R $USER:$USER /var/lib/rasa_docs
+
+# Windows PowerShell
+New-Item -ItemType Directory -Path "D:/SAP" -Force
+```
+
+## 部署到 Linux 主機（內部測試）
+
+### 主機端準備
+
+```bash
+sudo mkdir -p /opt/rasa_rag /var/lib/rasa_docs
+sudo chown -R $USER:$USER /var/lib/rasa_docs
+cd /opt/rasa_rag
+git clone <repo_url> .
+git checkout <branch>
+```
+
+### `.env` 設定（Linux 範例）
+
+```bash
+POSTGRES_USER=rasa_admin
+POSTGRES_PASSWORD=$(openssl rand -base64 24)
+POSTGRES_DB=rasa_knowledge
+REDIS_PASSWORD=$(openssl rand -base64 24)
+JWT_SECRET=$(openssl rand -hex 32)
+SEED_ADMIN_USERNAME=admin
+SEED_ADMIN_PASSWORD=Admin2026Pass            # 符合 §五.6 規則
+PROJECT_ROOT=/opt/rasa_rag
+TXT_OUTPUT_HOST_PATH=/var/lib/rasa_docs
+CORS_ORIGIN=http://<linux-host>:5173
+DATABASE_URL=postgresql://rasa_admin:<同 POSTGRES_PASSWORD>@db:5432/rasa_knowledge
+REDIS_URL=redis://:<同 REDIS_PASSWORD>@redis:6379/0
+OPENAI_API_KEY=sk-...
+QDRANT_URL=http://<qdrant-host>:6333
+```
+
+### 啟動與驗收
+
+```bash
+docker compose up --build -d
+docker compose ps
+curl http://localhost:8000/api/v1/health     # 期望 {"status":"ok",...}
+docker compose exec backend alembic current  # 期望 002 (head)
 ```
 
 ## 文件
