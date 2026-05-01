@@ -88,8 +88,9 @@ services:
       # 專案根目錄（ingest_kb.py 所在位置）→ 容器內 /opt/project
       - ${PROJECT_ROOT:-.}:/opt/project:ro
       # TXT 輸出目錄（host 真實磁碟）→ 容器內 /opt/sap（需可寫）
+      # 同一份 host 目錄掛兩個容器內路徑（向後相容舊的 txt_output_path 設定）
       - ${TXT_OUTPUT_HOST_PATH:?TXT_OUTPUT_HOST_PATH 必須在 .env 設定}:/opt/sap:rw
-      - rasa_docs:/opt/rasa_docs
+      - ${TXT_OUTPUT_HOST_PATH}:/opt/rasa_docs:rw
     networks:
       - app
       - data
@@ -123,10 +124,3 @@ services:
 volumes:
   pg_data:
   redis_data:
-
-  rasa_docs:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ./data/volumes/rasa_docs
