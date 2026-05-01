@@ -48,7 +48,7 @@ export function FaqFilterBar({ filters, setFilter, clearAll, onNew }: Props) {
           value={filters.status || 'all'}
           onValueChange={(v) => setFilter({ status: v === 'all' ? '' : v })}
         >
-          <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="w-32" aria-label="狀態篩選"><SelectValue /></SelectTrigger>
           <SelectContent>
             {STATUS_OPTIONS.map((o) => (
               <SelectItem key={o.v} value={o.v}>{o.label}</SelectItem>

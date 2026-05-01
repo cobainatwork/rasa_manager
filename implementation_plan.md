@@ -1,5 +1,23 @@
 # Rasa 知識庫管理系統 - 實施計劃 (Implementation Plan)
 
+## 實作狀態（2026-05 更新）
+
+> [!NOTE]
+> 全六階段已完成（含 Plan 3 Phase 0 ~ 20 收尾品質提升）。
+>
+> | 階段 | 狀態 |
+> |------|------|
+> | 第一階段：專案初始化與結構設定 | 完成 |
+> | 第二階段：資料庫模型 + Alembic（head = 002） | 完成 |
+> | 第三階段：後端核心 API（pytest 293 passed） | 完成 |
+> | 第四階段：前端管理介面（vitest 全綠，含 a11y smoke） | 完成 |
+> | 第五階段：匯入匯出 / 對話 / 同步補足 | 完成 |
+> | 第六階段：Docker Compose 部署（5 服務 healthy） | 完成 |
+>
+> 後續維運以本檔之既有規範與 `comprehensive-system-design.md` v1.1 為依據。
+
+---
+
 ## 背景描述 (Goal Description)
 開發一套完整的 Rasa RAG 系統知識庫管理介面（FAQ）。該平台支援多 Rasa 代理專案（Multi-Agent），允許編輯員和審核員於獨立介面中執行常見的新增/刪除/修改 (CRUD) 以及類別樹狀繼承邏輯。資料經核准後，管理者可「一鍵觸發同步」，將存放於 PostgreSQL 的核准文本匯出成 `.txt` 並呼叫 CLI ingestion script 來實作 Qdrant 的自動同步。同時，平台需自帶版本紀錄（Audit Log/History）與前端直接與 Rasa Server 的對話驗證，最後透過 Docker Compose 完成前後端及任務調度器的一體化部署。
 

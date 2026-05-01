@@ -107,14 +107,33 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 七、開發指令（Commands）
 
-**目前目錄尚無程式碼**，故 `pytest`、`vitest`、`docker compose up` 等指令均無法執行。
+實作已完成 Phase 0 ~ 20，可實際執行下列指令。
 
-依規格書 §16（測試策略）與 §17（Migration 策略），實作完成後預計工具鏈如下，具體呼叫方式應於程式碼建立後在本檔補齊：
+### 後端（於 `D:\mini_test\backend\`，或透過 `docker compose exec backend ...`）
 
-- 後端：`pytest`（含 `pytest-asyncio`、`pytest-cov`）、`ruff check`、`mypy`、`alembic upgrade head`、`alembic revision --autogenerate -m "..."`
-- 前端：`vitest run`、`eslint`、`tsc --noEmit`、`vite build`、`vite dev`
-- E2E：Playwright
-- 容器化：`docker compose up --build`、`docker compose down -v`
+- 測試：`python -m pytest -q`（基線 293 passed）
+- Lint：`python -m ruff check .`
+- 型別檢查：`PYTHONUTF8=1 python -m mypy api/`
+- 安全掃描：`python -m bandit -r api/ tasks.py main.py -ll`
+- Migration：`alembic upgrade head`、`alembic revision --autogenerate -m "..."`
+
+### 前端（於 `D:\mini_test\frontend\`）
+
+- 開發：`npm run dev`（vite dev server，proxy `/api` → `http://localhost:8000`）
+- 測試：`npm test`（vitest，含 a11y smoke）
+- Lint：`npm run lint`
+- 型別檢查：`npx tsc --noEmit`
+- Production build：`npm run build`
+
+### 容器
+
+- 啟動：`docker compose up --build -d`
+- 健康檢查：`docker compose ps`（5 服務 healthy）
+- 關閉並清 volume：`docker compose down -v`
+
+### E2E
+
+- Playwright：`cd frontend && npx playwright test`
 
 ---
 

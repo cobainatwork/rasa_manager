@@ -110,7 +110,9 @@
       "Bash(xxd)",
       "Bash(echo \"---exit:$?---\")",
       "Bash(echo *)",
-      "Bash(curl *)"
+      "Bash(curl *)",
+      "Bash(npm view *)",
+      "Bash(lighthouse --version)"
     ]
   }
 }
