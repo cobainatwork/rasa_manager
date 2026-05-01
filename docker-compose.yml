@@ -77,6 +77,8 @@ services:
     environment:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET 必須在 .env 設定}
       PYTHONPATH: /app   # 確保 celery prefork 子程序能 import api.*
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY 必須在 .env 設定}
+      QDRANT_URL: ${QDRANT_URL:?QDRANT_URL 必須在 .env 設定}
     command: celery -A tasks.celery_app worker --concurrency=2 --loglevel=info
     healthcheck:
       # celery worker 不開 HTTP 8000，停用 backend image 繼承來的 HEALTHCHECK

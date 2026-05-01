@@ -8,7 +8,6 @@ Celery 任務定義：一鍵同步（匯出 .txt + 執行 ingest script）。
 from __future__ import annotations
 
 import os
-import shlex
 import signal
 import subprocess
 import sys
@@ -108,8 +107,22 @@ def run_ingestion_sync(self, agent_id: str, sync_log_id: str) -> None:  # type: 
                 raise RuntimeError(
                     f"ingest_script_path 包含不允許的上級目錄引用：{script_path}"
                 )
-            # 安全性：禁止 shell=True，使用 shlex.split 解析
-            cmd = shlex.split(f"python {script_path}")
+
+            # 從環境變數讀 Qdrant URL（與 OpenAI key 一樣由 docker-compose 注入）
+            qdrant_url = os.environ.get("QDRANT_URL")
+            if not qdrant_url:
+                raise RuntimeError("QDRANT_URL 未設定，無法執行 ingest")
+
+            agent_id_str = str(agent.id)
+            # 安全性：禁止 shell=True，使用列表形式（避免空格路徑切割問題）
+            cmd = [
+                "python",
+                script_path,
+                "--source", output_path,
+                "--qdrant-url", qdrant_url,
+                "--collection", f"agent_{agent_id_str}",
+                "--doc-id", f"agent_{agent_id_str}_v1",
+            ]
             # 使用 Popen + start_new_session=True，逾時時可透過 killpg 一併回收孫進程
             popen_kwargs: dict = {
                 "stdout": subprocess.PIPE,

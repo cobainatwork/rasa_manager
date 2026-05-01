@@ -112,7 +112,9 @@
       "Bash(echo *)",
       "Bash(curl *)",
       "Bash(npm view *)",
-      "Bash(lighthouse --version)"
+      "Bash(lighthouse --version)",
+      "Bash(pip index *)",
+      "Bash(OPENAI_API_KEY=test_dummy QDRANT_URL=http://fake:6333 docker compose config --quiet)"
     ]
   }
 }
