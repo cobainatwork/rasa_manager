@@ -150,3 +150,14 @@ class TestDeleteByCategoryPaths:
         delete_by_category_paths(qdrant, "not_exist", ["path/A"])
 
         qdrant.delete.assert_not_called()
+
+    def test_skips_if_category_paths_empty(self) -> None:
+        from ingest_kb import delete_by_category_paths  # noqa: PLC0415
+        from unittest.mock import MagicMock
+
+        qdrant = MagicMock()
+
+        delete_by_category_paths(qdrant, "agent_abc", [])
+
+        qdrant.get_collections.assert_not_called()
+        qdrant.delete.assert_not_called()

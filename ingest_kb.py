@@ -216,6 +216,8 @@ def delete_by_category_paths(
     刪除 Qdrant collection 中 metadata.category_path 符合任一指定路徑的向量。
     collection 不存在時靜默跳過。
     """
+    if not category_paths:
+        return
     existing = {c.name for c in qdrant.get_collections().collections}
     if collection_name not in existing:
         print(f"Qdrant collection {collection_name!r} 不存在，略過刪除。")
