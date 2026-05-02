@@ -76,3 +76,77 @@ class TestCollectCategorySubtree:
         # 只收集 branch1 的子樹
         result = collect_category_subtree(CAT_B_ID, cat_map)
         assert result == {CAT_B_ID}
+
+
+# ── ingest_kb 擴充測試 ────────────────────────────────────────────────────────
+
+class TestParsKbWithCategoryBlocks:
+    """parse_kb() 支援新格式（含 [Category] 區塊）。"""
+
+    def _write_tmp(self, tmp_path, content: str):
+        p = tmp_path / "kb.txt"
+        p.write_text(content, encoding="utf-8")
+        return str(p)
+
+    def test_single_faq_with_category(self, tmp_path) -> None:
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
+        from ingest_kb import parse_kb  # noqa: PLC0415
+        content = "[Category]\n帳號/密碼重置\n\n[Question]\n如何重設密碼？\n\n[Answer]\n點擊忘記密碼。"
+        path = self._write_tmp(tmp_path, content)
+        records = parse_kb(path)
+        assert len(records) == 1
+        assert records[0]["question"] == "如何重設密碼？"
+        assert records[0]["answer"] == "點擊忘記密碼。"
+        assert records[0]["category_path"] == "帳號/密碼重置"
+
+    def test_multiple_faqs_different_categories(self, tmp_path) -> None:
+        from ingest_kb import parse_kb  # noqa: PLC0415
+        content = (
+            "[Category]\n帳號/密碼重置\n\n[Question]\nQ1\n\n[Answer]\nA1\n\n"
+            "[Category]\n帳號/帳號停用\n\n[Question]\nQ2\n\n[Answer]\nA2"
+        )
+        path = self._write_tmp(tmp_path, content)
+        records = parse_kb(path)
+        assert len(records) == 2
+        assert records[0]["category_path"] == "帳號/密碼重置"
+        assert records[1]["category_path"] == "帳號/帳號停用"
+
+    def test_old_format_without_category_still_works(self, tmp_path) -> None:
+        from ingest_kb import parse_kb  # noqa: PLC0415
+        content = "[Question]\n舊格式問題\n\n[Answer]\n舊格式答案"
+        path = self._write_tmp(tmp_path, content)
+        records = parse_kb(path)
+        assert len(records) == 1
+        assert records[0]["question"] == "舊格式問題"
+        assert records[0].get("category_path") is None
+
+
+class TestDeleteByCategoryPaths:
+    def test_calls_qdrant_delete_with_filter(self) -> None:
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
+        from ingest_kb import delete_by_category_paths  # noqa: PLC0415
+        from unittest.mock import MagicMock
+
+        qdrant = MagicMock()
+        col = MagicMock()
+        col.name = "agent_abc"
+        qdrant.get_collections.return_value.collections = [col]
+
+        delete_by_category_paths(qdrant, "agent_abc", ["帳號/密碼", "帳號/停用"])
+
+        qdrant.delete.assert_called_once()
+        call_kwargs = qdrant.delete.call_args.kwargs
+        assert call_kwargs["collection_name"] == "agent_abc"
+
+    def test_skips_if_collection_not_exist(self) -> None:
+        from ingest_kb import delete_by_category_paths  # noqa: PLC0415
+        from unittest.mock import MagicMock
+
+        qdrant = MagicMock()
+        qdrant.get_collections.return_value.collections = []
+
+        delete_by_category_paths(qdrant, "not_exist", ["path/A"])
+
+        qdrant.delete.assert_not_called()

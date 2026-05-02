@@ -40,7 +40,15 @@ from pathlib import Path
 from dotenv import load_dotenv
 from openai import OpenAI
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, PointStruct, VectorParams
+from qdrant_client.models import (
+    Distance,
+    FieldCondition,
+    Filter,
+    FilterSelector,
+    MatchAny,
+    PointStruct,
+    VectorParams,
+)
 from tqdm import tqdm
 
 load_dotenv()
@@ -65,6 +73,10 @@ def generate_qa_id(source: str, question: str, _answer: str) -> str:
 # -------------------------
 _BLOCK_RE = re.compile(r"\[Question\]\s*\n(.*?)\n\s*\n\[Answer\]\s*\n(.*)", re.S)
 _LEGACY_RE = re.compile(r'Q:(.*?)\n"?A:(.*?)(?=\nQ:|\Z)', re.S)
+_CAT_BLOCK_RE = re.compile(
+    r"\[Category\]\s*\n(.*?)\n\s*\n\[Question\]\s*\n(.*?)\n\s*\n\[Answer\]\s*\n(.*)",
+    re.S,
+)
 
 
 def _restore_reserved(text: str) -> str:
@@ -74,23 +86,57 @@ def _restore_reserved(text: str) -> str:
 
 def parse_kb(path: str | Path) -> list[dict]:
     """
-    解析匯出 .txt。優先嘗試 [Question]/[Answer] 區塊格式，
-    失敗則退回舊版 Q:/A: 格式。
+    解析匯出 .txt。
+    優先嘗試含 [Category] 的新格式，其次 [Question]/[Answer] 舊格式，
+    最後退回舊版 Q:/A: 格式。
+    回傳 records，每筆含 question / answer / text，新格式另含 category_path。
     """
     text = Path(path).read_text(encoding="utf-8")
     records: list[dict] = []
 
-    # 將 "\n\n[Question]" 作為 FAQ 區塊分隔點
+    # ── 優先：含 [Category] 的新格式 ──────────────────────────────────
+    if "[Category]" in text:
+        parts = text.split("\n\n[Category]")
+        blocks: list[str] = []
+        for i, part in enumerate(parts):
+            part = part.strip()
+            if not part:
+                continue
+            if i == 0:
+                if not part.startswith("[Category]"):
+                    blocks = []
+                    break
+                blocks.append(part)
+            else:
+                blocks.append("[Category]\n" + part.lstrip("\n"))
+
+        for block in blocks:
+            m = _CAT_BLOCK_RE.match(block)
+            if not m:
+                continue
+            category_path = m.group(1).strip()
+            q = _restore_reserved(m.group(2).strip())
+            a = _restore_reserved(m.group(3).strip())
+            records.append(
+                {
+                    "question": q,
+                    "answer": a,
+                    "text": f"問題：{q}\n答案：{a}",
+                    "category_path": category_path,
+                }
+            )
+        if records:
+            return records
+
+    # ── 次選：[Question]/[Answer] 無 [Category]（全局同步格式）──────────
     parts = text.split("\n\n[Question]")
-    blocks: list[str] = []
+    blocks = []
     for i, part in enumerate(parts):
         part = part.strip()
         if not part:
             continue
         if i == 0:
-            # 第一塊可能已含 [Question]，也可能沒有
             if not part.startswith("[Question]"):
-                # 整檔沒有 [Question] 標頭：跳到 legacy 解析
                 blocks = []
                 break
             blocks.append(part)
@@ -103,28 +149,16 @@ def parse_kb(path: str | Path) -> list[dict]:
             continue
         q = _restore_reserved(m.group(1).strip())
         a = _restore_reserved(m.group(2).strip())
-        records.append(
-            {
-                "question": q,
-                "answer": a,
-                "text": f"問題：{q}\n答案：{a}",
-            }
-        )
+        records.append({"question": q, "answer": a, "text": f"問題：{q}\n答案：{a}"})
 
     if records:
         return records
 
-    # 向後相容：Q:/A: 格式
+    # ── 向後相容：Q:/A: 格式 ─────────────────────────────────────────────
     for q, a in _LEGACY_RE.findall(text):
         q = q.strip()
         a = a.strip()
-        records.append(
-            {
-                "question": q,
-                "answer": a,
-                "text": f"問題：{q}\n答案：{a}",
-            }
-        )
+        records.append({"question": q, "answer": a, "text": f"問題：{q}\n答案：{a}"})
     return records
 
 
@@ -173,6 +207,36 @@ def init_collection(
 
 
 # -------------------------
+# 精準刪除向量（分類同步用）
+# -------------------------
+def delete_by_category_paths(
+    qdrant: QdrantClient, collection_name: str, category_paths: list[str]
+) -> None:
+    """
+    刪除 Qdrant collection 中 metadata.category_path 符合任一指定路徑的向量。
+    collection 不存在時靜默跳過。
+    """
+    existing = {c.name for c in qdrant.get_collections().collections}
+    if collection_name not in existing:
+        print(f"Qdrant collection {collection_name!r} 不存在，略過刪除。")
+        return
+    qdrant.delete(
+        collection_name=collection_name,
+        points_selector=FilterSelector(
+            filter=Filter(
+                must=[
+                    FieldCondition(
+                        key="metadata.category_path",
+                        match=MatchAny(any=category_paths),
+                    )
+                ]
+            )
+        ),
+    )
+    print(f"已刪除 category_path 符合 {category_paths} 的向量")
+
+
+# -------------------------
 # 上傳（Upsert）
 # -------------------------
 def upload(
@@ -206,6 +270,7 @@ def upload(
                             "doc_id": doc_id,
                             "source": source,
                             "answer": r["answer"],
+                            **( {"category_path": r["category_path"]} if r.get("category_path") else {} ),
                         },
                     },
                 )
@@ -247,6 +312,12 @@ def _build_parser() -> argparse.ArgumentParser:
         default=False,
         help="同步前清空 Qdrant collection，確保已刪除的 FAQ 向量不殘留（預設 False）",
     )
+    parser.add_argument(
+        "--delete-category-paths",
+        default="",
+        dest="delete_category_paths",
+        help="逗號分隔的 category_path 清單，同步前精準刪除對應向量（分類同步用）",
+    )
     return parser
 
 
@@ -268,21 +339,46 @@ def main(argv: list[str] | None = None) -> int:
     records = parse_kb(source_path)
     print(f"載入 {len(records)} 筆 Q&A（來源：{source_path}）")
 
-    if not records:
-        print("無資料可上傳，結束。")
-        return 0
-
-    init_collection(qdrant, openai_client, args.collection, clear=args.clear)
-    upload(
-        qdrant,
-        openai_client,
-        records,
-        collection_name=args.collection,
-        doc_id=args.doc_id,
-        source=str(source_path),
+    # 計算 records 中的 category_path（若有）
+    unique_paths_from_records = list(
+        {r["category_path"] for r in records if r.get("category_path")}
     )
 
-    print(f"完成向量化並寫入 Qdrant collection={args.collection}（Upsert / 可重跑）")
+    # 決定刪除策略
+    explicit_paths = [
+        p.strip()
+        for p in args.delete_category_paths.split(",")
+        if p.strip()
+    ]
+
+    if args.clear:
+        # 全局同步：刪整個 collection 再重建
+        init_collection(qdrant, openai_client, args.collection, clear=True)
+    elif explicit_paths:
+        # 分類同步（Celery task 明確傳入）：確保 collection 存在 + 精準刪除
+        init_collection(qdrant, openai_client, args.collection, clear=False)
+        delete_by_category_paths(qdrant, args.collection, explicit_paths)
+    elif unique_paths_from_records:
+        # 從 records 自動偵測（手動執行新格式 txt 時使用）
+        init_collection(qdrant, openai_client, args.collection, clear=False)
+        delete_by_category_paths(qdrant, args.collection, unique_paths_from_records)
+    else:
+        # 無 --clear 也無 category_path：確保 collection 存在即可
+        init_collection(qdrant, openai_client, args.collection, clear=False)
+
+    if records:
+        upload(
+            qdrant,
+            openai_client,
+            records,
+            collection_name=args.collection,
+            doc_id=args.doc_id,
+            source=str(source_path),
+        )
+        print(f"完成向量化並寫入 Qdrant collection={args.collection}（Upsert / 可重跑）")
+    else:
+        print("無資料可上傳，結束。")
+
     return 0
 
 
