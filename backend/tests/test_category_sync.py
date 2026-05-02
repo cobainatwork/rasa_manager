@@ -4,7 +4,8 @@
 from __future__ import annotations
 
 import uuid
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
+from tests.conftest import AGENT_ID
 
 
 
@@ -161,3 +162,209 @@ class TestDeleteByCategoryPaths:
 
         qdrant.get_collections.assert_not_called()
         qdrant.delete.assert_not_called()
+
+
+# ── run_category_sync task ────────────────────────────────────────────────────
+
+import os
+from unittest.mock import mock_open
+
+CATEGORY_ID = uuid.UUID("00000000-0000-0000-0000-000000000030")
+CAT_SYNC_LOG_ID = uuid.UUID("00000000-0000-0000-0000-000000000051")
+
+
+def _make_sync_log(sync_id=CAT_SYNC_LOG_ID):
+    sl = MagicMock()
+    sl.id = sync_id
+    sl.agent_id = AGENT_ID
+    sl.status = "pending"
+    sl.started_at = None
+    sl.items_count = 0
+    sl.stdout = None
+    sl.stderr = None
+    sl.finished_at = None
+    sl.duration_sec = None
+    return sl
+
+
+def _make_agent():
+    a = MagicMock()
+    a.id = AGENT_ID
+    a.txt_output_path = "/opt/rasa_docs/test"
+    a.ingest_script_path = None  # 預設不設 script（跳過 subprocess）
+    return a
+
+
+def _make_category(cat_id=CATEGORY_ID, name="帳號", parent_id=None):
+    c = MagicMock()
+    c.id = cat_id
+    c.agent_id = AGENT_ID
+    c.name = name
+    c.parent_id = parent_id
+    return c
+
+
+class TestRunCategorySyncTask:
+    SESSION_PATCH = "api.database.session.SessionLocal"
+
+    def _make_db_with_sequence(self, sync_log, agent, category, items, all_cats):
+        """
+        模擬 run_category_sync 的 db.query 呼叫序列：
+        idx 0: SyncLog
+        idx 1: Agent
+        idx 2: Category（目標分類）
+        idx 3: Category.all()（全部分類）
+        idx 4: KnowledgeItem.all()（FAQ）
+        """
+        db = MagicMock()
+        counter = [0]
+
+        def se(*args):
+            q = MagicMock()
+            idx = counter[0]
+            counter[0] += 1
+            if idx == 0:
+                q.filter.return_value.first.return_value = sync_log
+            elif idx == 1:
+                q.filter.return_value.first.return_value = agent
+            elif idx == 2:
+                q.filter.return_value.first.return_value = category
+            elif idx == 3:
+                q.filter.return_value.all.return_value = all_cats
+            elif idx == 4:
+                q.filter.return_value.all.return_value = items
+            return q
+
+        db.query.side_effect = se
+        return db
+
+    def test_no_items_marks_completed_with_zero_count(self) -> None:
+        from tasks import run_category_sync  # noqa: PLC0415
+
+        sync_log = _make_sync_log()
+        agent = _make_agent()
+        category = _make_category()
+        db = self._make_db_with_sequence(sync_log, agent, category, [], [category])
+
+        with (
+            patch(self.SESSION_PATCH, return_value=db),
+            patch("builtins.open", mock_open()),
+            patch("os.makedirs"),
+        ):
+            run_category_sync(
+                str(AGENT_ID), str(CATEGORY_ID), str(CAT_SYNC_LOG_ID)
+            )
+
+        assert sync_log.status == "completed"
+        assert sync_log.items_count == 0
+
+    def test_sync_log_not_found_returns_early(self) -> None:
+        from tasks import run_category_sync  # noqa: PLC0415
+
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = None
+
+        with patch(self.SESSION_PATCH, return_value=db):
+            run_category_sync(
+                str(AGENT_ID), str(CATEGORY_ID), str(CAT_SYNC_LOG_ID)
+            )
+
+        db.commit.assert_not_called()
+
+    def test_category_not_found_marks_failed(self) -> None:
+        from tasks import run_category_sync  # noqa: PLC0415
+
+        sync_log = _make_sync_log()
+        agent = _make_agent()
+        db = MagicMock()
+        counter = [0]
+
+        def se(*args):
+            q = MagicMock()
+            idx = counter[0]
+            counter[0] += 1
+            if idx == 0:
+                q.filter.return_value.first.return_value = sync_log
+            elif idx == 1:
+                q.filter.return_value.first.return_value = agent
+            else:
+                q.filter.return_value.first.return_value = None  # 分類不存在
+            return q
+
+        db.query.side_effect = se
+
+        with patch(self.SESSION_PATCH, return_value=db):
+            run_category_sync(
+                str(AGENT_ID), str(CATEGORY_ID), str(CAT_SYNC_LOG_ID)
+            )
+
+        assert sync_log.status == "failed"
+        assert "分類不存在" in (sync_log.stderr or "")
+
+    def test_items_written_to_txt_with_category_block(self) -> None:
+        from tasks import run_category_sync  # noqa: PLC0415
+
+        sync_log = _make_sync_log()
+        agent = _make_agent()
+        category = _make_category(name="帳號")
+
+        item = MagicMock()
+        item.id = uuid.uuid4()
+        item.category_id = CATEGORY_ID
+        item.question = "測試問題"
+        item.answer = "測試答案"
+        item.status = "approved"
+
+        db = self._make_db_with_sequence(
+            sync_log, agent, category, [item], [category]
+        )
+
+        written_content: list[str] = []
+        m_open = mock_open()
+        m_open.return_value.__enter__.return_value.write.side_effect = (
+            lambda c: written_content.append(c)
+        )
+
+        with (
+            patch(self.SESSION_PATCH, return_value=db),
+            patch("builtins.open", m_open),
+            patch("os.makedirs"),
+        ):
+            run_category_sync(
+                str(AGENT_ID), str(CATEGORY_ID), str(CAT_SYNC_LOG_ID)
+            )
+
+        full_content = "".join(written_content)
+        assert "[Category]" in full_content
+        assert "帳號" in full_content
+        assert "[Question]" in full_content
+        assert "測試問題" in full_content
+
+    def test_items_marked_synced_on_success(self) -> None:
+        from tasks import run_category_sync  # noqa: PLC0415
+
+        sync_log = _make_sync_log()
+        agent = _make_agent()
+        category = _make_category()
+
+        item = MagicMock()
+        item.id = uuid.uuid4()
+        item.category_id = CATEGORY_ID
+        item.question = "Q"
+        item.answer = "A"
+        item.status = "approved"
+
+        db = self._make_db_with_sequence(
+            sync_log, agent, category, [item], [category]
+        )
+
+        with (
+            patch(self.SESSION_PATCH, return_value=db),
+            patch("builtins.open", mock_open()),
+            patch("os.makedirs"),
+        ):
+            run_category_sync(
+                str(AGENT_ID), str(CATEGORY_ID), str(CAT_SYNC_LOG_ID)
+            )
+
+        assert item.status == "synced"

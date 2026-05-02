@@ -228,3 +228,211 @@ def run_ingestion_sync(self, agent_id: str, sync_log_id: str) -> None:  # type: 
         raise self.retry(exc=exc, countdown=countdown)
     finally:
         db.close()
+
+
+@celery_app.task(bind=True, max_retries=TASK_MAX_RETRIES, default_retry_delay=TASK_RETRY_DELAY_SEC)
+def run_category_sync(self, agent_id: str, category_id: str, sync_log_id: str) -> None:  # type: ignore[misc]
+    """
+    分類同步：針對指定分類（含子孫分類）的 FAQ 進行向量化同步。
+    1. 收集分類樹（目標 + 所有子孫）
+    2. 取出 approved/synced 的 FAQ
+    3. 寫入含 [Category] 區塊的 txt
+    4. 執行 ingest_script_path（不帶 --clear，帶 --delete-category-paths）
+    5. 標記同步項目為 synced
+    6. 更新 sync_logs
+    """
+    from api.database.models import Agent, Category, KnowledgeItem, SyncLog  # noqa: PLC0415
+    from api.database.session import SessionLocal  # noqa: PLC0415
+    from api.utils.category_path import build_category_path, collect_category_subtree  # noqa: PLC0415
+
+    db = SessionLocal()
+    sync_log = None
+
+    try:
+        sync_log = db.query(SyncLog).filter(
+            SyncLog.id == uuid.UUID(sync_log_id)
+        ).first()
+        if not sync_log:
+            return
+
+        agent = db.query(Agent).filter(Agent.id == uuid.UUID(agent_id)).first()
+        if not agent:
+            sync_log.status = "failed"
+            sync_log.stderr = "Agent 不存在"
+            db.commit()
+            return
+
+        target_cat = db.query(Category).filter(
+            Category.id == uuid.UUID(category_id),
+            Category.agent_id == uuid.UUID(agent_id),
+        ).first()
+        if not target_cat:
+            sync_log.status = "failed"
+            sync_log.stderr = "分類不存在"
+            db.commit()
+            return
+
+        sync_log.status = "running"
+        sync_log.started_at = datetime.now(timezone.utc)
+        db.commit()
+
+        # 載入此 agent 的全部分類
+        all_cats = db.query(Category).filter(
+            Category.agent_id == uuid.UUID(agent_id)
+        ).all()
+        cat_map = {c.id: c for c in all_cats}
+
+        # 收集目標分類的子樹 ID（含自身）
+        subtree_ids = collect_category_subtree(uuid.UUID(category_id), cat_map)
+
+        # 計算子樹內每個分類的 category_path（供 --delete-category-paths 使用）
+        subtree_paths = list({
+            build_category_path(cid, cat_map)
+            for cid in subtree_ids
+            if build_category_path(cid, cat_map)
+        })
+
+        # 取出 approved/synced 的 FAQ
+        items = (
+            db.query(KnowledgeItem)
+            .filter(
+                KnowledgeItem.agent_id == uuid.UUID(agent_id),
+                KnowledgeItem.category_id.in_(subtree_ids),
+                KnowledgeItem.status.in_(["approved", "synced"]),
+            )
+            .all()
+        )
+
+        # 組合含 [Category] 區塊的 txt
+        blocks: list[str] = []
+        for item in items:
+            cat_path = build_category_path(item.category_id, cat_map)
+            question = (
+                item.question.replace("[Question]", "【Question】")
+                .replace("[Answer]", "【Answer】")
+            )
+            answer = (
+                item.answer.replace("[Question]", "【Question】")
+                .replace("[Answer]", "【Answer】")
+            )
+            blocks.append(
+                f"[Category]\n{cat_path}\n\n[Question]\n{question}\n\n[Answer]\n{answer}"
+            )
+
+        txt_content = "\n\n".join(blocks)
+        output_path = (
+            str(agent.txt_output_path).rstrip("/")
+            + f"/category_{category_id}_export.txt"
+        )
+        sync_log.output_file = output_path
+
+        import os as _os  # noqa: PLC0415
+
+        _os.makedirs(_os.path.dirname(output_path), exist_ok=True)
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(txt_content)
+
+        stdout_data = ""
+        stderr_data = ""
+
+        if agent.ingest_script_path:
+            script_path = str(agent.ingest_script_path)
+            if ".." in script_path:
+                raise RuntimeError(
+                    f"ingest_script_path 包含不允許的上級目錄引用：{script_path}"
+                )
+            if not _os.path.isfile(script_path):
+                raise RuntimeError(
+                    f"Ingestion script 不存在或無法存取：{script_path}"
+                )
+
+            qdrant_url = os.environ.get("QDRANT_URL")
+            if not qdrant_url:
+                raise RuntimeError("QDRANT_URL 未設定，無法執行 ingest")
+
+            agent_id_str = str(agent.id)
+            cmd = [
+                "python",
+                script_path,
+                "--source", output_path,
+                "--qdrant-url", qdrant_url,
+                "--collection", f"agent_{agent_id_str}",
+                "--doc-id", f"agent_{agent_id_str}_v1",
+                "--delete-category-paths", ",".join(subtree_paths),
+                # 不帶 --clear：精準刪除指定 category_path 的向量
+            ]
+            popen_kwargs: dict = {
+                "stdout": subprocess.PIPE,
+                "stderr": subprocess.PIPE,
+                "text": True,
+            }
+            if sys.platform != "win32":
+                popen_kwargs["start_new_session"] = True
+            proc = subprocess.Popen(cmd, **popen_kwargs)  # noqa: S603
+            try:
+                stdout_data, stderr_data = proc.communicate(
+                    timeout=INGEST_SUBPROCESS_TIMEOUT_SEC
+                )
+                returncode = proc.returncode
+                if returncode != 0:
+                    sync_log.stdout = stdout_data
+                    sync_log.stderr = stderr_data[:STDERR_MAX_CHARS]
+                    stderr_snippet = (stderr_data.strip() or stdout_data.strip())[:300]
+                    detail = f"\nstderr: {stderr_snippet}" if stderr_snippet else ""
+                    raise RuntimeError(
+                        f"Ingestion script 退出碼 {returncode}{detail}"
+                    )
+            except subprocess.TimeoutExpired:
+                if sys.platform != "win32":
+                    try:
+                        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                    except (ProcessLookupError, PermissionError):
+                        proc.kill()
+                else:
+                    proc.kill()
+                try:
+                    proc.wait(timeout=INGEST_KILL_GRACE_SEC)
+                except subprocess.TimeoutExpired:
+                    pass
+                raise RuntimeError(
+                    f"Ingestion script 執行逾時（{INGEST_SUBPROCESS_TIMEOUT_SEC} 秒）"
+                )
+
+        for item in items:
+            item.status = "synced"
+
+        finished_at = datetime.now(timezone.utc)
+        started_at = sync_log.started_at
+        if started_at and started_at.tzinfo is None:
+            started_at = started_at.replace(tzinfo=timezone.utc)
+
+        sync_log.status = "completed"
+        sync_log.items_count = len(items)
+        sync_log.stdout = stdout_data
+        sync_log.stderr = stderr_data
+        sync_log.finished_at = finished_at
+        sync_log.duration_sec = (
+            int((finished_at - started_at).total_seconds()) if started_at else None
+        )
+        db.commit()
+
+    except (RuntimeError, OSError, subprocess.SubprocessError, IOError) as exc:
+        logger.exception(
+            "category_sync_task_failed",
+            agent_id=agent_id,
+            category_id=category_id,
+            sync_log_id=sync_log_id,
+            error=str(exc),
+        )
+        max_retries = self.max_retries if self.max_retries is not None else TASK_MAX_RETRIES
+        if self.request.retries >= max_retries:
+            if sync_log:
+                sync_log.status = "failed"
+                sync_log.stderr = str(exc)[:STDERR_MAX_CHARS]
+                sync_log.finished_at = datetime.now(timezone.utc)
+                db.commit()
+            raise
+        countdown = RETRY_BACKOFF_BASE_SEC * (2 ** self.request.retries)
+        raise self.retry(exc=exc, countdown=countdown)
+    finally:
+        db.close()
