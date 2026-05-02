@@ -44,6 +44,7 @@ export function CategoryTreeNode({
   const [expanded, setExpanded] = useState(true)
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(node.name)
+  const [menuOpen, setMenuOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   // 用 ref 而非 state 避免 React 非同步更新與 onChange 之間的競態
@@ -143,7 +144,7 @@ export function CategoryTreeNode({
           </span>
         )}
 
-        <DropdownMenu>
+        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
@@ -154,13 +155,15 @@ export function CategoryTreeNode({
               <MoreHorizontal className="w-3.5 h-3.5" strokeWidth={1.5} />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
+          <DropdownMenuContent align="end" className="min-w-[11rem] border-border-strong shadow-md">
             <DropdownMenuItem onClick={() => setEditing(true)}>
               <Pencil className="w-3.5 h-3.5 mr-2" strokeWidth={1.5} /> 重新命名
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onAddChild(node.id)}>
-              <Plus className="w-3.5 h-3.5 mr-2" strokeWidth={1.5} /> 新增子分類
-            </DropdownMenuItem>
+            {depth < 1 && (
+              <DropdownMenuItem onClick={() => onAddChild(node.id)}>
+                <Plus className="w-3.5 h-3.5 mr-2" strokeWidth={1.5} /> 新增子分類
+              </DropdownMenuItem>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => onExport(node.id)}>
               <Download className="w-3.5 h-3.5 mr-2" strokeWidth={1.5} /> 匯出 FAQ

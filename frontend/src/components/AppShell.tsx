@@ -6,9 +6,9 @@ import { KeyboardShortcuts } from './KeyboardShortcuts'
 
 export function AppShell() {
   return (
-    <div className="min-h-screen bg-canvas flex flex-col">
+    <div className="h-screen bg-canvas flex flex-col">
       <Topbar />
-      <div className="flex flex-1">
+      <div className="flex flex-1 overflow-hidden">
         <Sidebar />
         <main className="flex-1 overflow-auto">
           <ErrorBoundary>

@@ -144,6 +144,12 @@ def create_category(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={"code": "NOT_FOUND", "message": "父節點不存在"},
             )
+        # 最大兩層（根 → 子），禁止在子分類下再建子分類
+        if parent.parent_id is not None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"code": "DEPTH_EXCEEDED", "message": "分類最多支援兩層，不允許再新增子分類"},
+            )
 
     cat = Category(
         id=uuid.uuid4(),
@@ -267,10 +273,8 @@ def delete_category(
             detail={"code": "UNPROCESSABLE", "message": "此分類或子分類含有 FAQ，無法刪除"},
         )
 
-    # 先刪子孫（避免 FK 衝突），再刪本節點
-    for cid in all_ids - {category_id}:
-        child = db.query(Category).filter(Category.id == cid).first()
-        if child:
-            db.delete(child)
-    db.delete(cat)
+    # bulk DELETE 以單一 SQL 語句刪除全部節點（含自身）；
+    # PostgreSQL NO ACTION FK 在語句結束時才檢查，不受集合迭代順序影響，
+    # 避免逐筆刪除時父節點先於子節點造成的自我參照 FK 衝突。
+    db.query(Category).filter(Category.id.in_(all_ids)).delete(synchronize_session=False)
     db.commit()

@@ -72,14 +72,14 @@ export function KnowledgePage() {
   if (!id) return null
 
   return (
-    <ResizablePanelGroup orientation="horizontal" className="h-[calc(100vh-4rem)]">
-      <ResizablePanel defaultSize={20} minSize="180px" maxSize="320px">
+    <ResizablePanelGroup orientation="horizontal" className="h-full">
+      <ResizablePanel defaultSize={20} minSize="180px" maxSize="320px" className="h-full !overflow-hidden">
         <CategoryTree result={{ ...categoryTree, select: handleCategorySelect }} />
       </ResizablePanel>
 
       <ResizableHandle />
 
-      <ResizablePanel defaultSize={45} minSize={15}>
+      <ResizablePanel defaultSize={45} minSize={15} className="h-full !overflow-hidden">
         <FaqList
           key={listVersion}
           agentId={id}
@@ -92,7 +92,7 @@ export function KnowledgePage() {
 
       <ResizableHandle withHandle />
 
-      <ResizablePanel defaultSize={35} minSize="320px">
+      <ResizablePanel defaultSize={35} minSize="320px" className="h-full">
         <aside className="h-full bg-surface flex flex-col">
           {rightMode === 'empty' && (
             <div className="flex-1 flex items-center justify-center">

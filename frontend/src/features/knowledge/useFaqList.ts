@@ -7,7 +7,7 @@ import type { FaqFilters } from './useFaqFilter'
 
 const PER_PAGE = 20
 
-export function useFaqList(agentId: string | undefined, filters: FaqFilters) {
+export function useFaqList(agentId: string | undefined, filters: FaqFilters, version = 0) {
   const [data, setData] = useState<FaqListResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -27,7 +27,7 @@ export function useFaqList(agentId: string | undefined, filters: FaqFilters) {
       .then(setData)
       .catch((err) => setError(extractErrorMessage(err)))
       .finally(() => setLoading(false))
-  }, [agentId, filters.page, filters.status, filters.category_id, debouncedQ])
+  }, [agentId, filters.page, filters.status, filters.category_id, debouncedQ, version])
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / PER_PAGE)) : 1
   return { data, loading, error, totalPages, perPage: PER_PAGE }

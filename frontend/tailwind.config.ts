@@ -8,6 +8,7 @@ const config: Config = {
     container: { center: true, padding: '1rem' },
     extend: {
       colors: {
+        // 自定義設計 token
         brand: {
           50: '#EFF6FF',
           500: '#3B82F6',
@@ -22,6 +23,19 @@ const config: Config = {
         'text-muted': '#64748B',
         'border-default': '#E2E8F0',
         'border-strong': '#CBD5E1',
+        // shadcn 必要色票（對應 index.css 的 CSS 變數）
+        popover: {
+          DEFAULT: 'hsl(var(--popover))',
+          foreground: 'hsl(var(--popover-foreground))',
+        },
+        muted: {
+          DEFAULT: 'hsl(var(--muted))',
+          foreground: 'hsl(var(--muted-foreground))',
+        },
+        accent: {
+          DEFAULT: 'hsl(var(--accent))',
+          foreground: 'hsl(var(--accent-foreground))',
+        },
       },
       fontFamily: {
         sans: ['Inter', 'Noto Sans TC', 'system-ui', 'sans-serif'],
