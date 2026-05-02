@@ -35,7 +35,14 @@ def collect_category_subtree(
     """
     從 root_id 出發，以迭代 DFS 收集所有子孫分類 ID（含自身）。
     使用預先載入的 cat_map 避免 N+1 查詢。
+    先建立 parent_id -> children 反向索引（O(N)），DFS 整體複雜度 O(N)。
     """
+    # 預先建立反向索引，避免每步 DFS 全表掃描造成 O(N²)
+    children_map: dict[Any, list[Any]] = {}
+    for cat in cat_map.values():
+        if cat.parent_id is not None:
+            children_map.setdefault(cat.parent_id, []).append(cat.id)
+
     result: set[Any] = set()
     stack = [root_id]
     while stack:
@@ -43,7 +50,5 @@ def collect_category_subtree(
         if cid in result:
             continue
         result.add(cid)
-        for cat in cat_map.values():
-            if cat.parent_id == cid:
-                stack.append(cat.id)
+        stack.extend(children_map.get(cid, []))
     return result
