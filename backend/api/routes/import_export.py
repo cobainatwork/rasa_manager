@@ -377,6 +377,10 @@ def export_category_faqs(
             item.version if item.version is not None else 1,
         ])
 
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
     db.add(AuditLog(
         id=uuid.uuid4(),
         agent_id=agent_id,
@@ -386,10 +390,6 @@ def export_category_faqs(
         diff={"category_id": str(category_id), "count": len(items)},
     ))
     db.commit()
-
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
 
     return StreamingResponse(
         buf,
