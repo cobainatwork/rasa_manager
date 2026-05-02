@@ -19,10 +19,10 @@ export function useFaqHistory(agentId: string | undefined, faqId: string | null)
 
   useEffect(() => { reload() }, [reload])
 
-  async function rollback(versionId: string) {
+  async function rollback(version: number) {
     if (!agentId || !faqId) return
     try {
-      await api.rollback(agentId, faqId, versionId)
+      await api.rollback(agentId, faqId, version)
       toast.success('已還原')
       reload()
     } catch (err) {

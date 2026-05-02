@@ -141,8 +141,16 @@ def get_embedding_dim(client: OpenAI) -> int:
 
 
 # -------------------------
-# 建立 / 檢查 collection
+# 建立 / 清空 / 檢查 collection
 # -------------------------
+def clear_collection(qdrant: QdrantClient, collection_name: str) -> None:
+    """刪除 Qdrant collection。同步前呼叫可確保已刪除的 FAQ 向量不殘留。"""
+    existing = [c.name for c in qdrant.get_collections().collections]
+    if collection_name in existing:
+        qdrant.delete_collection(collection_name)
+        print(f"已清空 Qdrant collection: {collection_name}")
+
+
 def init_collection(qdrant: QdrantClient, openai_client: OpenAI, collection_name: str) -> None:
     dim = get_embedding_dim(openai_client)
     collections = [c.name for c in qdrant.get_collections().collections]
@@ -230,6 +238,12 @@ def _build_parser() -> argparse.ArgumentParser:
         default="knowledgebase_v1",
         help="metadata.doc_id",
     )
+    parser.add_argument(
+        "--clear",
+        action="store_true",
+        default=False,
+        help="同步前清空 Qdrant collection，確保已刪除的 FAQ 向量不殘留（預設 False）",
+    )
     return parser
 
 
@@ -254,6 +268,9 @@ def main(argv: list[str] | None = None) -> int:
     if not records:
         print("無資料可上傳，結束。")
         return 0
+
+    if args.clear:
+        clear_collection(qdrant, args.collection)
 
     init_collection(qdrant, openai_client, args.collection)
     upload(

@@ -25,9 +25,10 @@ interface Props {
   setFilter: (p: Partial<FaqFilters>) => void
   clearAll: () => void
   onNew: () => void
+  canAdd?: boolean
 }
 
-export function FaqFilterBar({ filters, setFilter, clearAll, onNew }: Props) {
+export function FaqFilterBar({ filters, setFilter, clearAll, onNew, canAdd = false }: Props) {
   const hasActive = filters.status || filters.category_id || filters.q
   return (
     <div className="border-b border-border-default p-3 space-y-2 bg-surface">
@@ -55,7 +56,11 @@ export function FaqFilterBar({ filters, setFilter, clearAll, onNew }: Props) {
             ))}
           </SelectContent>
         </Select>
-        <Button onClick={onNew}>
+        <Button
+          onClick={onNew}
+          disabled={!canAdd}
+          title={!canAdd ? '請先選擇子分類（末層）才能新增 FAQ' : undefined}
+        >
           <Plus className="w-4 h-4 mr-1" strokeWidth={1.5} /> 新增
         </Button>
       </div>

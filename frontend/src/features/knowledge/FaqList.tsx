@@ -15,9 +15,10 @@ interface Props {
   selectedFaqId: string | null
   onSelectFaq: (id: string) => void
   onNewFaq: () => void
+  canAdd?: boolean
 }
 
-export function FaqList({ agentId, selectedFaqId, onSelectFaq, onNewFaq }: Props) {
+export function FaqList({ agentId, selectedFaqId, onSelectFaq, onNewFaq, canAdd = false }: Props) {
   const { filters, setFilter, clearAll } = useFaqFilter()
   const { data, loading, error, totalPages } = useFaqList(agentId, filters)
   const [checked, setChecked] = useState<Set<string>>(new Set())
@@ -40,6 +41,7 @@ export function FaqList({ agentId, selectedFaqId, onSelectFaq, onNewFaq }: Props
         setFilter={setFilter}
         clearAll={clearAll}
         onNew={onNewFaq}
+        canAdd={canAdd}
       />
 
       <div className="flex-1 overflow-auto">
@@ -62,9 +64,11 @@ export function FaqList({ agentId, selectedFaqId, onSelectFaq, onNewFaq }: Props
             title="沒有符合條件的 FAQ"
             description={hasActiveFilters ? '試試調整篩選條件' : '建立第一筆 FAQ'}
             action={
-              !hasActiveFilters
+              hasActiveFilters
+                ? <Button variant="outline" onClick={clearAll}>清除所有篩選</Button>
+                : canAdd
                 ? <Button onClick={onNewFaq}>+ 新增 FAQ</Button>
-                : <Button variant="outline" onClick={clearAll}>清除所有篩選</Button>
+                : undefined
             }
           />
         )}

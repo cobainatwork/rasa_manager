@@ -138,6 +138,7 @@ def run_ingestion_sync(self, agent_id: str, sync_log_id: str) -> None:  # type: 
                 "--qdrant-url", qdrant_url,
                 "--collection", f"agent_{agent_id_str}",
                 "--doc-id", f"agent_{agent_id_str}_v1",
+                "--clear",  # 同步前清空 collection，確保已刪除 FAQ 的舊向量不殘留
             ]
             # 使用 Popen + start_new_session=True，逾時時可透過 killpg 一併回收孫進程
             popen_kwargs: dict = {

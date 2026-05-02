@@ -49,22 +49,24 @@ export async function releaseLock(agentId: string, faqId: string): Promise<void>
   await apiClient.delete(`/api/v1/agents/${agentId}/faqs/${faqId}/lock`)
 }
 
+// 狀態機操作：後端統一使用 PATCH /status，body 傳 {status, reason?}
 export async function submit(agentId: string, faqId: string): Promise<Faq> {
-  return unwrap(apiClient.post(`/api/v1/agents/${agentId}/faqs/${faqId}/submit`))
+  return unwrap(apiClient.patch(`/api/v1/agents/${agentId}/faqs/${faqId}/status`, { status: 'pending' }))
 }
 export async function approve(agentId: string, faqId: string): Promise<Faq> {
-  return unwrap(apiClient.post(`/api/v1/agents/${agentId}/faqs/${faqId}/approve`))
+  return unwrap(apiClient.patch(`/api/v1/agents/${agentId}/faqs/${faqId}/status`, { status: 'approved' }))
 }
 export async function reject(agentId: string, faqId: string, reason: string): Promise<Faq> {
-  return unwrap(apiClient.post(`/api/v1/agents/${agentId}/faqs/${faqId}/reject`, { reason }))
+  return unwrap(apiClient.patch(`/api/v1/agents/${agentId}/faqs/${faqId}/status`, { status: 'rejected', reason }))
 }
 export async function unapprove(agentId: string, faqId: string): Promise<Faq> {
-  return unwrap(apiClient.post(`/api/v1/agents/${agentId}/faqs/${faqId}/unapprove`))
+  return unwrap(apiClient.patch(`/api/v1/agents/${agentId}/faqs/${faqId}/status`, { status: 'pending' }))
 }
 
 export async function getHistory(agentId: string, faqId: string): Promise<FaqHistory[]> {
-  return unwrap(apiClient.get(`/api/v1/agents/${agentId}/faqs/${faqId}/history`), [])
+  return unwrap(apiClient.get(`/api/v1/agents/${agentId}/faqs/${faqId}/histories`), [])
 }
-export async function rollback(agentId: string, faqId: string, versionId: string): Promise<Faq> {
-  return unwrap(apiClient.post(`/api/v1/agents/${agentId}/faqs/${faqId}/rollback`, { version_id: versionId }))
+// version 為整數版本號（非 UUID），後端 rollback body: {version: int}
+export async function rollback(agentId: string, faqId: string, version: number): Promise<Faq> {
+  return unwrap(apiClient.post(`/api/v1/agents/${agentId}/faqs/${faqId}/rollback`, { version }))
 }

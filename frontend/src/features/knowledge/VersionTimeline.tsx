@@ -39,7 +39,7 @@ export function VersionTimeline({ agentId, faqId }: Props) {
             <span className="font-mono text-xs text-text-muted">v{v.version}</span>
             <span className="text-text-secondary">{ACTION_LABELS[v.action] ?? v.action}</span>
             <span className="text-xs text-text-muted ml-auto">{relativeTime(v.created_at)}</span>
-            <Button variant="ghost" size="icon" onClick={() => rollback(v.id)} aria-label="還原">
+            <Button variant="ghost" size="icon" onClick={() => rollback(v.version)} aria-label="還原">
               <Undo2 className="w-3.5 h-3.5" strokeWidth={1.5} />
             </Button>
           </li>

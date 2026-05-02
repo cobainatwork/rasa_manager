@@ -15,15 +15,26 @@ interface Props {
   agentId: string
   faq: Faq
   onChanged: () => void
+  onDeleted?: () => void
 }
 
-export function StatusActions({ agentId, faq, onChanged }: Props) {
+export function StatusActions({ agentId, faq, onChanged, onDeleted }: Props) {
   const isSuper = useAuthStore((s) => s.user?.is_superadmin ?? false)
   const [rejectReason, setRejectReason] = useState('')
 
   async function call(fn: () => Promise<unknown>, success: string) {
     try { await fn(); toast.success(success); onChanged() }
     catch (err) { toast.error(extractErrorMessage(err)) }
+  }
+
+  async function handleDelete() {
+    try {
+      await api.deleteFaq(agentId, faq.id)
+      toast.success('已刪除')
+      onDeleted?.()
+    } catch (err) {
+      toast.error(extractErrorMessage(err))
+    }
   }
 
   return (
@@ -77,7 +88,7 @@ export function StatusActions({ agentId, faq, onChanged }: Props) {
             <AlertDialogCancel>取消</AlertDialogCancel>
             <AlertDialogAction
               className="bg-red-600 hover:bg-red-700"
-              onClick={() => call(() => api.deleteFaq(agentId, faq.id), '已刪除')}
+              onClick={handleDelete}
             >
               永久刪除
             </AlertDialogAction>
