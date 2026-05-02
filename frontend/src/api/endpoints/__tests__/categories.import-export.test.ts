@@ -9,6 +9,10 @@ vi.mock('../../client', () => ({
   },
 }))
 
+vi.mock('../../request', () => ({
+  unwrap: vi.fn((promise: Promise<any>) => promise.then((r: any) => r.data.data)),
+}))
+
 const AGENT_ID = 'agent-uuid'
 const CAT_ID = 'cat-uuid'
 
@@ -33,12 +37,13 @@ describe('importCategoryFaqs', () => {
     vi.mocked(apiClient.post).mockResolvedValue({ data: mockResult })
 
     const file = new File(['col'], 'test.xlsx')
-    await importCategoryFaqs(AGENT_ID, CAT_ID, file)
+    const result = await importCategoryFaqs(AGENT_ID, CAT_ID, file)
 
     expect(apiClient.post).toHaveBeenCalledWith(
       `/api/v1/agents/${AGENT_ID}/categories/${CAT_ID}/import?mode=append`,
       expect.any(FormData)
     )
+    expect(result).toEqual({ imported: 1, skipped: 0, errors: [] })
   })
 
   it('calls POST /categories/{id}/import with mode=replace when specified', async () => {
@@ -46,11 +51,12 @@ describe('importCategoryFaqs', () => {
     vi.mocked(apiClient.post).mockResolvedValue({ data: mockResult })
 
     const file = new File(['col'], 'test.xlsx')
-    await importCategoryFaqs(AGENT_ID, CAT_ID, file, 'replace')
+    const result = await importCategoryFaqs(AGENT_ID, CAT_ID, file, 'replace')
 
     expect(apiClient.post).toHaveBeenCalledWith(
       `/api/v1/agents/${AGENT_ID}/categories/${CAT_ID}/import?mode=replace`,
       expect.any(FormData)
     )
+    expect(result).toEqual({ imported: 2, skipped: 0, errors: [] })
   })
 })
