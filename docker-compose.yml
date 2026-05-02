@@ -85,8 +85,10 @@ services:
       disable: true
     volumes:
       - ./scripts:/opt/scripts:ro
-      # 專案根目錄（ingest_kb.py 所在位置）→ 容器內 /opt/project
-      - ${PROJECT_ROOT:-.}:/opt/project:ro
+      # 專案根目錄（ingest_kb.py 所在位置）
+      # Linux：.env 設 PROJECT_ROOT=/opt/rasa_rag → 容器內路徑與主機路徑相同
+      # Windows dev：不設 PROJECT_ROOT → 容器內掛載至 /opt/project（Windows 不使用 ingest_script）
+      - ${PROJECT_ROOT:-.}:${PROJECT_ROOT:-/opt/project}:ro
       # TXT 輸出目錄掛載：主機路徑 ↔ 容器路徑
       # Linux 建議：TXT_OUTPUT_HOST_PATH 與 TXT_OUTPUT_CONTAINER_PATH 設為相同值，
       #             例如 /opt/twlife，agents.txt_output_path 即填容器路徑。
