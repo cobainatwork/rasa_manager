@@ -202,24 +202,15 @@ class KnowledgeItemHistory(Base):
         default=uuid.uuid4,
         server_default=text("gen_random_uuid()"),
     )
-    item_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey("knowledge_items.id", ondelete="SET NULL"),
-        nullable=True,
-    )
+    # DB 層 FK 約束已由 migration 003 移除（與 trg_history_immutable 觸發器衝突）。
+    # ForeignKey() 標註保留，僅供 SQLAlchemy ORM 解析關聯 join 條件；
+    # 不含 ondelete，確保 ORM 不產生 ON DELETE 行為。
+    item_id = Column(UUID(as_uuid=True), ForeignKey("knowledge_items.id"), nullable=True)
     version = Column(Integer, nullable=False)
     question = Column(Text, nullable=False)
     answer = Column(Text, nullable=False)
-    category_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey("categories.id", ondelete="SET NULL"),
-        nullable=True,
-    )
-    saved_by = Column(
-        UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="SET NULL"),
-        nullable=True,
-    )
+    category_id = Column(UUID(as_uuid=True), ForeignKey("categories.id"), nullable=True)
+    saved_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     action = Column(String(50), nullable=False)
     action_reason = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
