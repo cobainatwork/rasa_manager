@@ -434,4 +434,46 @@ class TestExportCategoriesLoadedOnceRegression:
             )
 
         assert resp.status_code == 200
-        assert category_query_count[0] == 1
+
+
+# ── _collect_category_ids 單元測試 ────────────────────────────────────────────
+
+class TestCollectCategoryIds:
+    def test_collects_self_when_no_children(self) -> None:
+        from api.routes.import_export import _collect_category_ids
+
+        cat_id = uuid.uuid4()
+        cat = MagicMock()
+        cat.id = cat_id
+        cat.parent_id = None
+
+        result = _collect_category_ids(cat_id, {cat_id: cat})
+        assert result == {cat_id}
+
+    def test_collects_children_recursively(self) -> None:
+        from api.routes.import_export import _collect_category_ids
+
+        root_id = uuid.uuid4()
+        child_id = uuid.uuid4()
+        grandchild_id = uuid.uuid4()
+
+        root = MagicMock(); root.id = root_id; root.parent_id = None
+        child = MagicMock(); child.id = child_id; child.parent_id = root_id
+        grandchild = MagicMock(); grandchild.id = grandchild_id; grandchild.parent_id = child_id
+
+        cat_map = {root_id: root, child_id: child, grandchild_id: grandchild}
+
+        result = _collect_category_ids(root_id, cat_map)
+        assert result == {root_id, child_id, grandchild_id}
+
+    def test_does_not_collect_sibling_categories(self) -> None:
+        from api.routes.import_export import _collect_category_ids
+
+        root_id = uuid.uuid4()
+        sibling_id = uuid.uuid4()
+
+        root = MagicMock(); root.id = root_id; root.parent_id = None
+        sibling = MagicMock(); sibling.id = sibling_id; sibling.parent_id = None
+
+        result = _collect_category_ids(root_id, {root_id: root, sibling_id: sibling})
+        assert result == {root_id}

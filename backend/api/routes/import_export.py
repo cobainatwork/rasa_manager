@@ -98,6 +98,24 @@ def _build_category_path(
     return "/".join(parts)
 
 
+def _collect_category_ids(root_id: Any, cat_map: dict[Any, Category]) -> set[Any]:
+    """
+    從 root_id 出發，以迭代 DFS 收集所有子孫分類 ID（含自身）。
+    使用預先載入的 cat_map 避免 N+1 查詢。
+    """
+    result: set[Any] = set()
+    stack = [root_id]
+    while stack:
+        cid = stack.pop()
+        if cid in result:
+            continue
+        result.add(cid)
+        for cat in cat_map.values():
+            if cat.parent_id == cid:
+                stack.append(cat.id)
+    return result
+
+
 # ── 匯入端點 ──────────────────────────────────────────────────────────────────
 
 @router.post("/api/v1/agents/{agent_id}/faqs/import")
