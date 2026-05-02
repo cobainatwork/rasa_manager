@@ -449,6 +449,13 @@ class TestTriggerCategorySync:
         assert resp.status_code == 403
         assert resp.json()["detail"]["code"] == "FORBIDDEN"
 
+    def test_agent_not_found_returns_404(
+        self, client_superadmin, mock_db
+    ) -> None:
+        mock_db.query.side_effect = self._superadmin_db_se(None, None)
+        resp = client_superadmin.post(self.URL)
+        assert resp.status_code == 404
+
     def test_category_not_found_returns_404(
         self, client_superadmin, mock_db, agent_factory
     ) -> None:

@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
-from api.database.models import SyncLog, User
+from api.database.models import Category, SyncLog, User
 from api.database.session import get_db
 from api.dependencies import (
     get_current_user,
@@ -92,8 +92,6 @@ def trigger_category_sync(
     db: Session = Depends(get_db),
 ) -> dict:  # type: ignore[type-arg]
     require_reviewer_or_superadmin(agent_id, current_user, db)
-
-    from api.database.models import Category  # noqa: PLC0415
 
     cat = (
         db.query(Category)
