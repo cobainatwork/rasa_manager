@@ -576,9 +576,14 @@ class TestExportCategoryEndpoint:
 
 class TestImportCategoryEndpoint:
     def _make_db(self, mock_db: MagicMock, cat_id: uuid.UUID) -> None:
-        """append 模式下的 mock_db：query 0 = 分類驗證，query 1 = existing_questions。"""
+        """append 模式下的 mock_db：
+        query 0 = 分類驗證（Category.filter().first()）
+        query 1 = Category.filter().all()（cat_map_append）
+        query 2 = KnowledgeItem.question.filter().filter().all()（子樹現有問題）
+        """
         mock_cat = MagicMock()
         mock_cat.id = cat_id
+        mock_cat.parent_id = None
         mock_cat.agent_id = AGENT_ID
 
         counter = [0]
@@ -587,10 +592,15 @@ class TestImportCategoryEndpoint:
             q = MagicMock()
             idx = counter[0]
             counter[0] += 1
-            if idx == 0:  # Category.filter().first()
+            if idx == 0:  # Category.filter().first() — 驗證分類存在
                 q.filter.return_value.first.return_value = mock_cat
-            elif idx == 1:  # KnowledgeItem.question.filter().all()
+            elif idx == 1:  # Category.filter().all() — cat_map_append
+                q.filter.return_value.all.return_value = [mock_cat]
+            elif idx == 2:  # KnowledgeItem.question.filter().all() — 子樹現有問題
                 q.filter.return_value.all.return_value = []
+            else:
+                q.filter.return_value.all.return_value = []
+                q.filter.return_value.filter.return_value.all.return_value = []
             return q
 
         mock_db.query.side_effect = se
@@ -645,16 +655,21 @@ class TestImportCategoryEndpoint:
         self, client_superadmin: object, mock_db: MagicMock
     ) -> None:
         cat_id = uuid.uuid4()
-        mock_cat = MagicMock(); mock_cat.id = cat_id
+        mock_cat = MagicMock(); mock_cat.id = cat_id; mock_cat.parent_id = None
 
         counter = [0]
         def se(*_args, **_kwargs):
             q = MagicMock()
             idx = counter[0]; counter[0] += 1
-            if idx == 0:
+            if idx == 0:   # Category.filter().first() — 驗證分類存在
                 q.filter.return_value.first.return_value = mock_cat
-            elif idx == 1:
+            elif idx == 1:  # Category.filter().all() — cat_map_append
+                q.filter.return_value.all.return_value = [mock_cat]
+            elif idx == 2:  # KnowledgeItem.question.filter().all() — 子樹現有問題
                 q.filter.return_value.all.return_value = [("問題一",)]
+            else:
+                q.filter.return_value.all.return_value = []
+                q.filter.return_value.filter.return_value.all.return_value = []
             return q
         mock_db.query.side_effect = se
         mock_db.flush = MagicMock(); mock_db.add = MagicMock(); mock_db.commit = MagicMock()
@@ -693,8 +708,9 @@ class TestImportCategoryEndpoint:
                 q.filter.return_value.all.return_value = [mock_cat]
             elif idx == 2:  # KnowledgeItem.filter().all() — items_to_del
                 q.filter.return_value.all.return_value = [existing_item]
-            elif idx == 3:  # KnowledgeItem.question.filter().all() — existing_questions
+            else:
                 q.filter.return_value.all.return_value = []
+                q.filter.return_value.filter.return_value.all.return_value = []
             return q
         mock_db.query.side_effect = se
         mock_db.flush = MagicMock(); mock_db.add = MagicMock()

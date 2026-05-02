@@ -490,13 +490,25 @@ def import_category_faqs(
     a_idx = require_col("answer")
     tags_idx: Optional[int] = header.index("tags") if "tags" in header else None
 
-    # replace 後 existing_questions 應已清空，flush 確保可見
-    existing_questions: set[str] = {
-        str(q)
-        for (q,) in db.query(KnowledgeItem.question)
-        .filter(KnowledgeItem.agent_id == agent_id)
-        .all()
-    }
+    # 查詢目標分類子樹的現有問題（replace 模式下 flush 後應為空）
+    # append 模式下用於跳過分類子樹內已存在的重複問題
+    if mode == "replace":
+        # replace 後子樹已清空，僅追蹤本次操作內的重複
+        existing_questions: set[str] = set()
+    else:
+        # append 模式：載入目標子樹現有問題以避免重複
+        all_cats_append = db.query(Category).filter(Category.agent_id == agent_id).all()
+        cat_map_append: dict[Any, Category] = {c.id: c for c in all_cats_append}
+        append_cat_ids = _collect_category_ids(category_id, cat_map_append)
+        existing_questions = {
+            str(q)
+            for (q,) in db.query(KnowledgeItem.question)
+            .filter(
+                KnowledgeItem.agent_id == agent_id,
+                KnowledgeItem.category_id.in_(append_cat_ids),
+            )
+            .all()
+        }
 
     success = 0
     skipped = 0
