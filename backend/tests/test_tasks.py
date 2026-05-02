@@ -144,7 +144,7 @@ class TestRunIngestionSync:
             patch(self.SESSION_PATCH, return_value=db),
             patch("builtins.open", mock_open()),
             patch("os.makedirs"),
-            patch("os.path.exists", return_value=True),
+            patch("os.path.isfile", return_value=True),
             patch("shutil.copy2"),
             patch("subprocess.Popen") as mock_popen,
         ):
@@ -173,7 +173,7 @@ class TestRunIngestionSync:
             patch(self.SESSION_PATCH, return_value=db),
             patch("builtins.open", mock_open()),
             patch("os.makedirs"),
-            patch("os.path.exists", return_value=True),
+            patch("os.path.isfile", return_value=True),
             patch("shutil.copy2"),
             patch("subprocess.Popen") as mock_popen,
         ):
@@ -284,6 +284,7 @@ class TestCeleryRetryRegression:
             patch(self.SESSION_PATCH, return_value=db),
             patch("builtins.open", mock_open()),
             patch("os.makedirs"),
+            patch("os.path.isfile", return_value=True),
             patch("subprocess.Popen") as mock_popen,
         ):
             mock_popen.return_value = _make_mock_proc(returncode=1, stderr="boom")
@@ -312,6 +313,7 @@ class TestCeleryRetryRegression:
             patch(self.SESSION_PATCH, return_value=db),
             patch("builtins.open", mock_open()),
             patch("os.makedirs"),
+            patch("os.path.isfile", return_value=True),
             patch("subprocess.Popen") as mock_popen,
         ):
             mock_popen.return_value = _make_mock_proc(returncode=1, stderr="boom")
@@ -360,6 +362,7 @@ class TestSubprocessNarrowExceptRegression:
             patch("api.database.session.SessionLocal", return_value=db),
             patch("builtins.open", mock_open()),
             patch("os.makedirs"),
+            patch("os.path.isfile", return_value=True),
             patch("subprocess.Popen", side_effect=popen_side_effect),
         ):
             # retries=3 模擬已達 max_retries
@@ -391,6 +394,7 @@ class TestSubprocessNarrowExceptRegression:
             patch("api.database.session.SessionLocal", return_value=db),
             patch("builtins.open", mock_open()),
             patch("os.makedirs"),
+            patch("os.path.isfile", return_value=True),
             patch("subprocess.Popen", side_effect=popen_side_effect),
         ):
             run_ingestion_sync.apply(
@@ -420,6 +424,7 @@ class TestSubprocessNarrowExceptRegression:
                 patch("api.database.session.SessionLocal", return_value=db),
                 patch("builtins.open", mock_open()),
                 patch("os.makedirs"),
+                patch("os.path.isfile", return_value=True),
                 patch("subprocess.Popen", side_effect=popen_side_effect),
             ):
                 result = run_ingestion_sync.apply(args=[str(AGENT_ID), str(sync_log.id)])
@@ -468,6 +473,7 @@ class TestSubprocessTimeoutKillPGRegression:
             patch("api.database.session.SessionLocal", return_value=db),
             patch("builtins.open", mock_open()),
             patch("os.makedirs"),
+            patch("os.path.isfile", return_value=True),
             patch("subprocess.Popen", return_value=mock_proc) as mock_popen,
             patch("os.killpg") as mock_killpg,
             patch("os.getpgid", return_value=12345),
@@ -514,6 +520,7 @@ class TestSubprocessTimeoutKillPGRegression:
             patch("api.database.session.SessionLocal", return_value=db),
             patch("builtins.open", mock_open()),
             patch("os.makedirs"),
+            patch("os.path.isfile", return_value=True),
             patch("subprocess.Popen", return_value=mock_proc) as mock_popen,
         ):
             run_ingestion_sync.apply(args=[str(AGENT_ID), str(sync_log.id)])
@@ -585,6 +592,7 @@ class TestIngestScriptArgs:
             patch(self.SESSION_PATCH, return_value=db),
             patch("builtins.open", mock_open()),
             patch("os.makedirs"),
+            patch("os.path.isfile", return_value=True),
             patch("subprocess.Popen") as mock_popen,
         ):
             mock_popen.return_value = _make_mock_proc()
@@ -654,6 +662,7 @@ class TestIngestScriptMissingQdrantUrl:
             patch(self.SESSION_PATCH, return_value=db),
             patch("builtins.open", mock_open()),
             patch("os.makedirs"),
+            patch("os.path.isfile", return_value=True),
             patch("subprocess.Popen") as mock_popen,
         ):
             # retries=3 模擬已達 max_retries

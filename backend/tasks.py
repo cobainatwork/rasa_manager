@@ -124,6 +124,12 @@ def run_ingestion_sync(self, agent_id: str, sync_log_id: str) -> None:  # type: 
                     f"ingest_script_path 包含不允許的上級目錄引用：{script_path}"
                 )
 
+            # 早期診斷：腳本檔案不存在時立即報錯，避免 subprocess 回傳曖昧的 exit 2
+            if not _os.path.isfile(script_path):
+                raise RuntimeError(
+                    f"Ingestion script 不存在或無法存取：{script_path}"
+                )
+
             # 從環境變數讀 Qdrant URL（與 OpenAI key 一樣由 docker-compose 注入）
             qdrant_url = os.environ.get("QDRANT_URL")
             if not qdrant_url:
@@ -153,8 +159,14 @@ def run_ingestion_sync(self, agent_id: str, sync_log_id: str) -> None:  # type: 
                 stdout_data, stderr_data = proc.communicate(timeout=INGEST_SUBPROCESS_TIMEOUT_SEC)
                 returncode = proc.returncode
                 if returncode != 0:
+                    # 先把 stdout/stderr 寫入 sync_log，確保運維可透過 /sync-logs 查詢原因
+                    sync_log.stdout = stdout_data
+                    sync_log.stderr = stderr_data[:STDERR_MAX_CHARS]
+                    # 在錯誤訊息中附帶 stderr 摘要，方便直接從 Celery log 診斷
+                    stderr_snippet = (stderr_data.strip() or stdout_data.strip())[:300]
+                    detail = f"\nstderr: {stderr_snippet}" if stderr_snippet else ""
                     raise RuntimeError(
-                        f"Ingestion script 退出碼 {returncode}"
+                        f"Ingestion script 退出碼 {returncode}{detail}"
                     )
             except subprocess.TimeoutExpired:
                 # 強制終止整個 process group，回收子 / 孫進程，避免殭屍
