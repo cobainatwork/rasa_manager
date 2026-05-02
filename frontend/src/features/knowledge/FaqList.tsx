@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -40,9 +40,15 @@ export function FaqList({ agentId, selectedFaqId, onSelectFaq, onNewFaq, canAdd 
   const [checked, setChecked] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
 
+  // 翻頁時清空勾選，避免批次操作靜默處理不可見的舊頁資料
+  useEffect(() => { setChecked(new Set()) }, [filters.page])
+
   // ── 全選狀態（僅作用於當前頁） ─────────────────────────────────────────────
-  const pageIds = data?.items.map((f) => f.id) ?? []
-  const pageCheckedCount = pageIds.filter((id) => checked.has(id)).length
+  const pageIds = useMemo(() => data?.items.map((f) => f.id) ?? [], [data])
+  const pageCheckedCount = useMemo(
+    () => pageIds.filter((id) => checked.has(id)).length,
+    [pageIds, checked],
+  )
   const pageAllSelected = pageIds.length > 0 && pageCheckedCount === pageIds.length
   const pageSomeSelected = pageCheckedCount > 0 && !pageAllSelected
 

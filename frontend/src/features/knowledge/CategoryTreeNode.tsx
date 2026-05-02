@@ -14,6 +14,9 @@ import {
 import { cn } from '@/lib/utils'
 import type { CategoryNode } from '@/api/types'
 
+// 分類最多兩層（depth 0 = 根，depth 1 = 子），子分類不再允許建立子分類
+const MAX_PARENT_DEPTH = 0
+
 interface Props {
   node: CategoryNode
   depth: number
@@ -161,7 +164,7 @@ export function CategoryTreeNode({
             <DropdownMenuItem onClick={() => setEditing(true)}>
               <Pencil className="w-3.5 h-3.5 mr-2" strokeWidth={1.5} /> 重新命名
             </DropdownMenuItem>
-            {depth < 1 && (
+            {depth <= MAX_PARENT_DEPTH && (
               <DropdownMenuItem onClick={() => onAddChild(node.id)}>
                 <Plus className="w-3.5 h-3.5 mr-2" strokeWidth={1.5} /> 新增子分類
               </DropdownMenuItem>

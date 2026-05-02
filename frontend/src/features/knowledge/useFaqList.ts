@@ -9,7 +9,7 @@ const PER_PAGE = 20
 
 export function useFaqList(agentId: string | undefined, filters: FaqFilters, version = 0) {
   const [data, setData] = useState<FaqListResponse | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const debouncedQ = useDebounce(filters.q, 300)
 

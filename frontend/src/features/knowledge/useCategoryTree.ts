@@ -4,6 +4,10 @@ import { extractErrorMessage } from '@/api/client'
 import { toast } from 'sonner'
 import type { CategoryNode } from '@/api/types'
 
+function toastError(err: unknown) {
+  toast.error(extractErrorMessage(err))
+}
+
 export interface UseCategoryTreeResult {
   tree: CategoryNode[]
   loading: boolean
@@ -34,7 +38,7 @@ export function useCategoryTree(
     setLoading(true)
     api.listCategories(agentId)
       .then((nested) => setTree(nested))
-      .catch((err) => toast.error(extractErrorMessage(err)))
+      .catch(toastError)
       .finally(() => setLoading(false))
   }, [agentId])
 
@@ -45,7 +49,7 @@ export function useCategoryTree(
     try {
       await api.updateCategory(agentId, id, { name })
       reload()
-    } catch (err) { toast.error(extractErrorMessage(err)) }
+    } catch (err) { toastError(err) }
   }
 
   async function addChild(parentId: string | null) {
@@ -59,7 +63,7 @@ export function useCategoryTree(
       const created = await api.createCategory(agentId, { name, parent_id: parentId })
       setPendingRenameId(created.id)
       reload()
-    } catch (err) { toast.error(extractErrorMessage(err)) }
+    } catch (err) { toastError(err) }
   }
 
   async function remove(id: string) {
@@ -68,7 +72,7 @@ export function useCategoryTree(
       await api.deleteCategory(agentId, id)
       if (selectedId === id) setSelectedId(null)
       reload()
-    } catch (err) { toast.error(extractErrorMessage(err)) }
+    } catch (err) { toastError(err) }
   }
 
   function clearPendingRename() { setPendingRenameId(null) }
@@ -82,8 +86,9 @@ export function useCategoryTree(
       a.href = url
       a.download = 'category_export.xlsx'
       a.click()
-      URL.revokeObjectURL(url)
-    } catch (err) { toast.error(extractErrorMessage(err)) }
+      // 延遲 revoke：瀏覽器非同步處理下載，同步 revoke 會導致 URL 在下載前失效
+      setTimeout(() => URL.revokeObjectURL(url), 100)
+    } catch (err) { toastError(err) }
   }
 
   async function importCategory(id: string, file: File, mode: 'append' | 'replace') {
@@ -98,7 +103,7 @@ export function useCategoryTree(
       }
       reload()
       onImportDone?.(mode)
-    } catch (err) { toast.error(extractErrorMessage(err)) }
+    } catch (err) { toastError(err) }
   }
 
   async function syncCategory(id: string) {
@@ -106,7 +111,7 @@ export function useCategoryTree(
     try {
       await api.syncCategory(agentId, id)
       toast.success('分類同步已觸發，背景執行中')
-    } catch (err) { toast.error(`同步失敗：${extractErrorMessage(err)}`) }
+    } catch (err) { toastError(err) }
   }
 
   return {
