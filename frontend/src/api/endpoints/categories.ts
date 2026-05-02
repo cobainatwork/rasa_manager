@@ -24,3 +24,38 @@ export async function updateCategory(
 export async function deleteCategory(agentId: string, categoryId: string): Promise<void> {
   await apiClient.delete(`/api/v1/agents/${agentId}/categories/${categoryId}`)
 }
+
+// ── 分類匯入/匯出 ─────────────────────────────────────────────────────────────
+
+export interface CategoryImportResult {
+  imported: number
+  skipped: number
+  errors: Array<{ row: number; reason: string }>
+}
+
+export async function exportCategoryFaqs(
+  agentId: string,
+  categoryId: string
+): Promise<Blob> {
+  const res = await apiClient.get(
+    `/api/v1/agents/${agentId}/categories/${categoryId}/export`,
+    { responseType: 'blob' }
+  )
+  return res.data as Blob
+}
+
+export async function importCategoryFaqs(
+  agentId: string,
+  categoryId: string,
+  file: File,
+  mode: 'append' | 'replace' = 'append'
+): Promise<CategoryImportResult> {
+  const form = new FormData()
+  form.append('file', file)
+  return unwrap(
+    apiClient.post(
+      `/api/v1/agents/${agentId}/categories/${categoryId}/import?mode=${mode}`,
+      form
+    )
+  )
+}
