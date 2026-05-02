@@ -328,3 +328,73 @@ def export_faqs(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": "attachment; filename=faq_export.xlsx"},
     )
+
+
+# ── 分類匯出端點 ──────────────────────────────────────────────────────────────
+
+@router.get("/api/v1/agents/{agent_id}/categories/{category_id}/export")
+def export_category_faqs(
+    agent_id: uuid.UUID,
+    category_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    require_agent_access(agent_id, current_user, db)
+
+    category = (
+        db.query(Category)
+        .filter(Category.id == category_id, Category.agent_id == agent_id)
+        .first()
+    )
+    if category is None:
+        raise HTTPException(status_code=404, detail="找不到分類")
+
+    all_cats = db.query(Category).filter(Category.agent_id == agent_id).all()
+    cat_map: dict[Any, Category] = {c.id: c for c in all_cats}
+
+    cat_ids = _collect_category_ids(category_id, cat_map)
+
+    items = (
+        db.query(KnowledgeItem)
+        .filter(KnowledgeItem.agent_id == agent_id)
+        .filter(KnowledgeItem.category_id.in_(cat_ids))
+        .order_by(KnowledgeItem.created_at)
+        .all()
+    )
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "FAQs"  # type: ignore[union-attr]
+    ws.append(["question", "answer", "tags", "status", "version"])  # type: ignore[union-attr]
+
+    for item in items:
+        tags_str = ",".join(item.tags) if item.tags else ""
+        ws.append([  # type: ignore[union-attr]
+            str(item.question),
+            str(item.answer),
+            tags_str,
+            str(item.status),
+            item.version if item.version is not None else 1,
+        ])
+
+    db.add(AuditLog(
+        id=uuid.uuid4(),
+        agent_id=agent_id,
+        item_id=None,
+        action="export_category",
+        performed_by=current_user.id,
+        diff={"category_id": str(category_id), "count": len(items)},
+    ))
+    db.commit()
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f"attachment; filename=category_{category_id}_export.xlsx"
+        },
+    )

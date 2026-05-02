@@ -477,3 +477,96 @@ class TestCollectCategoryIds:
 
         result = _collect_category_ids(root_id, {root_id: root, sibling_id: sibling})
         assert result == {root_id}
+
+
+# ── 分類匯出端點 ──────────────────────────────────────────────────────────────
+
+class TestExportCategoryEndpoint:
+    def _make_db(
+        self,
+        mock_db: MagicMock,
+        cat_id: uuid.UUID,
+        faqs: list | None = None,
+    ) -> MagicMock:
+        """設定 mock_db query 序列（require_agent_access 已被 patch，不含前 2 次查詢）。"""
+        faqs = faqs or []
+        mock_cat = MagicMock()
+        mock_cat.id = cat_id
+        mock_cat.parent_id = None
+        mock_cat.name = "測試分類"
+
+        counter = [0]
+
+        def se(*_args, **_kwargs):
+            q = MagicMock()
+            idx = counter[0]
+            counter[0] += 1
+            if idx == 0:  # Category.filter().first() — 驗證分類存在
+                q.filter.return_value.first.return_value = mock_cat
+            elif idx == 1:  # Category.filter().all() — cat_map
+                q.filter.return_value.all.return_value = [mock_cat]
+            elif idx == 2:  # KnowledgeItem.filter().filter().order_by().all()
+                (q.filter.return_value
+                  .filter.return_value
+                  .order_by.return_value
+                  .all.return_value) = faqs
+            return q
+
+        mock_db.query.side_effect = se
+        mock_db.add = MagicMock()
+        mock_db.commit = MagicMock()
+        return mock_cat
+
+    def test_returns_xlsx_stream(
+        self, client_superadmin: object, mock_db: MagicMock
+    ) -> None:
+        cat_id = uuid.uuid4()
+        self._make_db(mock_db, cat_id)
+
+        with patch("api.routes.import_export.require_agent_access"):
+            resp = client_superadmin.get(  # type: ignore[attr-defined]
+                f"/api/v1/agents/{AGENT_ID}/categories/{cat_id}/export"
+            )
+
+        assert resp.status_code == 200
+        assert "spreadsheetml" in resp.headers["content-type"]
+
+    def test_xlsx_contains_faq_rows(
+        self, client_superadmin: object, mock_db: MagicMock
+    ) -> None:
+        cat_id = uuid.uuid4()
+        mock_faq = MagicMock()
+        mock_faq.question = "問題一"
+        mock_faq.answer = "答案一"
+        mock_faq.tags = ["t1"]
+        mock_faq.status = "approved"
+        mock_faq.version = 1
+        mock_faq.created_at = None
+        self._make_db(mock_db, cat_id, faqs=[mock_faq])
+
+        with patch("api.routes.import_export.require_agent_access"):
+            resp = client_superadmin.get(  # type: ignore[attr-defined]
+                f"/api/v1/agents/{AGENT_ID}/categories/{cat_id}/export"
+            )
+
+        assert resp.status_code == 200
+        wb = openpyxl.load_workbook(io.BytesIO(resp.content))
+        ws = wb.active
+        rows = list(ws.iter_rows(values_only=True))  # type: ignore[union-attr]
+        assert rows[0][0] == "question"  # 標題列
+        assert rows[1][0] == "問題一"    # 資料列
+
+    def test_invalid_category_returns_404(
+        self, client_superadmin: object, mock_db: MagicMock
+    ) -> None:
+        cat_id = uuid.uuid4()
+        mock_db.query.return_value.filter.return_value.first.return_value = None
+        mock_db.add = MagicMock()
+        mock_db.commit = MagicMock()
+
+        with patch("api.routes.import_export.require_agent_access"):
+            resp = client_superadmin.get(  # type: ignore[attr-defined]
+                f"/api/v1/agents/{AGENT_ID}/categories/{cat_id}/export"
+            )
+
+        assert resp.status_code == 404
