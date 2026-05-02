@@ -24,6 +24,13 @@ logger = structlog.get_logger()
 
 router = APIRouter(tags=["sync"])
 
+# kombu.exceptions.OperationalError（繼承自 Exception，非 OSError）
+# 當 Redis broker 不可用時 Celery 可能拋出此例外；安全 fallback 至 OSError
+try:
+    from kombu.exceptions import OperationalError as _KombuError  # noqa: PLC0415
+except ImportError:  # pragma: no cover
+    _KombuError = OSError  # type: ignore[misc,assignment]
+
 
 @router.post(
     "/api/v1/agents/{agent_id}/sync",
@@ -55,7 +62,7 @@ def trigger_sync(
         sync_log.celery_task_id = task.id
         db.commit()
         task_id = task.id
-    except (ConnectionError, OSError, TimeoutError) as exc:
+    except (ConnectionError, OSError, TimeoutError, _KombuError) as exc:
         # Celery broker 暫不可用時仍回傳 sync_log，Worker 恢復後可接續
         logger.warning(
             "celery_dispatch_failed",
@@ -123,7 +130,7 @@ def trigger_category_sync(
         sync_log.celery_task_id = task.id
         db.commit()
         task_id = task.id
-    except (ConnectionError, OSError, TimeoutError) as exc:
+    except (ConnectionError, OSError, TimeoutError, _KombuError) as exc:
         logger.warning(
             "celery_category_sync_dispatch_failed",
             agent_id=str(agent_id),

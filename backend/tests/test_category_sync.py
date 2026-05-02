@@ -481,3 +481,21 @@ class TestTriggerCategorySync:
 
         assert resp.status_code == 202
         assert resp.json()["data"]["task_id"] is None
+
+    def test_kombu_error_still_returns_202(
+        self, client_superadmin, mock_db, agent_factory
+    ) -> None:
+        """kombu.exceptions.OperationalError 也須被攔截，回傳 202。"""
+        from kombu.exceptions import OperationalError as KombuError  # noqa: PLC0415
+
+        agent = agent_factory()
+        cat = _make_cat_for_api()
+        mock_db.query.side_effect = self._superadmin_db_se(agent, cat)
+        mock_db.refresh.return_value = None
+
+        with patch("tasks.run_category_sync") as mock_celery:
+            mock_celery.delay.side_effect = KombuError("broker down")
+            resp = client_superadmin.post(self.URL)
+
+        assert resp.status_code == 202
+        assert resp.json()["data"]["task_id"] is None

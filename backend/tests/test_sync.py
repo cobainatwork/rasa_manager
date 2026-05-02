@@ -103,8 +103,22 @@ class TestTriggerSync:
         mock_db.refresh.return_value = None
 
         with patch("tasks.run_ingestion_sync") as mock_celery:
-            # Celery broker 連線失敗（narrow exception，符合 sync.py 的 except 子句）
             mock_celery.delay.side_effect = ConnectionError("Celery broker unreachable")
+            resp = client_superadmin.post(f"/api/v1/agents/{AGENT_ID}/sync")
+
+        assert resp.status_code == 202
+        assert resp.json()["data"]["task_id"] is None
+
+    def test_kombu_error_still_returns_202(self, client_superadmin, mock_db, _agent_mock) -> None:
+        """kombu.exceptions.OperationalError 也須被攔截，回傳 202。"""
+        from kombu.exceptions import OperationalError as KombuError  # noqa: PLC0415
+
+        agent = _agent_mock()
+        mock_db.query.return_value.filter.return_value.first.return_value = agent
+        mock_db.refresh.return_value = None
+
+        with patch("tasks.run_ingestion_sync") as mock_celery:
+            mock_celery.delay.side_effect = KombuError("broker down")
             resp = client_superadmin.post(f"/api/v1/agents/{AGENT_ID}/sync")
 
         assert resp.status_code == 202
