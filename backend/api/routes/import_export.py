@@ -18,10 +18,10 @@ from __future__ import annotations
 
 import io
 import uuid
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 import openpyxl
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -398,3 +398,171 @@ def export_category_faqs(
             "Content-Disposition": f"attachment; filename=category_{category_id}_export.xlsx"
         },
     )
+
+
+# ── 分類匯入端點 ──────────────────────────────────────────────────────────────
+
+@router.post("/api/v1/agents/{agent_id}/categories/{category_id}/import")
+def import_category_faqs(
+    agent_id: uuid.UUID,
+    category_id: uuid.UUID,
+    mode: Literal["append", "replace"] = Query("append"),
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    require_agent_access(agent_id, current_user, db)
+
+    # 驗證分類存在且屬於此 agent
+    category = (
+        db.query(Category)
+        .filter(Category.id == category_id, Category.agent_id == agent_id)
+        .first()
+    )
+    if category is None:
+        raise HTTPException(status_code=404, detail="找不到分類")
+
+    # replace 模式：先刪除該分類（含所有子分類）的全部 FAQ
+    if mode == "replace":
+        all_cats = db.query(Category).filter(Category.agent_id == agent_id).all()
+        cat_map_del: dict[Any, Category] = {c.id: c for c in all_cats}
+        del_cat_ids = _collect_category_ids(category_id, cat_map_del)
+        items_to_del = (
+            db.query(KnowledgeItem)
+            .filter(
+                KnowledgeItem.agent_id == agent_id,
+                KnowledgeItem.category_id.in_(del_cat_ids),
+            )
+            .all()
+        )
+        deleted_count = len(items_to_del)
+        for item in items_to_del:
+            db.delete(item)
+        db.flush()
+        if deleted_count > 0:
+            db.add(AuditLog(
+                id=uuid.uuid4(),
+                agent_id=agent_id,
+                item_id=None,
+                action="bulk_delete_category",
+                performed_by=current_user.id,
+                diff={"category_id": str(category_id), "deleted_count": deleted_count},
+            ))
+
+    # 檔案格式與大小驗證
+    filename = file.filename or ""
+    if not filename.lower().endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail="僅接受 .xlsx 格式檔案")
+
+    content = file.file.read()
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="檔案大小超過 10 MB 上限")
+
+    # 解析 Excel
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+        ws = wb.active
+        if ws is None:
+            raise ValueError("找不到工作表")
+        all_rows = list(ws.iter_rows(values_only=True))
+        wb.close()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"無法解析 Excel 檔案：{exc}") from exc
+
+    if len(all_rows) < 2:
+        raise HTTPException(status_code=400, detail="Excel 無資料列（需含標題行）")
+
+    header = [str(c).strip().lower() if c is not None else "" for c in all_rows[0]]
+    data_rows = all_rows[1:]
+
+    if len(data_rows) > MAX_ROWS:
+        raise HTTPException(status_code=400, detail=f"資料列數超過 {MAX_ROWS} 行上限")
+
+    # 只需 question + answer（無 category_path）
+    def require_col(name: str) -> int:
+        if name not in header:
+            raise HTTPException(status_code=400, detail=f"缺少必填欄位：{name}")
+        return header.index(name)
+
+    q_idx = require_col("question")
+    a_idx = require_col("answer")
+    tags_idx: Optional[int] = header.index("tags") if "tags" in header else None
+
+    # replace 後 existing_questions 應已清空，flush 確保可見
+    existing_questions: set[str] = {
+        str(q)
+        for (q,) in db.query(KnowledgeItem.question)
+        .filter(KnowledgeItem.agent_id == agent_id)
+        .all()
+    }
+
+    success = 0
+    skipped = 0
+    errors: list[dict[str, Any]] = []
+
+    for row_num, row in enumerate(data_rows, start=2):
+        def cell(idx: int) -> str:
+            val = row[idx] if idx < len(row) else None  # type: ignore[index]
+            return str(val).strip() if val is not None else ""
+
+        question = cell(q_idx)
+        answer = cell(a_idx)
+        tags_raw = cell(tags_idx) if tags_idx is not None else ""
+
+        # 空列跳過
+        if not question and not answer:
+            continue
+
+        if not question or not answer:
+            errors.append({"row": row_num, "reason": "question / answer 不可為空"})
+            continue
+
+        if question in existing_questions:
+            skipped += 1
+            continue
+
+        tags_list = [t.strip() for t in tags_raw.split(",") if t.strip()] if tags_raw else []
+
+        try:
+            with db.begin_nested():
+                item = KnowledgeItem(
+                    id=uuid.uuid4(),
+                    agent_id=agent_id,
+                    category_id=category_id,
+                    question=question,
+                    answer=answer,
+                    tags=tags_list,
+                    status="draft",
+                    version=1,
+                    created_by=current_user.id,
+                )
+                db.add(item)
+                db.flush()
+
+                db.add(AuditLog(
+                    id=uuid.uuid4(),
+                    agent_id=agent_id,
+                    item_id=item.id,
+                    action="import_category",
+                    performed_by=current_user.id,
+                    diff={"question": question, "category_id": str(category_id)},
+                ))
+
+            existing_questions.add(question)
+            success += 1
+
+        except Exception as exc:
+            errors.append({"row": row_num, "reason": str(exc)})
+
+    db.commit()
+
+    return {
+        "success": True,
+        "data": {
+            "imported": success,
+            "skipped": skipped,
+            "errors": errors,
+        },
+    }

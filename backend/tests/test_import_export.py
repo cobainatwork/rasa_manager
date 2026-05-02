@@ -570,3 +570,181 @@ class TestExportCategoryEndpoint:
             )
 
         assert resp.status_code == 404
+
+
+# ── 分類匯入端點 ──────────────────────────────────────────────────────────────
+
+class TestImportCategoryEndpoint:
+    def _make_db(self, mock_db: MagicMock, cat_id: uuid.UUID) -> None:
+        """append 模式下的 mock_db：query 0 = 分類驗證，query 1 = existing_questions。"""
+        mock_cat = MagicMock()
+        mock_cat.id = cat_id
+        mock_cat.agent_id = AGENT_ID
+
+        counter = [0]
+
+        def se(*_args, **_kwargs):
+            q = MagicMock()
+            idx = counter[0]
+            counter[0] += 1
+            if idx == 0:  # Category.filter().first()
+                q.filter.return_value.first.return_value = mock_cat
+            elif idx == 1:  # KnowledgeItem.question.filter().all()
+                q.filter.return_value.all.return_value = []
+            return q
+
+        mock_db.query.side_effect = se
+        mock_db.flush = MagicMock()
+        mock_db.add = MagicMock()
+        mock_db.commit = MagicMock()
+        mock_db.begin_nested.return_value.__enter__ = MagicMock(return_value=None)
+        mock_db.begin_nested.return_value.__exit__ = MagicMock(return_value=False)
+
+    def test_only_question_answer_required(
+        self, client_superadmin: object, mock_db: MagicMock
+    ) -> None:
+        """category_path 欄位不應是必填欄位。"""
+        cat_id = uuid.uuid4()
+        self._make_db(mock_db, cat_id)
+        xlsx = _make_xlsx(
+            [["問題一", "答案一"]],
+            headers=["question", "answer"],
+        )
+
+        with patch("api.routes.import_export.require_agent_access"):
+            resp = client_superadmin.post(  # type: ignore[attr-defined]
+                f"/api/v1/agents/{AGENT_ID}/categories/{cat_id}/import",
+                files={"file": ("t.xlsx", xlsx,
+                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["imported"] == 1
+        assert data["skipped"] == 0
+        assert data["errors"] == []
+
+    def test_missing_answer_column_rejected(
+        self, client_superadmin: object, mock_db: MagicMock
+    ) -> None:
+        cat_id = uuid.uuid4()
+        self._make_db(mock_db, cat_id)
+        xlsx = _make_xlsx([["Q"]], headers=["question"])
+
+        with patch("api.routes.import_export.require_agent_access"):
+            resp = client_superadmin.post(  # type: ignore[attr-defined]
+                f"/api/v1/agents/{AGENT_ID}/categories/{cat_id}/import",
+                files={"file": ("t.xlsx", xlsx,
+                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            )
+
+        assert resp.status_code == 400
+        assert "answer" in resp.json()["detail"].lower()
+
+    def test_duplicate_question_skipped(
+        self, client_superadmin: object, mock_db: MagicMock
+    ) -> None:
+        cat_id = uuid.uuid4()
+        mock_cat = MagicMock(); mock_cat.id = cat_id
+
+        counter = [0]
+        def se(*_args, **_kwargs):
+            q = MagicMock()
+            idx = counter[0]; counter[0] += 1
+            if idx == 0:
+                q.filter.return_value.first.return_value = mock_cat
+            elif idx == 1:
+                q.filter.return_value.all.return_value = [("問題一",)]
+            return q
+        mock_db.query.side_effect = se
+        mock_db.flush = MagicMock(); mock_db.add = MagicMock(); mock_db.commit = MagicMock()
+        mock_db.begin_nested.return_value.__enter__ = MagicMock(return_value=None)
+        mock_db.begin_nested.return_value.__exit__ = MagicMock(return_value=False)
+
+        xlsx = _make_xlsx([["問題一", "答案一"]], headers=["question", "answer"])
+        with patch("api.routes.import_export.require_agent_access"):
+            resp = client_superadmin.post(  # type: ignore[attr-defined]
+                f"/api/v1/agents/{AGENT_ID}/categories/{cat_id}/import",
+                files={"file": ("t.xlsx", xlsx,
+                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["imported"] == 0
+        assert data["skipped"] == 1
+
+    def test_replace_mode_calls_delete_on_existing_items(
+        self, client_superadmin: object, mock_db: MagicMock
+    ) -> None:
+        """mode=replace → 應對現有 FAQ 呼叫 db.delete()。"""
+        cat_id = uuid.uuid4()
+        mock_cat = MagicMock(); mock_cat.id = cat_id; mock_cat.parent_id = None
+
+        existing_item = MagicMock()
+
+        counter = [0]
+        def se(*_args, **_kwargs):
+            q = MagicMock()
+            idx = counter[0]; counter[0] += 1
+            if idx == 0:   # Category.filter().first() — validate category
+                q.filter.return_value.first.return_value = mock_cat
+            elif idx == 1:  # Category.filter().all() — cat_map for _collect_category_ids
+                q.filter.return_value.all.return_value = [mock_cat]
+            elif idx == 2:  # KnowledgeItem.filter().all() — items_to_del
+                q.filter.return_value.all.return_value = [existing_item]
+            elif idx == 3:  # KnowledgeItem.question.filter().all() — existing_questions
+                q.filter.return_value.all.return_value = []
+            return q
+        mock_db.query.side_effect = se
+        mock_db.flush = MagicMock(); mock_db.add = MagicMock()
+        mock_db.commit = MagicMock(); mock_db.delete = MagicMock()
+        mock_db.begin_nested.return_value.__enter__ = MagicMock(return_value=None)
+        mock_db.begin_nested.return_value.__exit__ = MagicMock(return_value=False)
+
+        xlsx = _make_xlsx([["新問題", "新答案"]], headers=["question", "answer"])
+        with patch("api.routes.import_export.require_agent_access"):
+            resp = client_superadmin.post(  # type: ignore[attr-defined]
+                f"/api/v1/agents/{AGENT_ID}/categories/{cat_id}/import?mode=replace",
+                files={"file": ("t.xlsx", xlsx,
+                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            )
+
+        assert resp.status_code == 200
+        mock_db.delete.assert_called_once_with(existing_item)
+
+    def test_append_mode_does_not_delete(
+        self, client_superadmin: object, mock_db: MagicMock
+    ) -> None:
+        """mode=append（預設）→ 不應呼叫 db.delete()。"""
+        cat_id = uuid.uuid4()
+        self._make_db(mock_db, cat_id)
+        mock_db.delete = MagicMock()
+
+        xlsx = _make_xlsx([["問題A", "答案A"]], headers=["question", "answer"])
+        with patch("api.routes.import_export.require_agent_access"):
+            resp = client_superadmin.post(  # type: ignore[attr-defined]
+                f"/api/v1/agents/{AGENT_ID}/categories/{cat_id}/import",
+                files={"file": ("t.xlsx", xlsx,
+                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            )
+
+        assert resp.status_code == 200
+        mock_db.delete.assert_not_called()
+
+    def test_invalid_category_returns_404(
+        self, client_superadmin: object, mock_db: MagicMock
+    ) -> None:
+        cat_id = uuid.uuid4()
+        mock_db.query.return_value.filter.return_value.first.return_value = None
+        mock_db.add = MagicMock(); mock_db.commit = MagicMock()
+
+        xlsx = _make_xlsx([["Q", "A"]], headers=["question", "answer"])
+        with patch("api.routes.import_export.require_agent_access"):
+            resp = client_superadmin.post(  # type: ignore[attr-defined]
+                f"/api/v1/agents/{AGENT_ID}/categories/{cat_id}/import",
+                files={"file": ("t.xlsx", xlsx,
+                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            )
+
+        assert resp.status_code == 404
