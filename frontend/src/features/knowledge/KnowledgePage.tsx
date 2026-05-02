@@ -15,11 +15,23 @@ type RightPaneMode = 'detail' | 'new' | 'empty'
 
 export function KnowledgePage() {
   const { id } = useParams<{ id: string }>()
-  const categoryTree = useCategoryTree(id)
-  const { setFilter } = useFaqFilter()
   const [selectedFaqId, setSelectedFaqId] = useState<string | null>(null)
   const [rightMode, setRightMode] = useState<RightPaneMode>('empty')
   const [listVersion, setListVersion] = useState(0)
+
+  function clearFaqSelection() {
+    setSelectedFaqId(null)
+    setRightMode('empty')
+  }
+
+  function handleImportDone(mode: 'append' | 'replace') {
+    setListVersion((v) => v + 1)
+    // replace 模式可能刪除了目前選取的 FAQ，清空右欄避免顯示殘留資料
+    if (mode === 'replace') clearFaqSelection()
+  }
+
+  const categoryTree = useCategoryTree(id, handleImportDone)
+  const { setFilter } = useFaqFilter()
 
   const canAddFaq = useMemo(() => {
     if (!categoryTree.selectedId) return false
@@ -53,8 +65,7 @@ export function KnowledgePage() {
   }
 
   function handleFaqDeleted() {
-    setSelectedFaqId(null)
-    setRightMode('empty')
+    clearFaqSelection()
     setListVersion((v) => v + 1)
   }
 

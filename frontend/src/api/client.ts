@@ -12,6 +12,18 @@ export const apiClient = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
+// ── FormData request interceptor ─────────────────────────────────────────────
+// axios v1.x 當 instance 預設 Content-Type: application/json 時，
+// 若請求 body 為 FormData 會執行 JSON.stringify(FormDataUtils.toJSON(data))，
+// 導致 file 欄位被序列化為 {} 而非實際二進位（Content-Length 僅 11 bytes）。
+// 在此攔截器移除 Content-Type，讓瀏覽器補上正確的 multipart/form-data; boundary=...。
+apiClient.interceptors.request.use((config) => {
+  if (config.data instanceof FormData) {
+    config.headers.delete('Content-Type')
+  }
+  return config
+})
+
 // ── 401 失效事件（B4）────────────────────────────────────────────────────────
 // 攔截器不再直接 window.location.href = '/login'（會丟掉 React Router 狀態），
 // 改為派發 'auth:expired' 事件，由 AuthProvider 訂閱並使用 useNavigate 導向。

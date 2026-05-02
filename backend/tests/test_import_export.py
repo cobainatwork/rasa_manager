@@ -764,3 +764,150 @@ class TestImportCategoryEndpoint:
             )
 
         assert resp.status_code == 404
+
+
+# ── Regression：匯入子分類不應產生 422 ────────────────────────────────────────
+
+class TestImportCategorySubcategoryRegression:
+    """
+    回歸測試：匯入子分類（parent_id != None）時，append 與 replace 模式均應回傳 200。
+
+    背景：cat_map 包含父分類與子分類兩個節點，子分類的 parent_id 指向父分類 UUID，
+    確認 _collect_category_ids 正確只收集子分類本身（不誤入父分類），
+    且整個 HTTP 端點流程不因「非根節點」而回傳 422。
+    """
+
+    def _make_sub_db_append(
+        self,
+        mock_db: MagicMock,
+        sub_id: uuid.UUID,
+        parent_id: uuid.UUID,
+    ) -> None:
+        """append 模式 mock：cat_map 包含父分類 + 子分類。"""
+        mock_parent = MagicMock()
+        mock_parent.id = parent_id
+        mock_parent.parent_id = None  # 父為根節點
+
+        mock_sub = MagicMock()
+        mock_sub.id = sub_id
+        mock_sub.parent_id = parent_id  # 子節點的 parent_id != None
+        mock_sub.agent_id = AGENT_ID
+
+        counter = [0]
+
+        def se(*_args, **_kwargs):
+            q = MagicMock()
+            idx = counter[0]; counter[0] += 1
+            if idx == 0:   # Category.filter().first() — 分類存在驗證
+                q.filter.return_value.first.return_value = mock_sub
+            elif idx == 1:  # Category.filter().all() — cat_map_append（含父子）
+                q.filter.return_value.all.return_value = [mock_parent, mock_sub]
+            elif idx == 2:  # KnowledgeItem.question — 子樹現有問題
+                q.filter.return_value.all.return_value = []
+            else:
+                q.filter.return_value.all.return_value = []
+                q.filter.return_value.filter.return_value.all.return_value = []
+            return q
+
+        mock_db.query.side_effect = se
+        mock_db.flush = MagicMock()
+        mock_db.add = MagicMock()
+        mock_db.commit = MagicMock()
+        mock_db.begin_nested.return_value.__enter__ = MagicMock(return_value=None)
+        mock_db.begin_nested.return_value.__exit__ = MagicMock(return_value=False)
+
+    def test_append_into_subcategory_returns_200(
+        self, client_superadmin: object, mock_db: MagicMock
+    ) -> None:
+        """子分類 append 匯入應回傳 200，不應產生 422。"""
+        parent_id = uuid.uuid4()
+        sub_id = uuid.uuid4()
+        self._make_sub_db_append(mock_db, sub_id, parent_id)
+
+        xlsx = _make_xlsx([["問題子分類A", "答案子分類A"]], headers=["question", "answer"])
+
+        with patch("api.routes.import_export.require_agent_access"):
+            resp = client_superadmin.post(  # type: ignore[attr-defined]
+                f"/api/v1/agents/{AGENT_ID}/categories/{sub_id}/import",
+                files={"file": ("t.xlsx", xlsx,
+                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            )
+
+        assert resp.status_code == 200, f"期望 200，實際 {resp.status_code}；body={resp.text}"
+        data = resp.json()["data"]
+        assert data["imported"] == 1
+        assert data["skipped"] == 0
+        assert data["errors"] == []
+
+    def test_replace_into_subcategory_returns_200(
+        self, client_superadmin: object, mock_db: MagicMock
+    ) -> None:
+        """子分類 replace 匯入應回傳 200，舊 FAQ 應被刪除，不應產生 422。"""
+        parent_id = uuid.uuid4()
+        sub_id = uuid.uuid4()
+
+        mock_parent = MagicMock()
+        mock_parent.id = parent_id
+        mock_parent.parent_id = None
+
+        mock_sub = MagicMock()
+        mock_sub.id = sub_id
+        mock_sub.parent_id = parent_id
+        mock_sub.agent_id = AGENT_ID
+
+        existing_item = MagicMock()
+
+        counter = [0]
+
+        def se(*_args, **_kwargs):
+            q = MagicMock()
+            idx = counter[0]; counter[0] += 1
+            if idx == 0:   # Category.filter().first() — validate
+                q.filter.return_value.first.return_value = mock_sub
+            elif idx == 1:  # Category.filter().all() — cat_map_del（含父子）
+                q.filter.return_value.all.return_value = [mock_parent, mock_sub]
+            elif idx == 2:  # KnowledgeItem.filter().all() — items_to_del
+                q.filter.return_value.all.return_value = [existing_item]
+            else:
+                q.filter.return_value.all.return_value = []
+                q.filter.return_value.filter.return_value.all.return_value = []
+            return q
+
+        mock_db.query.side_effect = se
+        mock_db.flush = MagicMock()
+        mock_db.add = MagicMock()
+        mock_db.commit = MagicMock()
+        mock_db.delete = MagicMock()
+        mock_db.begin_nested.return_value.__enter__ = MagicMock(return_value=None)
+        mock_db.begin_nested.return_value.__exit__ = MagicMock(return_value=False)
+
+        xlsx = _make_xlsx([["新問題子分類B", "新答案子分類B"]], headers=["question", "answer"])
+
+        with patch("api.routes.import_export.require_agent_access"):
+            resp = client_superadmin.post(  # type: ignore[attr-defined]
+                f"/api/v1/agents/{AGENT_ID}/categories/{sub_id}/import?mode=replace",
+                files={"file": ("t.xlsx", xlsx,
+                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            )
+
+        assert resp.status_code == 200, f"期望 200，實際 {resp.status_code}；body={resp.text}"
+        mock_db.delete.assert_called_once_with(existing_item)
+        data = resp.json()["data"]
+        assert data["imported"] == 1
+
+    def test_replace_subcategory_does_not_delete_parent_faqs(self) -> None:
+        """replace 子分類時，_collect_category_ids 不應收集父分類 ID，
+        確認父分類的 FAQ 不被誤刪。"""
+        from api.routes.import_export import _collect_category_ids
+
+        parent_id = uuid.uuid4()
+        sub_id = uuid.uuid4()
+
+        mock_parent = MagicMock(); mock_parent.id = parent_id; mock_parent.parent_id = None
+        mock_sub = MagicMock(); mock_sub.id = sub_id; mock_sub.parent_id = parent_id
+
+        cat_map = {parent_id: mock_parent, sub_id: mock_sub}
+        collected = _collect_category_ids(sub_id, cat_map)
+
+        assert sub_id in collected, "子分類本身應在收集集合內"
+        assert parent_id not in collected, "父分類不應被收集（replace 不應影響父分類）"

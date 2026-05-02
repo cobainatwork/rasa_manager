@@ -73,6 +73,13 @@ export function CategoryTreeNode({
     else setName(node.name)
   }
 
+  // Radix UI submenu 關閉動畫完成前，Chromium 會攔截 user-gesture，
+  // 導致系統檔案對話框無法開啟。setTimeout 0 讓動畫完成後再觸發。
+  function triggerFileImport(mode: 'append' | 'replace') {
+    pendingImportMode.current = mode
+    setTimeout(() => fileInputRef.current?.click(), 0)
+  }
+
   return (
     <li>
       <input
@@ -163,20 +170,12 @@ export function CategoryTreeNode({
                 <Upload className="w-3.5 h-3.5 mr-2" strokeWidth={1.5} /> 匯入 FAQ
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent>
-                <DropdownMenuItem
-                  onClick={() => {
-                    pendingImportMode.current = 'append'
-                    fileInputRef.current?.click()
-                  }}
-                >
+                <DropdownMenuItem onClick={() => triggerFileImport('append')}>
                   新增匯入（保留現有資料）
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   className="text-amber-600 focus:text-amber-600"
-                  onClick={() => {
-                    pendingImportMode.current = 'replace'
-                    fileInputRef.current?.click()
-                  }}
+                  onClick={() => triggerFileImport('replace')}
                 >
                   覆蓋匯入（先刪除全部）
                 </DropdownMenuItem>

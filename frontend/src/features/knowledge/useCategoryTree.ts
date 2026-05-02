@@ -19,7 +19,10 @@ export interface UseCategoryTreeResult {
   importCategory: (id: string, file: File, mode: 'append' | 'replace') => Promise<void>
 }
 
-export function useCategoryTree(agentId: string | undefined): UseCategoryTreeResult {
+export function useCategoryTree(
+  agentId: string | undefined,
+  onImportDone?: (mode: 'append' | 'replace') => void,
+): UseCategoryTreeResult {
   const [tree, setTree] = useState<CategoryNode[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -93,6 +96,7 @@ export function useCategoryTree(agentId: string | undefined): UseCategoryTreeRes
         toast.warning(`${result.errors.length} 列匯入失敗（第 ${rows} 列）`)
       }
       reload()
+      onImportDone?.(mode)
     } catch (err) { toast.error(extractErrorMessage(err)) }
   }
 
