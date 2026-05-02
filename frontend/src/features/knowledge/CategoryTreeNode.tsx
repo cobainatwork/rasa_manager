@@ -1,10 +1,14 @@
 import { useState, useRef, useEffect } from 'react'
-import { ChevronRight, ChevronDown, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ChevronRight, ChevronDown, MoreHorizontal, Pencil, Plus, Trash2, Download, Upload } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
@@ -20,6 +24,8 @@ interface Props {
   onAddChild: (parentId: string) => void
   onRemove: (id: string) => void
   onClearPendingRename: () => void
+  onExport: (id: string) => void
+  onImport: (id: string, file: File, mode: 'append' | 'replace') => void
 }
 
 export function CategoryTreeNode({
@@ -32,11 +38,16 @@ export function CategoryTreeNode({
   onAddChild,
   onRemove,
   onClearPendingRename,
+  onExport,
+  onImport,
 }: Props) {
   const [expanded, setExpanded] = useState(true)
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(node.name)
   const inputRef = useRef<HTMLInputElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  // 用 ref 而非 state 避免 React 非同步更新與 onChange 之間的競態
+  const pendingImportMode = useRef<'append' | 'replace'>('append')
 
   const isSelected = selectedId === node.id
   const hasChildren = node.children.length > 0
@@ -64,6 +75,19 @@ export function CategoryTreeNode({
 
   return (
     <li>
+      <input
+        type="file"
+        ref={fileInputRef}
+        accept=".xlsx"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          if (file) {
+            onImport(node.id, file, pendingImportMode.current)
+            e.target.value = ''
+          }
+        }}
+      />
       <div
         className={cn(
           'group flex items-center gap-1 py-1 px-2 rounded cursor-pointer text-sm',
@@ -130,6 +154,35 @@ export function CategoryTreeNode({
             <DropdownMenuItem onClick={() => onAddChild(node.id)}>
               <Plus className="w-3.5 h-3.5 mr-2" strokeWidth={1.5} /> 新增子分類
             </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => onExport(node.id)}>
+              <Download className="w-3.5 h-3.5 mr-2" strokeWidth={1.5} /> 匯出 FAQ
+            </DropdownMenuItem>
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <Upload className="w-3.5 h-3.5 mr-2" strokeWidth={1.5} /> 匯入 FAQ
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent>
+                <DropdownMenuItem
+                  onClick={() => {
+                    pendingImportMode.current = 'append'
+                    fileInputRef.current?.click()
+                  }}
+                >
+                  新增匯入（保留現有資料）
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="text-amber-600 focus:text-amber-600"
+                  onClick={() => {
+                    pendingImportMode.current = 'replace'
+                    fileInputRef.current?.click()
+                  }}
+                >
+                  覆蓋匯入（先刪除全部）
+                </DropdownMenuItem>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+            <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => onRemove(node.id)} className="text-red-600">
               <Trash2 className="w-3.5 h-3.5 mr-2" strokeWidth={1.5} /> 刪除
             </DropdownMenuItem>
@@ -151,6 +204,8 @@ export function CategoryTreeNode({
               onAddChild={onAddChild}
               onRemove={onRemove}
               onClearPendingRename={onClearPendingRename}
+              onExport={onExport}
+              onImport={onImport}
             />
           ))}
         </ul>

@@ -13,6 +13,7 @@ export function CategoryTree({ result }: Props) {
   const {
     tree, loading, selectedId, pendingRenameId,
     select, rename, addChild, remove, clearPendingRename,
+    exportCategory, importCategory,
   } = result
 
   return (
@@ -49,6 +50,8 @@ export function CategoryTree({ result }: Props) {
                   onAddChild={addChild}
                   onRemove={remove}
                   onClearPendingRename={clearPendingRename}
+                  onExport={exportCategory}
+                  onImport={importCategory}
                 />
               ))}
             </ul>
