@@ -87,10 +87,9 @@ services:
       - ./scripts:/opt/scripts:ro
       # 專案根目錄（ingest_kb.py 所在位置）→ 容器內 /opt/project
       - ${PROJECT_ROOT:-.}:/opt/project:ro
-      # TXT 輸出目錄（host 真實磁碟）→ 容器內 /opt/sap（需可寫）
-      # 同一份 host 目錄掛兩個容器內路徑（向後相容舊的 txt_output_path 設定）
-      - ${TXT_OUTPUT_HOST_PATH:?TXT_OUTPUT_HOST_PATH 必須在 .env 設定}:/opt/sap:rw
-      - ${TXT_OUTPUT_HOST_PATH}:/opt/rasa_docs:rw
+      # TXT 輸出目錄：主機路徑與容器路徑保持一致，
+      # 使 agents.txt_output_path 直接填主機路徑即可，無需手動對應。
+      - ${TXT_OUTPUT_HOST_PATH:?TXT_OUTPUT_HOST_PATH 必須在 .env 設定}:${TXT_OUTPUT_HOST_PATH}:rw
     networks:
       - app
       - data
