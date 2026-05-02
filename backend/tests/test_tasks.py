@@ -21,6 +21,18 @@ from tasks import run_ingestion_sync
 from tests.conftest import AGENT_ID
 
 
+def _make_mock_proc(
+    returncode: int = 0,
+    stdout: str = "",
+    stderr: str = "",
+) -> MagicMock:
+    """Popen mock 工廠：設定 communicate 回傳值與 returncode，消除重複樣板。"""
+    proc = MagicMock()
+    proc.communicate.return_value = (stdout, stderr)
+    proc.returncode = returncode
+    return proc
+
+
 # ── txt 格式產生邏輯（保留字符替換）─────────────────────────────────────────
 
 class TestTxtFormat:
@@ -136,10 +148,7 @@ class TestRunIngestionSync:
             patch("shutil.copy2"),
             patch("subprocess.Popen") as mock_popen,
         ):
-            mock_proc = MagicMock()
-            mock_proc.communicate.return_value = ("ok", "")
-            mock_proc.returncode = 0
-            mock_popen.return_value = mock_proc
+            mock_popen.return_value = _make_mock_proc(stdout="ok")
             run_ingestion_sync.apply(args=[str(AGENT_ID), str(sync_log.id)])
 
         assert sync_log.status == "completed"
@@ -168,10 +177,7 @@ class TestRunIngestionSync:
             patch("shutil.copy2"),
             patch("subprocess.Popen") as mock_popen,
         ):
-            mock_proc = MagicMock()
-            mock_proc.communicate.return_value = ("", "")
-            mock_proc.returncode = 0
-            mock_popen.return_value = mock_proc
+            mock_popen.return_value = _make_mock_proc()
             run_ingestion_sync.apply(args=[str(AGENT_ID), str(sync_log.id)])
 
         assert faq.status == "synced"
@@ -280,10 +286,7 @@ class TestCeleryRetryRegression:
             patch("os.makedirs"),
             patch("subprocess.Popen") as mock_popen,
         ):
-            mock_proc = MagicMock()
-            mock_proc.communicate.return_value = ("", "boom")
-            mock_proc.returncode = 1
-            mock_popen.return_value = mock_proc
+            mock_popen.return_value = _make_mock_proc(returncode=1, stderr="boom")
             # retries=1：仍有 retry 額度（max_retries=3），應走 self.retry() 路徑
             try:
                 run_ingestion_sync.apply(
@@ -311,10 +314,7 @@ class TestCeleryRetryRegression:
             patch("os.makedirs"),
             patch("subprocess.Popen") as mock_popen,
         ):
-            mock_proc = MagicMock()
-            mock_proc.communicate.return_value = ("", "boom")
-            mock_proc.returncode = 1
-            mock_popen.return_value = mock_proc
+            mock_popen.return_value = _make_mock_proc(returncode=1, stderr="boom")
             # retries=3 模擬已用盡（max_retries=3）
             result = run_ingestion_sync.apply(
                 args=[str(AGENT_ID), str(sync_log.id)],
@@ -587,10 +587,7 @@ class TestIngestScriptArgs:
             patch("os.makedirs"),
             patch("subprocess.Popen") as mock_popen,
         ):
-            mock_proc = MagicMock()
-            mock_proc.communicate.return_value = ("", "")
-            mock_proc.returncode = 0
-            mock_popen.return_value = mock_proc
+            mock_popen.return_value = _make_mock_proc()
             run_ingestion_sync.apply(args=[str(AGENT_ID), str(sync_log.id)])
 
         args, _ = mock_popen.call_args

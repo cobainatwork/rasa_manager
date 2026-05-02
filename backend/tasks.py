@@ -26,7 +26,7 @@ REDIS_URL: str = os.environ.get("REDIS_URL", "redis://redis:6379/0")
 TASK_SOFT_TIME_LIMIT_SEC = 300        # Celery soft time limit
 TASK_MAX_RETRIES = 3                  # 重試次數上限
 TASK_RETRY_DELAY_SEC = 10             # 第一次重試延遲（後續指數退避）
-RETRY_BACKOFF_BASE_SEC = 10           # 指數退避基數：base * (2 ** retries)
+RETRY_BACKOFF_BASE_SEC = TASK_RETRY_DELAY_SEC  # B1 手動 countdown 基數，刻意與 default_retry_delay 保持一致
 
 # Ingest subprocess 層
 # 比 task_soft_time_limit 早 20 秒，留餘裕讓我們自行 kill 並寫 sync_log
