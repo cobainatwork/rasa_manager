@@ -28,14 +28,13 @@ from sqlalchemy.orm import Session
 from api.database.models import AuditLog, Category, KnowledgeItem, User
 from api.database.session import get_db
 from api.dependencies import get_current_user, require_agent_access
+from api.utils.category_path import build_category_path, collect_category_subtree
 
 router = APIRouter(tags=["import-export"])
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 MAX_ROWS = 5000
 
-
-# ── 分類路徑工具函式 ──────────────────────────────────────────────────────────
 
 def _resolve_category_path(
     db: Session, agent_id: Any, path_str: str
@@ -74,46 +73,6 @@ def _resolve_category_path(
         parent_id = cat.id
 
     return parent_id, created
-
-
-def _build_category_path(
-    category_id: Any, cat_map: dict[Any, Category]
-) -> str:
-    """
-    從 category_id 向上追溯組合完整路徑字串（/ 分隔）。
-    使用預先載入的 cat_map（id -> Category）避免 N+1 query。
-    """
-    parts: list[str] = []
-    current_id = category_id
-    visited: set[Any] = set()
-    while current_id is not None:
-        if current_id in visited:
-            break
-        visited.add(current_id)
-        cat = cat_map.get(current_id)
-        if cat is None:
-            break
-        parts.insert(0, str(cat.name))
-        current_id = cat.parent_id
-    return "/".join(parts)
-
-
-def _collect_category_ids(root_id: Any, cat_map: dict[Any, Category]) -> set[Any]:
-    """
-    從 root_id 出發，以迭代 DFS 收集所有子孫分類 ID（含自身）。
-    使用預先載入的 cat_map 避免 N+1 查詢。
-    """
-    result: set[Any] = set()
-    stack = [root_id]
-    while stack:
-        cid = stack.pop()
-        if cid in result:
-            continue
-        result.add(cid)
-        for cat in cat_map.values():
-            if cat.parent_id == cid:
-                stack.append(cat.id)
-    return result
 
 
 # ── 匯入端點 ──────────────────────────────────────────────────────────────────
@@ -294,7 +253,7 @@ def export_faqs(
     )
 
     for item in items:
-        category_path = _build_category_path(item.category_id, cat_map)
+        category_path = build_category_path(item.category_id, cat_map)
         tags_str = ",".join(item.tags) if item.tags else ""
         ws.append([  # type: ignore[union-attr]
             str(item.id),
@@ -352,7 +311,7 @@ def export_category_faqs(
     all_cats = db.query(Category).filter(Category.agent_id == agent_id).all()
     cat_map: dict[Any, Category] = {c.id: c for c in all_cats}
 
-    cat_ids = _collect_category_ids(category_id, cat_map)
+    cat_ids = collect_category_subtree(category_id, cat_map)
 
     items = (
         db.query(KnowledgeItem)
@@ -426,7 +385,7 @@ def import_category_faqs(
     if mode == "replace":
         all_cats = db.query(Category).filter(Category.agent_id == agent_id).all()
         cat_map_del: dict[Any, Category] = {c.id: c for c in all_cats}
-        del_cat_ids = _collect_category_ids(category_id, cat_map_del)
+        del_cat_ids = collect_category_subtree(category_id, cat_map_del)
         items_to_del = (
             db.query(KnowledgeItem)
             .filter(
@@ -499,7 +458,7 @@ def import_category_faqs(
         # append 模式：載入目標子樹現有問題以避免重複
         all_cats_append = db.query(Category).filter(Category.agent_id == agent_id).all()
         cat_map_append: dict[Any, Category] = {c.id: c for c in all_cats_append}
-        append_cat_ids = _collect_category_ids(category_id, cat_map_append)
+        append_cat_ids = collect_category_subtree(category_id, cat_map_append)
         existing_questions = {
             str(q)
             for (q,) in db.query(KnowledgeItem.question)

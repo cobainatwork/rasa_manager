@@ -212,7 +212,7 @@ class TestExportEndpoint:
 
         with (
             patch("api.routes.import_export.require_agent_access", return_value=(MagicMock(), None)),
-            patch("api.routes.import_export._build_category_path", return_value="分類A"),
+            patch("api.routes.import_export.build_category_path", return_value="分類A"),
         ):
             resp = client_superadmin.get(  # type: ignore[attr-defined]
                 f"/api/v1/agents/{AGENT_ID}/faqs/export"
@@ -436,22 +436,22 @@ class TestExportCategoriesLoadedOnceRegression:
         assert resp.status_code == 200
 
 
-# ── _collect_category_ids 單元測試 ────────────────────────────────────────────
+# ── collect_category_subtree 單元測試 ─────────────────────────────────────────
 
 class TestCollectCategoryIds:
     def test_collects_self_when_no_children(self) -> None:
-        from api.routes.import_export import _collect_category_ids
+        from api.utils.category_path import collect_category_subtree
 
         cat_id = uuid.uuid4()
         cat = MagicMock()
         cat.id = cat_id
         cat.parent_id = None
 
-        result = _collect_category_ids(cat_id, {cat_id: cat})
+        result = collect_category_subtree(cat_id, {cat_id: cat})
         assert result == {cat_id}
 
     def test_collects_children_recursively(self) -> None:
-        from api.routes.import_export import _collect_category_ids
+        from api.utils.category_path import collect_category_subtree
 
         root_id = uuid.uuid4()
         child_id = uuid.uuid4()
@@ -469,11 +469,11 @@ class TestCollectCategoryIds:
 
         cat_map = {root_id: root, child_id: child, grandchild_id: grandchild}
 
-        result = _collect_category_ids(root_id, cat_map)
+        result = collect_category_subtree(root_id, cat_map)
         assert result == {root_id, child_id, grandchild_id}
 
     def test_does_not_collect_sibling_categories(self) -> None:
-        from api.routes.import_export import _collect_category_ids
+        from api.utils.category_path import collect_category_subtree
 
         root_id = uuid.uuid4()
         sibling_id = uuid.uuid4()
@@ -485,7 +485,7 @@ class TestCollectCategoryIds:
         sibling.id = sibling_id
         sibling.parent_id = None
 
-        result = _collect_category_ids(root_id, {root_id: root, sibling_id: sibling})
+        result = collect_category_subtree(root_id, {root_id: root, sibling_id: sibling})
         assert result == {root_id}
 
 
@@ -919,9 +919,9 @@ class TestImportCategorySubcategoryRegression:
         assert data["imported"] == 1
 
     def test_replace_subcategory_does_not_delete_parent_faqs(self) -> None:
-        """replace 子分類時，_collect_category_ids 不應收集父分類 ID，
+        """replace 子分類時，collect_category_subtree 不應收集父分類 ID，
         確認父分類的 FAQ 不被誤刪。"""
-        from api.routes.import_export import _collect_category_ids
+        from api.utils.category_path import collect_category_subtree
 
         parent_id = uuid.uuid4()
         sub_id = uuid.uuid4()
@@ -934,7 +934,7 @@ class TestImportCategorySubcategoryRegression:
         mock_sub.parent_id = parent_id
 
         cat_map = {parent_id: mock_parent, sub_id: mock_sub}
-        collected = _collect_category_ids(sub_id, cat_map)
+        collected = collect_category_subtree(sub_id, cat_map)
 
         assert sub_id in collected, "子分類本身應在收集集合內"
         assert parent_id not in collected, "父分類不應被收集（replace 不應影響父分類）"
