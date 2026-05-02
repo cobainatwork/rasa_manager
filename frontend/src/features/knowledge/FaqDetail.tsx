@@ -20,7 +20,12 @@ interface Props {
 }
 
 export function FaqDetail({ agentId, faqId, categoryTree, onChanged, onDeleted }: Props) {
-  const { faq, loading, update } = useFaqDetail(agentId, faqId)
+  const { faq, loading, update, reload } = useFaqDetail(agentId, faqId)
+
+  function handleStatusChanged() {
+    reload()
+    onChanged()
+  }
 
   if (loading || !faq) {
     return (
@@ -45,7 +50,7 @@ export function FaqDetail({ agentId, faqId, categoryTree, onChanged, onDeleted }
         <EditableCategory categoryId={faq.category_id} tree={categoryTree} onSave={(v) => update({ category_id: v })} />
         <EditableTags tags={faq.tags} onSave={(v) => update({ tags: v })} />
 
-        <StatusActions agentId={agentId} faq={faq} onChanged={onChanged} onDeleted={onDeleted} />
+        <StatusActions agentId={agentId} faq={faq} onChanged={handleStatusChanged} onDeleted={onDeleted} />
         <VersionTimeline agentId={agentId} faqId={faqId} />
       </div>
     </ScrollArea>

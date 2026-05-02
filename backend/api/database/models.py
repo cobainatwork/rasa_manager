@@ -188,8 +188,8 @@ class KnowledgeItem(Base):
     category = relationship("Category", back_populates="knowledge_items")
     locker = relationship("User", foreign_keys=[locked_by], back_populates="locked_items")
     creator = relationship("User", foreign_keys=[created_by], back_populates="created_items")
-    histories = relationship("KnowledgeItemHistory", back_populates="item")
-    audit_logs = relationship("AuditLog", back_populates="item")
+    histories = relationship("KnowledgeItemHistory", back_populates="item", passive_deletes=True)
+    audit_logs = relationship("AuditLog", back_populates="item", passive_deletes=True)
 
 
 # ── knowledge_item_histories ────────────────────────────────────────────────
