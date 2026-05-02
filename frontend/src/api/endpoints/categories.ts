@@ -59,3 +59,18 @@ export async function importCategoryFaqs(
     )
   )
 }
+
+export interface CategorySyncResult {
+  task_id: string | null
+  sync_log_id: string
+  status: string
+}
+
+export async function syncCategory(
+  agentId: string,
+  categoryId: string
+): Promise<CategorySyncResult> {
+  return unwrap(
+    apiClient.post(`/api/v1/agents/${agentId}/categories/${categoryId}/sync`)
+  )
+}

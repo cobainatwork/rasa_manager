@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { ChevronRight, ChevronDown, MoreHorizontal, Pencil, Plus, Trash2, Download, Upload } from 'lucide-react'
+import { ChevronRight, ChevronDown, MoreHorizontal, Pencil, Plus, Trash2, Download, Upload, RefreshCw } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import {
   DropdownMenu,
@@ -26,6 +26,7 @@ interface Props {
   onClearPendingRename: () => void
   onExport: (id: string) => void
   onImport: (id: string, file: File, mode: 'append' | 'replace') => void
+  onSync: (id: string) => void
 }
 
 export function CategoryTreeNode({
@@ -40,6 +41,7 @@ export function CategoryTreeNode({
   onClearPendingRename,
   onExport,
   onImport,
+  onSync,
 }: Props) {
   const [expanded, setExpanded] = useState(true)
   const [editing, setEditing] = useState(false)
@@ -184,6 +186,9 @@ export function CategoryTreeNode({
                 </DropdownMenuItem>
               </DropdownMenuSubContent>
             </DropdownMenuSub>
+            <DropdownMenuItem onClick={() => onSync(node.id)}>
+              <RefreshCw className="w-3.5 h-3.5 mr-2" strokeWidth={1.5} /> 同步至向量庫
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => onRemove(node.id)} className="text-red-600">
               <Trash2 className="w-3.5 h-3.5 mr-2" strokeWidth={1.5} /> 刪除
@@ -208,6 +213,7 @@ export function CategoryTreeNode({
               onClearPendingRename={onClearPendingRename}
               onExport={onExport}
               onImport={onImport}
+              onSync={onSync}
             />
           ))}
         </ul>

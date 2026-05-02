@@ -22,6 +22,7 @@ const baseResult = {
   clearPendingRename: vi.fn(),
   exportCategory: vi.fn(),
   importCategory: vi.fn(),
+  syncCategory: vi.fn(),
 }
 
 describe('CategoryTree', () => {

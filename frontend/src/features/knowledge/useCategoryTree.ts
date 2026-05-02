@@ -17,6 +17,7 @@ export interface UseCategoryTreeResult {
   clearPendingRename: () => void
   exportCategory: (id: string) => Promise<void>
   importCategory: (id: string, file: File, mode: 'append' | 'replace') => Promise<void>
+  syncCategory: (id: string) => Promise<void>
 }
 
 export function useCategoryTree(
@@ -100,9 +101,17 @@ export function useCategoryTree(
     } catch (err) { toast.error(extractErrorMessage(err)) }
   }
 
+  async function syncCategory(id: string) {
+    if (!agentId) return
+    try {
+      await api.syncCategory(agentId, id)
+      toast.success('分類同步已觸發，背景執行中')
+    } catch (err) { toast.error(`同步失敗：${extractErrorMessage(err)}`) }
+  }
+
   return {
     tree, loading, selectedId, pendingRenameId,
     select: setSelectedId, reload, rename, addChild, remove,
-    clearPendingRename, exportCategory, importCategory,
+    clearPendingRename, exportCategory, importCategory, syncCategory,
   }
 }
