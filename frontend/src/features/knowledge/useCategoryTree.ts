@@ -87,7 +87,7 @@ export function useCategoryTree(agentId: string | undefined): UseCategoryTreeRes
     try {
       const result = await api.importCategoryFaqs(agentId, id, file, mode)
       const modeLabel = mode === 'replace' ? '覆蓋' : '新增'
-      toast.success(`${modeLabel}匯入完成：新增 ${result.imported} 筆，跳過 ${result.skipped} 筆`)
+      toast.success(`匯入完成（${modeLabel}模式）：新增 ${result.imported} 筆，跳過 ${result.skipped} 筆`)
       if (result.errors.length > 0) {
         const rows = result.errors.map((e) => e.row).join('、')
         toast.warning(`${result.errors.length} 列匯入失敗（第 ${rows} 列）`)
