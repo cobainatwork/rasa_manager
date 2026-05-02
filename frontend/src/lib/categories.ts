@@ -39,6 +39,16 @@ export function flattenCategories(tree: CategoryNode[], prefix = ''): FlatPath[]
   return out
 }
 
+/** 在分類樹中以 ID 尋找節點；未找到回傳 null。 */
+export function findInTree(nodes: CategoryNode[], id: string): CategoryNode | null {
+  for (const n of nodes) {
+    if (n.id === id) return n
+    const found = findInTree(n.children ?? [], id)
+    if (found) return found
+  }
+  return null
+}
+
 export function buildCategoryPath(targetId: string, items: FlatCategory[]): string {
   const map = new Map(items.map((c) => [c.id, c]))
   const segments: string[] = []

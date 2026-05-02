@@ -49,24 +49,27 @@ export async function releaseLock(agentId: string, faqId: string): Promise<void>
   await apiClient.delete(`/api/v1/agents/${agentId}/faqs/${faqId}/lock`)
 }
 
-// 狀態機操作：後端統一使用 PATCH /status，body 傳 {status, reason?}
+// 後端統一使用 PATCH /status 處理狀態轉移，避免 URL 字串重複
+function patchStatus(agentId: string, faqId: string, body: object): Promise<Faq> {
+  return unwrap(apiClient.patch(`/api/v1/agents/${agentId}/faqs/${faqId}/status`, body))
+}
+
 export async function submit(agentId: string, faqId: string): Promise<Faq> {
-  return unwrap(apiClient.patch(`/api/v1/agents/${agentId}/faqs/${faqId}/status`, { status: 'pending' }))
+  return patchStatus(agentId, faqId, { status: 'pending' })
 }
 export async function approve(agentId: string, faqId: string): Promise<Faq> {
-  return unwrap(apiClient.patch(`/api/v1/agents/${agentId}/faqs/${faqId}/status`, { status: 'approved' }))
+  return patchStatus(agentId, faqId, { status: 'approved' })
 }
 export async function reject(agentId: string, faqId: string, reason: string): Promise<Faq> {
-  return unwrap(apiClient.patch(`/api/v1/agents/${agentId}/faqs/${faqId}/status`, { status: 'rejected', reason }))
+  return patchStatus(agentId, faqId, { status: 'rejected', reason })
 }
 export async function unapprove(agentId: string, faqId: string): Promise<Faq> {
-  return unwrap(apiClient.patch(`/api/v1/agents/${agentId}/faqs/${faqId}/status`, { status: 'pending' }))
+  return patchStatus(agentId, faqId, { status: 'pending' })
 }
 
 export async function getHistory(agentId: string, faqId: string): Promise<FaqHistory[]> {
   return unwrap(apiClient.get(`/api/v1/agents/${agentId}/faqs/${faqId}/histories`), [])
 }
-// version 為整數版本號（非 UUID），後端 rollback body: {version: int}
 export async function rollback(agentId: string, faqId: string, version: number): Promise<Faq> {
   return unwrap(apiClient.post(`/api/v1/agents/${agentId}/faqs/${faqId}/rollback`, { version }))
 }

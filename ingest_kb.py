@@ -143,30 +143,33 @@ def get_embedding_dim(client: OpenAI) -> int:
 # -------------------------
 # 建立 / 清空 / 檢查 collection
 # -------------------------
-def clear_collection(qdrant: QdrantClient, collection_name: str) -> None:
-    """刪除 Qdrant collection。同步前呼叫可確保已刪除的 FAQ 向量不殘留。"""
-    existing = [c.name for c in qdrant.get_collections().collections]
-    if collection_name in existing:
-        qdrant.delete_collection(collection_name)
-        print(f"已清空 Qdrant collection: {collection_name}")
-
-
-def init_collection(qdrant: QdrantClient, openai_client: OpenAI, collection_name: str) -> None:
+def init_collection(
+    qdrant: QdrantClient, openai_client: OpenAI, collection_name: str, *, clear: bool = False
+) -> None:
+    """
+    建立或驗證 Qdrant collection。
+    clear=True 時先刪除現有 collection 再重建（確保已刪除的 FAQ 向量不殘留），
+    兩個操作共用同一次 get_collections() 呼叫。
+    """
     dim = get_embedding_dim(openai_client)
-    collections = [c.name for c in qdrant.get_collections().collections]
+    existing = {c.name for c in qdrant.get_collections().collections}
 
-    if collection_name not in collections:
-        qdrant.create_collection(
-            collection_name=collection_name,
-            vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
-        )
-    else:
-        info = qdrant.get_collection(collection_name)
-        existing_dim = info.config.params.vectors.size
-        if existing_dim != dim:
-            raise RuntimeError(
-                f"Embedding dim mismatch: collection={existing_dim}, model={dim}"
-            )
+    if collection_name in existing:
+        if clear:
+            qdrant.delete_collection(collection_name)
+            print(f"已清空 Qdrant collection: {collection_name}")
+        else:
+            existing_dim = qdrant.get_collection(collection_name).config.params.vectors.size
+            if existing_dim != dim:
+                raise RuntimeError(
+                    f"Embedding dim mismatch: collection={existing_dim}, model={dim}"
+                )
+            return
+
+    qdrant.create_collection(
+        collection_name=collection_name,
+        vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
+    )
 
 
 # -------------------------
@@ -269,10 +272,7 @@ def main(argv: list[str] | None = None) -> int:
         print("無資料可上傳，結束。")
         return 0
 
-    if args.clear:
-        clear_collection(qdrant, args.collection)
-
-    init_collection(qdrant, openai_client, args.collection)
+    init_collection(qdrant, openai_client, args.collection, clear=args.clear)
     upload(
         qdrant,
         openai_client,

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useParams } from 'react-router-dom'
 import { FileText } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
@@ -9,17 +9,7 @@ import { FaqDetail } from './FaqDetail'
 import { NewFaqForm } from './NewFaqForm'
 import { useCategoryTree } from './useCategoryTree'
 import { useFaqFilter } from './useFaqFilter'
-import type { CategoryNode } from '@/api/types'
-
-/** 在分類樹中尋找指定節點；未找到回傳 null。 */
-function findInTree(nodes: CategoryNode[], id: string): CategoryNode | null {
-  for (const n of nodes) {
-    if (n.id === id) return n
-    const found = findInTree(n.children ?? [], id)
-    if (found) return found
-  }
-  return null
-}
+import { findInTree } from '@/lib/categories'
 
 type RightPaneMode = 'detail' | 'new' | 'empty'
 
@@ -31,11 +21,11 @@ export function KnowledgePage() {
   const [rightMode, setRightMode] = useState<RightPaneMode>('empty')
   const [listVersion, setListVersion] = useState(0)
 
-  // 只有「無子分類的葉節點」才允許新增 FAQ
-  const selectedNode = categoryTree.selectedId
-    ? findInTree(categoryTree.tree, categoryTree.selectedId)
-    : null
-  const canAddFaq = selectedNode !== null && (selectedNode.children?.length ?? 0) === 0
+  const canAddFaq = useMemo(() => {
+    if (!categoryTree.selectedId) return false
+    const node = findInTree(categoryTree.tree, categoryTree.selectedId)
+    return node !== null && (node.children?.length ?? 0) === 0
+  }, [categoryTree.selectedId, categoryTree.tree])
 
   function handleCategorySelect(categoryId: string | null) {
     categoryTree.select(categoryId)
