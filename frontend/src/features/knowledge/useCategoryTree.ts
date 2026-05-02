@@ -15,6 +15,8 @@ export interface UseCategoryTreeResult {
   addChild: (parentId: string | null) => Promise<void>
   remove: (id: string) => Promise<void>
   clearPendingRename: () => void
+  exportCategory: (id: string) => Promise<void>
+  importCategory: (id: string, file: File, mode: 'append' | 'replace') => Promise<void>
 }
 
 export function useCategoryTree(agentId: string | undefined): UseCategoryTreeResult {
@@ -67,9 +69,36 @@ export function useCategoryTree(agentId: string | undefined): UseCategoryTreeRes
 
   function clearPendingRename() { setPendingRenameId(null) }
 
+  async function exportCategory(id: string) {
+    if (!agentId) return
+    try {
+      const blob = await api.exportCategoryFaqs(agentId, id)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'category_export.xlsx'
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) { toast.error(extractErrorMessage(err)) }
+  }
+
+  async function importCategory(id: string, file: File, mode: 'append' | 'replace') {
+    if (!agentId) return
+    try {
+      const result = await api.importCategoryFaqs(agentId, id, file, mode)
+      const modeLabel = mode === 'replace' ? '覆蓋' : '新增'
+      toast.success(`${modeLabel}匯入完成：新增 ${result.imported} 筆，跳過 ${result.skipped} 筆`)
+      if (result.errors.length > 0) {
+        const rows = result.errors.map((e) => e.row).join('、')
+        toast.warning(`${result.errors.length} 列匯入失敗（第 ${rows} 列）`)
+      }
+      reload()
+    } catch (err) { toast.error(extractErrorMessage(err)) }
+  }
+
   return {
     tree, loading, selectedId, pendingRenameId,
     select: setSelectedId, reload, rename, addChild, remove,
-    clearPendingRename,
+    clearPendingRename, exportCategory, importCategory,
   }
 }

@@ -20,6 +20,8 @@ const baseResult = {
   addChild: vi.fn(),
   remove: vi.fn(),
   clearPendingRename: vi.fn(),
+  exportCategory: vi.fn(),
+  importCategory: vi.fn(),
 }
 
 describe('CategoryTree', () => {
