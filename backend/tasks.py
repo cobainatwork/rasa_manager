@@ -328,7 +328,12 @@ def run_category_sync(self, agent_id: str, category_id: str, sync_log_id: str) -
 
         import os as _os  # noqa: PLC0415
 
-        _os.makedirs(_os.path.dirname(output_path), exist_ok=True)
+        parent_dir = _os.path.dirname(output_path)
+        if not parent_dir:
+            raise RuntimeError(
+                f"txt_output_path 設定無效（dirname 為空）：{agent.txt_output_path!r}"
+            )
+        _os.makedirs(parent_dir, exist_ok=True)
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(txt_content)
 
