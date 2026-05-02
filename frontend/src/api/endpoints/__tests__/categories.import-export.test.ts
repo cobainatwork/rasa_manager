@@ -10,7 +10,7 @@ vi.mock('../../client', () => ({
 }))
 
 vi.mock('../../request', () => ({
-  unwrap: vi.fn((promise: Promise<any>) => promise.then((r: any) => r.data.data)),
+  unwrap: vi.fn((promise: Promise<unknown>) => promise.then((r) => (r as { data: { data: unknown } }).data.data)),
 }))
 
 const AGENT_ID = 'agent-uuid'

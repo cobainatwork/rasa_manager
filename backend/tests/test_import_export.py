@@ -457,9 +457,15 @@ class TestCollectCategoryIds:
         child_id = uuid.uuid4()
         grandchild_id = uuid.uuid4()
 
-        root = MagicMock(); root.id = root_id; root.parent_id = None
-        child = MagicMock(); child.id = child_id; child.parent_id = root_id
-        grandchild = MagicMock(); grandchild.id = grandchild_id; grandchild.parent_id = child_id
+        root = MagicMock()
+        root.id = root_id
+        root.parent_id = None
+        child = MagicMock()
+        child.id = child_id
+        child.parent_id = root_id
+        grandchild = MagicMock()
+        grandchild.id = grandchild_id
+        grandchild.parent_id = child_id
 
         cat_map = {root_id: root, child_id: child, grandchild_id: grandchild}
 
@@ -472,8 +478,12 @@ class TestCollectCategoryIds:
         root_id = uuid.uuid4()
         sibling_id = uuid.uuid4()
 
-        root = MagicMock(); root.id = root_id; root.parent_id = None
-        sibling = MagicMock(); sibling.id = sibling_id; sibling.parent_id = None
+        root = MagicMock()
+        root.id = root_id
+        root.parent_id = None
+        sibling = MagicMock()
+        sibling.id = sibling_id
+        sibling.parent_id = None
 
         result = _collect_category_ids(root_id, {root_id: root, sibling_id: sibling})
         assert result == {root_id}
@@ -655,12 +665,15 @@ class TestImportCategoryEndpoint:
         self, client_superadmin: object, mock_db: MagicMock
     ) -> None:
         cat_id = uuid.uuid4()
-        mock_cat = MagicMock(); mock_cat.id = cat_id; mock_cat.parent_id = None
+        mock_cat = MagicMock()
+        mock_cat.id = cat_id
+        mock_cat.parent_id = None
 
         counter = [0]
         def se(*_args, **_kwargs):
             q = MagicMock()
-            idx = counter[0]; counter[0] += 1
+            idx = counter[0]
+            counter[0] += 1
             if idx == 0:   # Category.filter().first() — 驗證分類存在
                 q.filter.return_value.first.return_value = mock_cat
             elif idx == 1:  # Category.filter().all() — cat_map_append
@@ -672,7 +685,9 @@ class TestImportCategoryEndpoint:
                 q.filter.return_value.filter.return_value.all.return_value = []
             return q
         mock_db.query.side_effect = se
-        mock_db.flush = MagicMock(); mock_db.add = MagicMock(); mock_db.commit = MagicMock()
+        mock_db.flush = MagicMock()
+        mock_db.add = MagicMock()
+        mock_db.commit = MagicMock()
         mock_db.begin_nested.return_value.__enter__ = MagicMock(return_value=None)
         mock_db.begin_nested.return_value.__exit__ = MagicMock(return_value=False)
 
@@ -694,14 +709,17 @@ class TestImportCategoryEndpoint:
     ) -> None:
         """mode=replace → 應對現有 FAQ 呼叫 db.delete()。"""
         cat_id = uuid.uuid4()
-        mock_cat = MagicMock(); mock_cat.id = cat_id; mock_cat.parent_id = None
+        mock_cat = MagicMock()
+        mock_cat.id = cat_id
+        mock_cat.parent_id = None
 
         existing_item = MagicMock()
 
         counter = [0]
         def se(*_args, **_kwargs):
             q = MagicMock()
-            idx = counter[0]; counter[0] += 1
+            idx = counter[0]
+            counter[0] += 1
             if idx == 0:   # Category.filter().first() — validate category
                 q.filter.return_value.first.return_value = mock_cat
             elif idx == 1:  # Category.filter().all() — cat_map for _collect_category_ids
@@ -713,8 +731,10 @@ class TestImportCategoryEndpoint:
                 q.filter.return_value.filter.return_value.all.return_value = []
             return q
         mock_db.query.side_effect = se
-        mock_db.flush = MagicMock(); mock_db.add = MagicMock()
-        mock_db.commit = MagicMock(); mock_db.delete = MagicMock()
+        mock_db.flush = MagicMock()
+        mock_db.add = MagicMock()
+        mock_db.commit = MagicMock()
+        mock_db.delete = MagicMock()
         mock_db.begin_nested.return_value.__enter__ = MagicMock(return_value=None)
         mock_db.begin_nested.return_value.__exit__ = MagicMock(return_value=False)
 
@@ -753,7 +773,8 @@ class TestImportCategoryEndpoint:
     ) -> None:
         cat_id = uuid.uuid4()
         mock_db.query.return_value.filter.return_value.first.return_value = None
-        mock_db.add = MagicMock(); mock_db.commit = MagicMock()
+        mock_db.add = MagicMock()
+        mock_db.commit = MagicMock()
 
         xlsx = _make_xlsx([["Q", "A"]], headers=["question", "answer"])
         with patch("api.routes.import_export.require_agent_access"):
@@ -797,7 +818,8 @@ class TestImportCategorySubcategoryRegression:
 
         def se(*_args, **_kwargs):
             q = MagicMock()
-            idx = counter[0]; counter[0] += 1
+            idx = counter[0]
+            counter[0] += 1
             if idx == 0:   # Category.filter().first() — 分類存在驗證
                 q.filter.return_value.first.return_value = mock_sub
             elif idx == 1:  # Category.filter().all() — cat_map_append（含父子）
@@ -861,7 +883,8 @@ class TestImportCategorySubcategoryRegression:
 
         def se(*_args, **_kwargs):
             q = MagicMock()
-            idx = counter[0]; counter[0] += 1
+            idx = counter[0]
+            counter[0] += 1
             if idx == 0:   # Category.filter().first() — validate
                 q.filter.return_value.first.return_value = mock_sub
             elif idx == 1:  # Category.filter().all() — cat_map_del（含父子）
@@ -903,8 +926,12 @@ class TestImportCategorySubcategoryRegression:
         parent_id = uuid.uuid4()
         sub_id = uuid.uuid4()
 
-        mock_parent = MagicMock(); mock_parent.id = parent_id; mock_parent.parent_id = None
-        mock_sub = MagicMock(); mock_sub.id = sub_id; mock_sub.parent_id = parent_id
+        mock_parent = MagicMock()
+        mock_parent.id = parent_id
+        mock_parent.parent_id = None
+        mock_sub = MagicMock()
+        mock_sub.id = sub_id
+        mock_sub.parent_id = parent_id
 
         cat_map = {parent_id: mock_parent, sub_id: mock_sub}
         collected = _collect_category_ids(sub_id, cat_map)
