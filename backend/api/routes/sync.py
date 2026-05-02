@@ -81,6 +81,77 @@ def trigger_sync(
     }
 
 
+@router.post(
+    "/api/v1/agents/{agent_id}/categories/{category_id}/sync",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def trigger_category_sync(
+    agent_id: uuid.UUID,
+    category_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:  # type: ignore[type-arg]
+    require_reviewer_or_superadmin(agent_id, current_user, db)
+
+    from api.database.models import Category  # noqa: PLC0415
+
+    cat = (
+        db.query(Category)
+        .filter(Category.id == category_id, Category.agent_id == agent_id)
+        .first()
+    )
+    if not cat:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "NOT_FOUND", "message": "分類不存在"},
+        )
+
+    sync_log = SyncLog(
+        id=uuid.uuid4(),
+        agent_id=agent_id,
+        triggered_by=current_user.id,
+        status="pending",
+        items_count=0,
+    )
+    db.add(sync_log)
+    db.commit()
+    db.refresh(sync_log)
+
+    task_id: str | None = None
+    try:
+        from tasks import run_category_sync  # noqa: PLC0415
+
+        task = run_category_sync.delay(str(agent_id), str(category_id), str(sync_log.id))
+        sync_log.celery_task_id = task.id
+        db.commit()
+        task_id = task.id
+    except (ConnectionError, OSError, TimeoutError) as exc:
+        logger.warning(
+            "celery_category_sync_dispatch_failed",
+            agent_id=str(agent_id),
+            category_id=str(category_id),
+            sync_log_id=str(sync_log.id),
+            error=str(exc),
+        )
+
+    logger.info(
+        "category_sync_triggered",
+        agent_id=str(agent_id),
+        category_id=str(category_id),
+        user_id=str(current_user.id),
+        sync_log_id=str(sync_log.id),
+        celery_task_id=task_id,
+    )
+    return {
+        "success": True,
+        "data": {
+            "task_id": task_id,
+            "sync_log_id": str(sync_log.id),
+            "status": "pending",
+        },
+    }
+
+
 @router.get("/api/v1/agents/{agent_id}/sync/history")
 def get_sync_history(
     agent_id: uuid.UUID,

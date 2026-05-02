@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import uuid
 from unittest.mock import MagicMock, patch
-from tests.conftest import AGENT_ID
+from tests.conftest import AGENT_ID, build_agent_access_query_se
 
 
 
@@ -368,3 +368,109 @@ class TestRunCategorySyncTask:
             )
 
         assert item.status == "synced"
+
+
+# ── trigger_category_sync endpoint ───────────────────────────────────────────
+
+def _make_cat_for_api(cat_id: uuid.UUID = CATEGORY_ID, name: str = "帳號") -> MagicMock:
+    """為 API 層測試建立 Category mock。"""
+    c = MagicMock()
+    c.id = cat_id
+    c.agent_id = AGENT_ID
+    c.name = name
+    c.parent_id = None
+    return c
+
+
+class TestTriggerCategorySync:
+    """POST /api/v1/agents/{agent_id}/categories/{category_id}/sync"""
+
+    URL = f"/api/v1/agents/{AGENT_ID}/categories/{CATEGORY_ID}/sync"
+
+    def _superadmin_db_se(self, agent: MagicMock, category: MagicMock | None):
+        """Superadmin 路徑：idx 0=Agent, idx 1=Category（無 UAR query）。"""
+        counter = [0]
+
+        def se(*args):
+            q = MagicMock()
+            idx = counter[0]
+            counter[0] += 1
+            if idx == 0:
+                q.filter.return_value.first.return_value = agent
+            else:
+                q.filter.return_value.first.return_value = category
+            return q
+
+        return se
+
+    def test_superadmin_returns_202(
+        self, client_superadmin, mock_db, agent_factory
+    ) -> None:
+        agent = agent_factory()
+        cat = _make_cat_for_api()
+        mock_db.query.side_effect = self._superadmin_db_se(agent, cat)
+        mock_db.refresh.return_value = None
+
+        with patch("tasks.run_category_sync") as mock_celery:
+            mock_celery.delay.return_value.id = "cat-task-id"
+            resp = client_superadmin.post(self.URL)
+
+        assert resp.status_code == 202
+        data = resp.json()
+        assert data["success"] is True
+        assert data["data"]["status"] == "pending"
+        assert data["data"]["task_id"] == "cat-task-id"
+        assert "sync_log_id" in data["data"]
+
+    def test_reviewer_returns_202(
+        self, client_reviewer, mock_db, agent_factory
+    ) -> None:
+        agent = agent_factory()
+        cat = _make_cat_for_api()
+        mock_db.query.side_effect = build_agent_access_query_se(
+            agent=agent, uar_role="reviewer", extra_results=[cat]
+        )
+        mock_db.refresh.return_value = None
+
+        with patch("tasks.run_category_sync") as mock_celery:
+            mock_celery.delay.return_value.id = "rev-task-id"
+            resp = client_reviewer.post(self.URL)
+
+        assert resp.status_code == 202
+
+    def test_editor_returns_403(
+        self, client_editor, mock_db, agent_factory
+    ) -> None:
+        agent = agent_factory()
+        mock_db.query.side_effect = build_agent_access_query_se(
+            agent=agent, uar_role="editor"
+        )
+        resp = client_editor.post(self.URL)
+        assert resp.status_code == 403
+        assert resp.json()["detail"]["code"] == "FORBIDDEN"
+
+    def test_category_not_found_returns_404(
+        self, client_superadmin, mock_db, agent_factory
+    ) -> None:
+        agent = agent_factory()
+        mock_db.query.side_effect = self._superadmin_db_se(agent, None)
+        mock_db.refresh.return_value = None
+
+        resp = client_superadmin.post(self.URL)
+        assert resp.status_code == 404
+        assert resp.json()["detail"]["code"] == "NOT_FOUND"
+
+    def test_celery_unavailable_still_returns_202(
+        self, client_superadmin, mock_db, agent_factory
+    ) -> None:
+        agent = agent_factory()
+        cat = _make_cat_for_api()
+        mock_db.query.side_effect = self._superadmin_db_se(agent, cat)
+        mock_db.refresh.return_value = None
+
+        with patch("tasks.run_category_sync") as mock_celery:
+            mock_celery.delay.side_effect = ConnectionError("broker down")
+            resp = client_superadmin.post(self.URL)
+
+        assert resp.status_code == 202
+        assert resp.json()["data"]["task_id"] is None
