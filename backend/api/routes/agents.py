@@ -92,7 +92,7 @@ def get_agent(
     return {"success": True, "data": _agent_to_dict(agent)}
 
 
-@router.put("/{agent_id}")
+@router.patch("/{agent_id}")
 def update_agent(
     agent_id: uuid.UUID,
     body: AgentUpdate,
