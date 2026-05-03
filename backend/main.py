@@ -1,6 +1,7 @@
 """
 FastAPI 應用入口：掛載所有路由、CORS 中間件、健康檢查端點。
 """
+import logging
 import os
 
 import redis as redis_lib
@@ -11,7 +12,13 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from api.database.session import get_db
-from api.routes import agents, audit, auth, categories, chat, faq, import_export, sync, users
+from api.routes import agent_admin, agents, audit, auth, categories, chat, faq, import_export, sync, users
+
+
+def _resolve_log_level(level_name: str) -> int:
+    """將具名 log level（"INFO"、"DEBUG"）或數字字串（"20"）轉為 logging 整數常數。"""
+    return getattr(logging, level_name.upper(), logging.INFO)
+
 
 # ── structlog 全域設定 ────────────────────────────────────────────────────
 structlog.configure(
@@ -23,8 +30,7 @@ structlog.configure(
         structlog.processors.JSONRenderer(),
     ],
     wrapper_class=structlog.make_filtering_bound_logger(
-        # 支援數字字串（"20"）或具名層級（"INFO"、"DEBUG"）
-        getattr(__import__("logging"), os.environ.get("LOG_LEVEL", "INFO").upper(), 20)
+        _resolve_log_level(os.environ.get("LOG_LEVEL", "INFO"))
     ),
     context_class=dict,
     logger_factory=structlog.PrintLoggerFactory(),
@@ -49,6 +55,16 @@ app.add_middleware(
 
 REDIS_URL: str = os.environ.get("REDIS_URL", "redis://redis:6379/0")
 
+# I13：health check 專用 module-level singleton，避免每次健檢都新建 connection pool
+_health_redis_client: redis_lib.Redis | None = None
+
+
+def _get_health_redis() -> redis_lib.Redis:
+    global _health_redis_client
+    if _health_redis_client is None:
+        _health_redis_client = redis_lib.from_url(REDIS_URL)
+    return _health_redis_client
+
 # ── 路由掛載 ──────────────────────────────────────────────────────────────
 app.include_router(auth.router)
 app.include_router(users.router)
@@ -57,6 +73,7 @@ app.include_router(categories.router)
 app.include_router(import_export.router)   # 必須在 faq.router 之前（/faqs/export 優先於 /faqs/{faq_id}）
 app.include_router(faq.router)
 app.include_router(sync.router)
+app.include_router(agent_admin.router)
 app.include_router(chat.router)
 app.include_router(audit.router)
 
@@ -77,7 +94,7 @@ def health_check(
         overall_ok = False
 
     try:
-        r = redis_lib.from_url(REDIS_URL)
+        r = _get_health_redis()
         r.ping()
         result["redis"] = "ok"
     except Exception:

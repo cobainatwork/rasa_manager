@@ -12,7 +12,6 @@ Idempotent: 僅在 users 表為空時執行
 from __future__ import annotations
 
 import os
-import re
 import sys
 import uuid
 
@@ -20,19 +19,14 @@ from passlib.context import CryptContext
 from sqlalchemy import text
 
 from api.database.session import SessionLocal
+from api.security.password import validate_password_strength
 
 _pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12)
 
 
 def _validate_password(password: str) -> None:
-    if len(password) < 8:
-        raise ValueError(f"密碼太短（{len(password)} 字元），最少需要 8 字元。")
-    if not re.search(r"[A-Z]", password):
-        raise ValueError("密碼必須包含至少一個大寫英文字母。")
-    if not re.search(r"[a-z]", password):
-        raise ValueError("密碼必須包含至少一個小寫英文字母。")
-    if not re.search(r"\d", password):
-        raise ValueError("密碼必須包含至少一個數字。")
+    """委派至共用的 validate_password_strength（規格 §五.6）。"""
+    validate_password_strength(password)
 
 
 def run_seed() -> None:

@@ -3,10 +3,19 @@
 """
 from __future__ import annotations
 
+import inspect
 from unittest.mock import MagicMock, patch
 
+import pytest
 from fastapi.testclient import TestClient
+from jose import jwt as _jwt
 
+from api import dependencies as deps_mod
+from api.routes import auth as auth_mod
+from api.routes.auth import _issue_tokens
+from api.security import jwt as jwt_mod
+from api.security.jwt import ALGORITHM, SECRET_KEY
+from api.security.password import validate_password_strength
 from tests.conftest import (
     PLAIN_PASSWORD,
     _test_pwd,
@@ -265,3 +274,138 @@ class TestRefreshToken:
         assert resp.json()["success"] is True
         # 新 access_token cookie 應已設定
         assert "access_token" in resp.cookies
+
+
+# ── Regression: I9 (password rules must be centralized) ──────────────────────
+
+class TestPasswordValidationRegression:
+    """Regression: I9 (password rules must be centralized)."""
+
+    def test_too_short_raises(self) -> None:
+        with pytest.raises(ValueError) as exc:
+            validate_password_strength("Ab1")
+        assert "8" in str(exc.value)
+
+    def test_missing_uppercase_raises(self) -> None:
+        with pytest.raises(ValueError) as exc:
+            validate_password_strength("abcdef12")
+        assert "大寫" in str(exc.value)
+
+    def test_missing_lowercase_raises(self) -> None:
+        with pytest.raises(ValueError) as exc:
+            validate_password_strength("ABCDEF12")
+        assert "小寫" in str(exc.value)
+
+    def test_missing_digit_raises(self) -> None:
+        with pytest.raises(ValueError) as exc:
+            validate_password_strength("Abcdefgh")
+        assert "數字" in str(exc.value)
+
+    def test_happy_path_passes(self) -> None:
+        validate_password_strength("Admin1234")
+        validate_password_strength("StrongPa55word")
+
+    def test_seed_validate_delegates(self) -> None:
+        """seed.py 的 _validate_password 應委派至共用函式（同樣 raise ValueError）。"""
+        from api.seed import _validate_password
+
+        with pytest.raises(ValueError):
+            _validate_password("short")
+        _validate_password("Admin1234")
+
+    def test_users_router_validator_uses_shared_function(self) -> None:
+        """users.py 的 _validate_password 應 raise HTTPException(400) 而非 ValueError。"""
+        from fastapi import HTTPException
+
+        from api.routes.users import _validate_password
+
+        with pytest.raises(HTTPException) as exc:
+            _validate_password("abcdefgh")
+        assert exc.value.status_code == 400
+        assert exc.value.detail["code"] == "VALIDATION_ERROR"
+        assert "大寫" in exc.value.detail["message"]
+
+
+# ── Regression: B4 (JWT payload must not include is_superadmin) ─────────────
+
+class TestJwtPayloadNoRoleRegression:
+    """Regression: B4 (JWT payload must not include is_superadmin)."""
+
+    def test_issue_tokens_payload_excludes_is_superadmin(
+        self, superadmin_user: MagicMock
+    ) -> None:
+        access_token, refresh_token = _issue_tokens(superadmin_user)
+
+        access_payload = _jwt.decode(access_token, SECRET_KEY, algorithms=[ALGORITHM])
+        refresh_payload = _jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
+
+        assert "is_superadmin" not in access_payload, (
+            "access_token payload 不可包含 is_superadmin"
+        )
+        assert "is_superadmin" not in refresh_payload, (
+            "refresh_token payload 不可包含 is_superadmin"
+        )
+        assert access_payload.get("sub") == str(superadmin_user.id)
+        assert "jti" in access_payload
+        assert refresh_payload.get("type") == "refresh"
+
+    def test_login_response_cookie_payload_excludes_is_superadmin(
+        self,
+        client_no_auth: TestClient,
+        mock_db: MagicMock,
+        superadmin_user: MagicMock,
+    ) -> None:
+        mock_db.query.return_value.filter.return_value.first.return_value = superadmin_user
+
+        with (
+            patch("api.routes.auth.check_login_rate_limit"),
+            patch("api.routes.auth.clear_login_attempts"),
+        ):
+            resp = client_no_auth.post(
+                "/api/v1/auth/login",
+                json={"username": "admin", "password": PLAIN_PASSWORD},
+            )
+
+        assert resp.status_code == 200
+        access_token = resp.cookies.get("access_token")
+        assert access_token, "登入應設定 access_token cookie"
+        payload = _jwt.decode(access_token, SECRET_KEY, algorithms=[ALGORITHM])
+        assert "is_superadmin" not in payload
+        assert "role" not in payload
+
+
+# ── Regression: B5 (JWT logic must be centralized in api.security.jwt) ──────
+
+class TestJwtCentralModuleRegression:
+    """Regression: B5 (JWT logic must be centralized in api.security.jwt)."""
+
+    def test_security_jwt_module_exposes_constants(self) -> None:
+        assert hasattr(jwt_mod, "SECRET_KEY")
+        assert hasattr(jwt_mod, "ALGORITHM")
+        assert hasattr(jwt_mod, "ACCESS_MINUTES")
+        assert hasattr(jwt_mod, "REFRESH_DAYS")
+        assert hasattr(jwt_mod, "create_access_token")
+        assert hasattr(jwt_mod, "create_refresh_token")
+        assert hasattr(jwt_mod, "decode_token")
+
+    def test_auth_module_imports_from_security_jwt(self) -> None:
+        src = inspect.getsource(auth_mod)
+        assert "from api.security.jwt import" in src, (
+            "auth.py 必須從 api.security.jwt import JWT 設定 / 函式"
+        )
+        assert '_UNSAFE_JWT_DEFAULTS' not in src, (
+            "_UNSAFE_JWT_DEFAULTS 應只出現於 api/security/jwt.py，避免重複維護"
+        )
+
+    def test_dependencies_module_imports_from_security_jwt(self) -> None:
+        src = inspect.getsource(deps_mod)
+        assert "from api.security.jwt import" in src, (
+            "dependencies.py 必須從 api.security.jwt import decode_token"
+        )
+        assert '_UNSAFE_JWT_DEFAULTS' not in src
+        assert 'SECRET_KEY: str = _jwt_secret_raw' not in src
+
+    def test_constants_identity_shared(self) -> None:
+        """auth.SECRET_KEY 與 jwt_mod.SECRET_KEY 應為同一物件，確保唯一來源。"""
+        assert auth_mod.SECRET_KEY is jwt_mod.SECRET_KEY
+        assert auth_mod.ALGORITHM == jwt_mod.ALGORITHM

@@ -8,11 +8,11 @@ from __future__ import annotations
 import os
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Any, Optional
 
 import structlog
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
-from jose import JWTError, jwt
+from jose import JWTError
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
@@ -26,32 +26,47 @@ from api.dependencies import (
     record_login_failure,
 )
 from api.schemas import LoginRequest
+from api.security.jwt import (
+    ACCESS_MINUTES,
+    ALGORITHM,
+    REFRESH_DAYS,
+    SECRET_KEY,
+    create_access_token,
+    create_refresh_token,
+    decode_token_raw,
+)
+from jose import jwt as _jose_jwt
+
+# 對外 re-export，保持向下相容（既有測試 / 工具仍可從本模組 import）。
+__all__ = [
+    "router",
+    "ACCESS_MINUTES",
+    "REFRESH_DAYS",
+    "SECRET_KEY",
+    "ALGORITHM",
+    "_create_token",
+    "_issue_tokens",
+]
+
+
+def _create_token(data: dict[str, Any], expires_delta: timedelta) -> str:
+    """
+    向下相容包裝：等同 api.security.jwt._encode。
+    新程式請直接呼叫 create_access_token / create_refresh_token。
+    """
+    payload = data.copy()
+    now = datetime.now(timezone.utc)
+    payload["exp"] = now + expires_delta
+    payload["iat"] = now
+    return _jose_jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 logger = structlog.get_logger()
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
-_jwt_secret_raw = os.environ.get("JWT_SECRET", "")
-_UNSAFE_JWT_DEFAULTS = {"", "changeme-please-set-env", "change_me", "secret"}
-if _jwt_secret_raw in _UNSAFE_JWT_DEFAULTS:
-    raise RuntimeError(
-        "JWT_SECRET 環境變數未設定或使用不安全的預設值，服務拒絕啟動。"
-        "請設定至少 64 字元的隨機字串（建議使用：openssl rand -hex 32）。"
-    )
-SECRET_KEY: str = _jwt_secret_raw
-ALGORITHM = "HS256"
-ACCESS_MINUTES = int(os.environ.get("JWT_ACCESS_MINUTES", "15"))
-REFRESH_DAYS = int(os.environ.get("JWT_REFRESH_DAYS", "7"))
 IS_SECURE = os.environ.get("COOKIE_SECURE", "false").lower() == "true"
 
 _pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12)
-
-
-def _create_token(data: dict, expires_delta: timedelta) -> str:  # type: ignore[type-arg]
-    payload = data.copy()
-    payload["exp"] = datetime.now(timezone.utc) + expires_delta
-    payload["iat"] = datetime.now(timezone.utc)
-    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 
 def _set_auth_cookies(response: Response, access_token: str, refresh_token: str) -> None:
@@ -78,17 +93,16 @@ def _set_auth_cookies(response: Response, access_token: str, refresh_token: str)
 def _issue_tokens(user: User) -> tuple[str, str]:
     jti_access = str(uuid.uuid4())
     jti_refresh = str(uuid.uuid4())
-    access_token = _create_token(
+    # 注意：依規格 §五.1，is_superadmin 等角色資訊不寫入 JWT payload，
+    # 一律以 DB 為唯一權威來源（角色變動時舊 token 不會殘留過期權限）。
+    access_token = create_access_token(
         {
             "sub": str(user.id),
-            "is_superadmin": user.is_superadmin,
             "jti": jti_access,
         },
-        timedelta(minutes=ACCESS_MINUTES),
     )
-    refresh_token = _create_token(
+    refresh_token = create_refresh_token(
         {"sub": str(user.id), "jti": jti_refresh, "type": "refresh"},
-        timedelta(days=REFRESH_DAYS),
     )
     return access_token, refresh_token
 
@@ -140,7 +154,7 @@ def logout(
 ) -> dict:  # type: ignore[type-arg]
     if refresh_token:
         try:
-            payload: dict = jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])  # type: ignore[type-arg]
+            payload: dict = decode_token_raw(refresh_token)  # type: ignore[type-arg]
             jti = payload.get("jti")
             exp = payload.get("exp")
             if jti and exp:
@@ -170,7 +184,7 @@ def refresh_token_endpoint(
         )
 
     try:
-        payload: dict = jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])  # type: ignore[type-arg]
+        payload: dict = decode_token_raw(refresh_token)  # type: ignore[type-arg]
     except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

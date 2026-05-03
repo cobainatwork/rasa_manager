@@ -9,37 +9,27 @@ from typing import Optional
 
 import redis as redis_lib
 from fastapi import Cookie, Depends, HTTPException, Request, status
-from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
 from api.database.models import Agent, User, UserAgentRole
 from api.database.session import get_db
+from api.security.jwt import decode_token
 
-_jwt_secret_raw = os.environ.get("JWT_SECRET", "")
-_UNSAFE_JWT_DEFAULTS = {"", "changeme-please-set-env", "change_me", "secret"}
-if _jwt_secret_raw in _UNSAFE_JWT_DEFAULTS:
-    raise RuntimeError(
-        "JWT_SECRET 環境變數未設定或使用不安全的預設值，服務拒絕啟動。"
-        "請設定至少 64 字元的隨機字串（建議使用：openssl rand -hex 32）。"
-    )
-SECRET_KEY: str = _jwt_secret_raw
-ALGORITHM = "HS256"
 REDIS_URL: str = os.environ.get("REDIS_URL", "redis://redis:6379/0")
+
+# I12：module-level singleton，避免每請求都新建 connection pool
+_redis_client: Optional[redis_lib.Redis] = None  # type: ignore[type-arg]
 
 
 def _get_redis() -> redis_lib.Redis:  # type: ignore[type-arg]
-    return redis_lib.from_url(REDIS_URL, decode_responses=True)
+    global _redis_client
+    if _redis_client is None:
+        _redis_client = redis_lib.from_url(REDIS_URL, decode_responses=True)
+    return _redis_client
 
 
 def _verify_access_token(token: str) -> dict:  # type: ignore[type-arg]
-    try:
-        payload: dict = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        return payload
-    except JWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"code": "UNAUTHORIZED", "message": "Token 無效或已過期"},
-        )
+    return decode_token(token)
 
 
 def get_current_user(

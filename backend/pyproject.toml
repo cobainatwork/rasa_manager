@@ -1,0 +1,20 @@
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = [
+    "alembic/versions",
+    "__pycache__",
+    ".venv",
+]
+
+[tool.ruff.lint]
+# 維持預設規則集（E + F），避免新增規則影響既有程式碼基線。
+# 若未來要加嚴可逐步加入 I / B / UP。
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"

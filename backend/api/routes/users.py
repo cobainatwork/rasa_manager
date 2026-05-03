@@ -3,7 +3,6 @@
 """
 from __future__ import annotations
 
-import re
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -14,31 +13,20 @@ from api.database.models import User
 from api.database.session import get_db
 from api.dependencies import get_current_superadmin
 from api.schemas import ResetPasswordRequest, UserCreate, UserUpdate
+from api.security.password import validate_password_strength
 
 router = APIRouter(prefix="/api/v1/users", tags=["users"])
 _pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12)
 
 
 def _validate_password(password: str) -> None:
-    if len(password) < 8:
+    """規格 §五.6：委派至共用的 validate_password_strength，違規轉 HTTPException 400。"""
+    try:
+        validate_password_strength(password)
+    except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "VALIDATION_ERROR", "message": "密碼最少 8 個字元"},
-        )
-    if not re.search(r"[A-Z]", password):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "VALIDATION_ERROR", "message": "密碼需含大寫英文字母"},
-        )
-    if not re.search(r"[a-z]", password):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "VALIDATION_ERROR", "message": "密碼需含小寫英文字母"},
-        )
-    if not re.search(r"\d", password):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "VALIDATION_ERROR", "message": "密碼需含數字"},
+            detail={"code": "VALIDATION_ERROR", "message": str(exc)},
         )
 
 

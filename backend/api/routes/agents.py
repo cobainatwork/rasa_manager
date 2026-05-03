@@ -17,6 +17,17 @@ from api.schemas import AgentCreate, AgentUpdate, RoleAssignRequest
 router = APIRouter(prefix="/api/v1/agents", tags=["agents"])
 
 
+def _get_agent_or_404(db: Session, agent_id: uuid.UUID) -> Agent:
+    """模組層級樣板：找不到 Agent 拋 404，不混入權限檢查。"""
+    agent = db.query(Agent).filter(Agent.id == agent_id).first()
+    if not agent:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "NOT_FOUND", "message": "Agent 不存在"},
+        )
+    return agent
+
+
 def _agent_to_dict(agent: Agent) -> dict:  # type: ignore[type-arg]
     return {
         "id": str(agent.id),
@@ -81,19 +92,14 @@ def get_agent(
     return {"success": True, "data": _agent_to_dict(agent)}
 
 
-@router.put("/{agent_id}")
+@router.patch("/{agent_id}")
 def update_agent(
     agent_id: uuid.UUID,
     body: AgentUpdate,
     current_user: User = Depends(get_current_superadmin),
     db: Session = Depends(get_db),
 ) -> dict:  # type: ignore[type-arg]
-    agent = db.query(Agent).filter(Agent.id == agent_id).first()
-    if not agent:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "NOT_FOUND", "message": "Agent 不存在"},
-        )
+    agent = _get_agent_or_404(db, agent_id)
     if body.name is not None:
         agent.name = body.name
     if body.txt_output_path is not None:
@@ -113,12 +119,7 @@ def delete_agent(
     current_user: User = Depends(get_current_superadmin),
     db: Session = Depends(get_db),
 ) -> None:
-    agent = db.query(Agent).filter(Agent.id == agent_id).first()
-    if not agent:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "NOT_FOUND", "message": "Agent 不存在"},
-        )
+    agent = _get_agent_or_404(db, agent_id)
     has_items = (
         db.query(KnowledgeItem).filter(KnowledgeItem.agent_id == agent_id).first()
     )
@@ -187,12 +188,7 @@ def assign_role(
     current_user: User = Depends(get_current_superadmin),
     db: Session = Depends(get_db),
 ) -> dict:  # type: ignore[type-arg]
-    agent = db.query(Agent).filter(Agent.id == agent_id).first()
-    if not agent:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "NOT_FOUND", "message": "Agent 不存在"},
-        )
+    _get_agent_or_404(db, agent_id)
     target_user = db.query(User).filter(User.id == body.user_id).first()
     if not target_user:
         raise HTTPException(

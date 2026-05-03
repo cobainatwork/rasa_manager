@@ -6,11 +6,31 @@ patch 路徑必須指向 api.database.session.SessionLocal。
 """
 from __future__ import annotations
 
+import inspect
+import os
+import subprocess
+import sys
 import uuid
+from typing import Any
 from unittest.mock import MagicMock, mock_open, patch
 
+import pytest
 
+import tasks
+from tasks import run_ingestion_sync
 from tests.conftest import AGENT_ID
+
+
+def _make_mock_proc(
+    returncode: int = 0,
+    stdout: str = "",
+    stderr: str = "",
+) -> MagicMock:
+    """Popen mock 工廠：設定 communicate 回傳值與 returncode，消除重複樣板。"""
+    proc = MagicMock()
+    proc.communicate.return_value = (stdout, stderr)
+    proc.returncode = returncode
+    return proc
 
 
 # ── txt 格式產生邏輯（保留字符替換）─────────────────────────────────────────
@@ -114,29 +134,26 @@ class TestRunIngestionSync:
         return db
 
     def test_sync_log_marked_completed(self) -> None:
-        from tasks import run_ingestion_sync
-
         sync_log = self._make_sync_log()
         agent = self._make_agent()
         faq = self._make_faq_item()
         db = self._make_db(sync_log, agent, [faq])
 
         with (
+            patch.dict(os.environ, {"QDRANT_URL": "http://fake:6333"}),
             patch(self.SESSION_PATCH, return_value=db),
             patch("builtins.open", mock_open()),
             patch("os.makedirs"),
-            patch("os.path.exists", return_value=True),
+            patch("os.path.isfile", return_value=True),
             patch("shutil.copy2"),
-            patch("subprocess.run") as mock_run,
+            patch("subprocess.Popen") as mock_popen,
         ):
-            mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
+            mock_popen.return_value = _make_mock_proc(stdout="ok")
             run_ingestion_sync.apply(args=[str(AGENT_ID), str(sync_log.id)])
 
         assert sync_log.status == "completed"
 
     def test_sync_log_failed_when_agent_not_found(self) -> None:
-        from tasks import run_ingestion_sync
-
         sync_log = self._make_sync_log()
         db = self._make_db(sync_log, None, [])
 
@@ -146,22 +163,516 @@ class TestRunIngestionSync:
         assert sync_log.status == "failed"
 
     def test_items_status_updated_to_synced(self) -> None:
-        from tasks import run_ingestion_sync
-
         sync_log = self._make_sync_log()
         agent = self._make_agent()
         faq = self._make_faq_item()
         db = self._make_db(sync_log, agent, [faq])
 
         with (
+            patch.dict(os.environ, {"QDRANT_URL": "http://fake:6333"}),
             patch(self.SESSION_PATCH, return_value=db),
             patch("builtins.open", mock_open()),
             patch("os.makedirs"),
-            patch("os.path.exists", return_value=True),
+            patch("os.path.isfile", return_value=True),
             patch("shutil.copy2"),
-            patch("subprocess.run") as mock_run,
+            patch("subprocess.Popen") as mock_popen,
         ):
-            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            mock_popen.return_value = _make_mock_proc()
             run_ingestion_sync.apply(args=[str(AGENT_ID), str(sync_log.id)])
 
         assert faq.status == "synced"
+
+
+# ── Regression 共用 fixture ─────────────────────────────────────────────────
+
+@pytest.fixture
+def _regression_make_agent(agent_factory):
+    """共用 fixture：B2/B3 ingestion 用 Agent mock。"""
+    def _make() -> MagicMock:
+        return agent_factory(
+            txt_output_path="/tmp/agent_test",
+            ingest_script_path="/opt/scripts/ingest.py",
+            rasa_rest_url=None,
+        )
+    return _make
+
+
+_B23_SYNC_LOG_ID = uuid.UUID("00000000-0000-0000-0000-000000000099")
+
+
+def _b23_make_sync_log() -> MagicMock:
+    sync_log = MagicMock()
+    sync_log.id = _B23_SYNC_LOG_ID
+    sync_log.status = "pending"
+    sync_log.started_at = None
+    sync_log.stderr = None
+    return sync_log
+
+
+def _b23_make_db(sync_log: MagicMock, agent: MagicMock, items: list) -> MagicMock:
+    db = MagicMock()
+
+    def query_se(model: object) -> MagicMock:
+        q = MagicMock()
+        if model.__name__ == "SyncLog":
+            q.filter.return_value.first.return_value = sync_log
+        elif model.__name__ == "Agent":
+            q.filter.return_value.first.return_value = agent
+        else:
+            q.filter.return_value.all.return_value = items
+        return q
+
+    db.query.side_effect = query_se
+    return db
+
+
+# ── Regression: B1 (Celery retry must not prematurely mark sync_log failed) ──
+
+class TestCeleryRetryRegression:
+    """Regression: B1 (Celery retry must not prematurely mark sync_log failed)."""
+
+    SESSION_PATCH = "api.database.session.SessionLocal"
+
+    def _make_sync_log(self) -> MagicMock:
+        log = MagicMock()
+        log.id = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
+        log.status = "pending"
+        return log
+
+    def _make_agent(self) -> MagicMock:
+        agent = MagicMock()
+        agent.id = AGENT_ID
+        agent.txt_output_path = "/opt/rasa_docs/test"
+        agent.ingest_script_path = "ingest.py"
+        return agent
+
+    def _make_faq(self) -> MagicMock:
+        faq = MagicMock()
+        faq.question = "Q"
+        faq.answer = "A"
+        faq.id = uuid.uuid4()
+        faq.status = "approved"
+        return faq
+
+    def _make_db(self, sync_log: MagicMock, agent: MagicMock, faqs: list) -> MagicMock:
+        db = MagicMock()
+        call_index = [0]
+
+        def query_se(model: object) -> MagicMock:
+            q = MagicMock()
+            idx = call_index[0]
+            call_index[0] += 1
+            if idx == 0:
+                q.filter.return_value.first.return_value = sync_log
+            elif idx == 1:
+                q.filter.return_value.first.return_value = agent
+            else:
+                q.filter.return_value.all.return_value = faqs
+            return q
+
+        db.query.side_effect = query_se
+        return db
+
+    def test_subprocess_failure_during_retry_does_not_set_failed(self) -> None:
+        """retries=1（未達 max_retries=3）失敗時不可標 failed；改 mock Popen 實際觸發失敗分支。"""
+        sync_log = self._make_sync_log()
+        agent = self._make_agent()
+        faq = self._make_faq()
+        db = self._make_db(sync_log, agent, [faq])
+
+        with (
+            patch(self.SESSION_PATCH, return_value=db),
+            patch("builtins.open", mock_open()),
+            patch("os.makedirs"),
+            patch("os.path.isfile", return_value=True),
+            patch("subprocess.Popen") as mock_popen,
+        ):
+            mock_popen.return_value = _make_mock_proc(returncode=1, stderr="boom")
+            # retries=1：仍有 retry 額度（max_retries=3），應走 self.retry() 路徑
+            try:
+                run_ingestion_sync.apply(
+                    args=[str(AGENT_ID), str(sync_log.id)], retries=1,
+                )
+            except Exception:
+                pass  # self.retry 在 EAGER 模式會冒出，忽略
+
+        # 關鍵斷言：retry 中途 sync_log 不能被標 failed（B1 規格）
+        assert sync_log.status != "failed", (
+            f"retries=1（未達 max_retries）時 sync_log.status 不可被標為 failed，"
+            f"實際為 {sync_log.status!r}"
+        )
+
+    def test_max_retries_exceeded_writes_failed(self) -> None:
+        """retries 達上限時應標記 failed 並重拋（不可吞錯）。"""
+        sync_log = self._make_sync_log()
+        agent = self._make_agent()
+        faq = self._make_faq()
+        db = self._make_db(sync_log, agent, [faq])
+
+        with (
+            patch(self.SESSION_PATCH, return_value=db),
+            patch("builtins.open", mock_open()),
+            patch("os.makedirs"),
+            patch("os.path.isfile", return_value=True),
+            patch("subprocess.Popen") as mock_popen,
+        ):
+            mock_popen.return_value = _make_mock_proc(returncode=1, stderr="boom")
+            # retries=3 模擬已用盡（max_retries=3）
+            result = run_ingestion_sync.apply(
+                args=[str(AGENT_ID), str(sync_log.id)],
+                retries=3,
+            )
+
+        assert result.failed(), "達 max_retries 時 task 應標記為失敗"
+        assert sync_log.status == "failed"
+        assert sync_log.finished_at is not None
+
+
+# ── Regression: B2 (subprocess except must be narrow) ────────────────────────
+
+class TestSubprocessNarrowExceptRegression:
+    """Regression: B2 (subprocess except must be narrow, errors must surface)."""
+
+    def test_except_clause_is_narrow(self) -> None:
+        """tasks.py 不可使用 broad except Exception 包住主執行區塊。"""
+        src = inspect.getsource(tasks.run_ingestion_sync)
+        assert "RuntimeError" in src
+        assert "OSError" in src
+        assert "subprocess.SubprocessError" in src
+        assert "except Exception" not in src, (
+            "tasks.run_ingestion_sync 必須改 narrow except，"
+            "不可使用 except Exception 吃掉所有錯誤"
+        )
+
+    def test_max_retries_stderr_contains_specific_message(self, _regression_make_agent) -> None:
+        sync_log = _b23_make_sync_log()
+        agent = _regression_make_agent()
+        faq = MagicMock()
+        faq.question = "Q"
+        faq.answer = "A"
+        db = _b23_make_db(sync_log, agent, [faq])
+
+        specific_msg = "Ingestion script blew up with very specific reason xyz"
+
+        def popen_side_effect(*args: Any, **kwargs: Any) -> MagicMock:
+            raise RuntimeError(specific_msg)
+
+        with (
+            patch.dict(os.environ, {"QDRANT_URL": "http://fake:6333"}),
+            patch("api.database.session.SessionLocal", return_value=db),
+            patch("builtins.open", mock_open()),
+            patch("os.makedirs"),
+            patch("os.path.isfile", return_value=True),
+            patch("subprocess.Popen", side_effect=popen_side_effect),
+        ):
+            # retries=3 模擬已達 max_retries
+            run_ingestion_sync.apply(
+                args=[str(AGENT_ID), str(sync_log.id)], retries=3,
+            )
+
+        assert sync_log.status == "failed"
+        assert sync_log.stderr is not None
+        assert "同步任務執行失敗" not in sync_log.stderr
+        assert specific_msg in sync_log.stderr
+        assert len(sync_log.stderr) <= 1000
+
+    def test_stderr_truncated_to_1000_chars(self, _regression_make_agent) -> None:
+        sync_log = _b23_make_sync_log()
+        agent = _regression_make_agent()
+        faq = MagicMock()
+        faq.question = "Q"
+        faq.answer = "A"
+        db = _b23_make_db(sync_log, agent, [faq])
+
+        long_msg = "x" * 5000
+
+        def popen_side_effect(*args: Any, **kwargs: Any) -> MagicMock:
+            raise RuntimeError(long_msg)
+
+        with (
+            patch.dict(os.environ, {"QDRANT_URL": "http://fake:6333"}),
+            patch("api.database.session.SessionLocal", return_value=db),
+            patch("builtins.open", mock_open()),
+            patch("os.makedirs"),
+            patch("os.path.isfile", return_value=True),
+            patch("subprocess.Popen", side_effect=popen_side_effect),
+        ):
+            run_ingestion_sync.apply(
+                args=[str(AGENT_ID), str(sync_log.id)], retries=3,
+            )
+
+        assert sync_log.stderr is not None
+        assert len(sync_log.stderr) == 1000
+
+    def test_keyboard_interrupt_not_swallowed(self, _regression_make_agent) -> None:
+        sync_log = _b23_make_sync_log()
+        agent = _regression_make_agent()
+        faq = MagicMock()
+        faq.question = "Q"
+        faq.answer = "A"
+        db = _b23_make_db(sync_log, agent, [faq])
+
+        def popen_side_effect(*args: Any, **kwargs: Any) -> MagicMock:
+            raise KeyboardInterrupt()
+
+        # narrow except 只接住 RuntimeError/OSError/SubprocessError/IOError；
+        # KeyboardInterrupt 應原樣冒出，不可被吞掉。
+        raised = False
+        try:
+            with (
+                patch.dict(os.environ, {"QDRANT_URL": "http://fake:6333"}),
+                patch("api.database.session.SessionLocal", return_value=db),
+                patch("builtins.open", mock_open()),
+                patch("os.makedirs"),
+                patch("os.path.isfile", return_value=True),
+                patch("subprocess.Popen", side_effect=popen_side_effect),
+            ):
+                result = run_ingestion_sync.apply(args=[str(AGENT_ID), str(sync_log.id)])
+                # Celery EAGER 模式會把 BaseException 收進 result；手動取出再 raise
+                if result.failed():
+                    inner = result.result
+                    if isinstance(inner, KeyboardInterrupt):
+                        raise inner
+        except KeyboardInterrupt:
+            raised = True
+
+        # 關鍵斷言：KeyboardInterrupt 必須冒出（不可被 narrow except 吞掉）
+        assert raised, "KeyboardInterrupt 必須原樣冒出，不可被 narrow except 吞掉"
+        # 同時確認沒有錯把 KeyboardInterrupt 當業務錯誤寫進 sync_log
+        assert sync_log.status != "failed", (
+            "KeyboardInterrupt 不是業務錯誤，sync_log 不應被標 failed"
+        )
+
+
+# ── Regression: B3 (subprocess timeout must kill process group) ─────────────
+
+class TestSubprocessTimeoutKillPGRegression:
+    """Regression: B3 (subprocess timeout must kill process group)."""
+
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="killpg / start_new_session 為 POSIX-only；Windows 走 proc.kill() 分支",
+    )
+    def test_timeout_triggers_killpg(self, _regression_make_agent) -> None:
+        sync_log = _b23_make_sync_log()
+        agent = _regression_make_agent()
+        faq = MagicMock()
+        faq.question = "Q"
+        faq.answer = "A"
+        db = _b23_make_db(sync_log, agent, [faq])
+
+        mock_proc = MagicMock()
+        mock_proc.pid = 12345
+        mock_proc.communicate.side_effect = subprocess.TimeoutExpired(
+            cmd="python /opt/scripts/ingest.py", timeout=280
+        )
+        mock_proc.wait.return_value = None
+
+        with (
+            patch.dict(os.environ, {"QDRANT_URL": "http://fake:6333"}),
+            patch("api.database.session.SessionLocal", return_value=db),
+            patch("builtins.open", mock_open()),
+            patch("os.makedirs"),
+            patch("os.path.isfile", return_value=True),
+            patch("subprocess.Popen", return_value=mock_proc) as mock_popen,
+            patch("os.killpg") as mock_killpg,
+            patch("os.getpgid", return_value=12345),
+        ):
+            run_ingestion_sync.apply(args=[str(AGENT_ID), str(sync_log.id)])
+
+        _, kwargs = mock_popen.call_args
+        assert kwargs.get("start_new_session") is True
+
+        assert mock_killpg.called, "TimeoutExpired 後必須呼叫 os.killpg 回收孫進程"
+
+        mock_proc.wait.assert_called()
+
+    def test_uses_popen_not_run(self) -> None:
+        """tasks.py 必須改用 subprocess.Popen，不可繼續用 subprocess.run。"""
+        src = inspect.getsource(tasks.run_ingestion_sync)
+        assert "subprocess.run(" not in src, (
+            "B3：必須改用 subprocess.Popen 以支援 start_new_session 與 killpg"
+        )
+        assert "subprocess.Popen(" in src
+
+    @pytest.mark.skipif(
+        sys.platform != "win32",
+        reason="Windows-specific kill path（無 killpg，走 proc.kill()）",
+    )
+    def test_timeout_uses_kill_on_windows(self, _regression_make_agent) -> None:
+        """Windows 環境下 proc.kill() 應被呼叫（不走 killpg）。"""
+        sync_log = _b23_make_sync_log()
+        agent = _regression_make_agent()
+        faq = MagicMock()
+        faq.question = "Q"
+        faq.answer = "A"
+        db = _b23_make_db(sync_log, agent, [faq])
+
+        mock_proc = MagicMock()
+        mock_proc.pid = 12345
+        mock_proc.communicate.side_effect = subprocess.TimeoutExpired(
+            cmd="python /opt/scripts/ingest.py", timeout=280
+        )
+        mock_proc.wait.return_value = None
+
+        with (
+            patch.dict(os.environ, {"QDRANT_URL": "http://fake:6333"}),
+            patch("api.database.session.SessionLocal", return_value=db),
+            patch("builtins.open", mock_open()),
+            patch("os.makedirs"),
+            patch("os.path.isfile", return_value=True),
+            patch("subprocess.Popen", return_value=mock_proc) as mock_popen,
+        ):
+            run_ingestion_sync.apply(args=[str(AGENT_ID), str(sync_log.id)])
+
+        # Windows 不應傳 start_new_session
+        _, kwargs = mock_popen.call_args
+        assert kwargs.get("start_new_session") is None
+
+        # Windows 路徑必呼叫 proc.kill()
+        mock_proc.kill.assert_called()
+        mock_proc.wait.assert_called()
+
+
+# ── ingest script CLI 參數注入 ───────────────────────────────────────────────
+
+class TestIngestScriptArgs:
+    """驗證 subprocess.Popen 呼叫時帶有正確的 CLI 參數。"""
+
+    SESSION_PATCH = "api.database.session.SessionLocal"
+
+    def _make_sync_log(self) -> MagicMock:
+        log = MagicMock()
+        log.id = uuid.UUID("00000000-0000-0000-0000-0000000000b1")
+        log.status = "pending"
+        return log
+
+    def _make_agent(self) -> MagicMock:
+        agent = MagicMock()
+        agent.id = AGENT_ID
+        agent.txt_output_path = "/opt/rasa_docs/test"
+        agent.ingest_script_path = "/opt/project/ingest_kb.py"
+        return agent
+
+    def _make_faq(self) -> MagicMock:
+        faq = MagicMock()
+        faq.question = "Q"
+        faq.answer = "A"
+        faq.id = uuid.uuid4()
+        faq.status = "approved"
+        return faq
+
+    def _make_db(self, sync_log: MagicMock, agent: MagicMock, faqs: list) -> MagicMock:
+        db = MagicMock()
+        call_index = [0]
+
+        def query_se(model: object) -> MagicMock:
+            q = MagicMock()
+            idx = call_index[0]
+            call_index[0] += 1
+            if idx == 0:
+                q.filter.return_value.first.return_value = sync_log
+            elif idx == 1:
+                q.filter.return_value.first.return_value = agent
+            else:
+                q.filter.return_value.all.return_value = faqs
+            return q
+
+        db.query.side_effect = query_se
+        return db
+
+    def test_popen_called_with_required_cli_args(self) -> None:
+        sync_log = self._make_sync_log()
+        agent = self._make_agent()
+        faq = self._make_faq()
+        db = self._make_db(sync_log, agent, [faq])
+
+        with (
+            patch.dict(os.environ, {"QDRANT_URL": "http://qdrant.test:6333"}),
+            patch(self.SESSION_PATCH, return_value=db),
+            patch("builtins.open", mock_open()),
+            patch("os.makedirs"),
+            patch("os.path.isfile", return_value=True),
+            patch("subprocess.Popen") as mock_popen,
+        ):
+            mock_popen.return_value = _make_mock_proc()
+            run_ingestion_sync.apply(args=[str(AGENT_ID), str(sync_log.id)])
+
+        args, _ = mock_popen.call_args
+        cmd = args[0]
+        assert isinstance(cmd, list), "cmd 必須以列表形式傳入，避免 shell 解析"
+        assert cmd[0] == "python"
+        assert cmd[1] == "/opt/project/ingest_kb.py"
+        assert "--source" in cmd
+        assert "--qdrant-url" in cmd
+        assert "--collection" in cmd
+        assert "--doc-id" in cmd
+        # 參數值驗證
+        assert cmd[cmd.index("--qdrant-url") + 1] == "http://qdrant.test:6333"
+        assert cmd[cmd.index("--collection") + 1] == f"agent_{agent.id}"
+        # source 應指向匯出 .txt
+        source_value = cmd[cmd.index("--source") + 1]
+        assert source_value.endswith("faq_export.txt")
+
+
+class TestIngestScriptMissingQdrantUrl:
+    """QDRANT_URL 未設定時必須拋 RuntimeError 並標記 sync_log。"""
+
+    SESSION_PATCH = "api.database.session.SessionLocal"
+
+    def test_missing_qdrant_url_raises_runtime_error(self) -> None:
+        sync_log = MagicMock()
+        sync_log.id = uuid.UUID("00000000-0000-0000-0000-0000000000c1")
+        sync_log.status = "pending"
+        sync_log.started_at = None
+
+        agent = MagicMock()
+        agent.id = AGENT_ID
+        agent.txt_output_path = "/opt/rasa_docs/test"
+        agent.ingest_script_path = "/opt/project/ingest_kb.py"
+
+        faq = MagicMock()
+        faq.question = "Q"
+        faq.answer = "A"
+        faq.id = uuid.uuid4()
+        faq.status = "approved"
+
+        db = MagicMock()
+        call_index = [0]
+
+        def query_se(model: object) -> MagicMock:
+            q = MagicMock()
+            idx = call_index[0]
+            call_index[0] += 1
+            if idx == 0:
+                q.filter.return_value.first.return_value = sync_log
+            elif idx == 1:
+                q.filter.return_value.first.return_value = agent
+            else:
+                q.filter.return_value.all.return_value = [faq]
+            return q
+
+        db.query.side_effect = query_se
+
+        # 確保環境中沒有 QDRANT_URL
+        env_no_qdrant = {k: v for k, v in os.environ.items() if k != "QDRANT_URL"}
+
+        with (
+            patch.dict(os.environ, env_no_qdrant, clear=True),
+            patch(self.SESSION_PATCH, return_value=db),
+            patch("builtins.open", mock_open()),
+            patch("os.makedirs"),
+            patch("os.path.isfile", return_value=True),
+            patch("subprocess.Popen") as mock_popen,
+        ):
+            # retries=3 模擬已達 max_retries
+            run_ingestion_sync.apply(
+                args=[str(AGENT_ID), str(sync_log.id)], retries=3,
+            )
+
+            # Popen 不應被呼叫，因為提早拋 RuntimeError
+            assert not mock_popen.called
+
+        assert sync_log.status == "failed"
+        assert sync_log.stderr is not None
+        assert "QDRANT_URL" in sync_log.stderr

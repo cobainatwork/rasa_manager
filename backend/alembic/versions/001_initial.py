@@ -3,6 +3,25 @@
 Revision ID: 001
 Revises:
 Create Date: 2026-04-28 00:00:00.000000
+
+本 migration 建立完整初始 schema，包含：
+
+ENUM 型態（3 個）：
+    user_agent_role：reviewer / editor
+    ki_status：draft / pending / approved / rejected / synced
+    sync_status：pending / running / completed / failed
+
+資料表（9 個）：
+    users、agents、user_agent_roles（composite PK）、categories、
+    knowledge_items、knowledge_item_histories、audit_logs、sync_logs
+
+索引（13 個，依規格書 §11）：
+    idx_ki_agent_id、idx_ki_status、idx_ki_category_id、
+    idx_ki_locked_by（partial：locked_by IS NOT NULL）、
+    idx_cat_agent_id、idx_cat_parent_id、
+    idx_al_agent_id、idx_al_item_id、idx_al_created_at（DESC）、
+    idx_sl_agent_id、idx_sl_started_at（DESC）、
+    idx_uar_user_id、idx_uar_agent_id
 """
 from __future__ import annotations
 from typing import Sequence, Union
@@ -173,8 +192,10 @@ END $$;
     op.create_index("idx_cat_parent_id", "categories", ["parent_id"])
     op.create_index("idx_al_agent_id", "audit_logs", ["agent_id"])
     op.create_index("idx_al_item_id", "audit_logs", ["item_id"])
+    # 使用 raw SQL 因 alembic op.create_index 不支援 DESC 排序
     op.execute("CREATE INDEX idx_al_created_at ON audit_logs (created_at DESC)")
     op.create_index("idx_sl_agent_id", "sync_logs", ["agent_id"])
+    # 使用 raw SQL 因 alembic op.create_index 不支援 DESC 排序
     op.execute("CREATE INDEX idx_sl_started_at ON sync_logs (started_at DESC)")
     op.create_index("idx_uar_user_id", "user_agent_roles", ["user_id"])
     op.create_index("idx_uar_agent_id", "user_agent_roles", ["agent_id"])
@@ -204,7 +225,7 @@ def downgrade() -> None:
     op.drop_table("user_agent_roles")
     op.drop_table("agents")
     op.drop_table("users")
-    # ENUM 型態
-    op.execute("DROP TYPE sync_status")
-    op.execute("DROP TYPE ki_status")
-    op.execute("DROP TYPE user_agent_role")
+    # ENUM 型態（IF EXISTS 防呆，避免重複 downgrade 時炸開）
+    op.execute("DROP TYPE IF EXISTS sync_status")
+    op.execute("DROP TYPE IF EXISTS ki_status")
+    op.execute("DROP TYPE IF EXISTS user_agent_role")

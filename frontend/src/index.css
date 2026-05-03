@@ -1,44 +1,67 @@
+/* I17：Inter 字型已改由 @fontsource/inter 在 main.tsx 載入；此處不再外接 Google Fonts。
+   JetBrains Mono / Noto Sans TC 若日後需要可比照引入對應 fontsource 套件。 */
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
+  :root {
+    /* shadcn HSL tokens（必要） */
+    --background: 210 40% 98%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 217 91% 60%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 217 91% 60%;
+    --radius: 0.5rem;
+  }
+
+  /* N1：shadcn 慣例 — 全域元素預設邊框色，避免每個元件再寫一次 border-color */
+  * {
+    @apply border-border-default;
+  }
+
   body {
-    @apply bg-slate-50 text-slate-900 font-sans antialiased;
+    @apply bg-canvas text-text-primary font-sans antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  /* 焦點環統一規格 */
+  *:focus-visible {
+    @apply outline-none ring-2 ring-brand-500 ring-offset-2 ring-offset-canvas;
+  }
+
+  /* prefers-reduced-motion 支援 */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
+  /* 段落字數限制（max-w-prose 之外，提供 ch 單位版） */
+  .prose-content {
+    @apply max-w-[65ch] leading-relaxed;
   }
 }
 
-@layer components {
-  .btn {
-    @apply inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: theme('colors.border-strong') transparent;
   }
-  .btn-primary {
-    @apply btn bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500;
-  }
-  .btn-secondary {
-    @apply btn bg-slate-200 text-slate-800 hover:bg-slate-300 focus:ring-slate-400;
-  }
-  .btn-danger {
-    @apply btn bg-red-600 text-white hover:bg-red-700 focus:ring-red-500;
-  }
-  .btn-ghost {
-    @apply btn bg-transparent text-slate-700 hover:bg-slate-100;
-  }
-  .input {
-    @apply block w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500;
-  }
-  .label {
-    @apply block text-sm font-medium text-slate-700 mb-1;
-  }
-  .card {
-    @apply bg-white rounded-lg shadow border border-slate-200;
-  }
-  .badge {
-    @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium;
-  }
-  .badge-draft { @apply badge bg-slate-100 text-slate-700; }
-  .badge-pending { @apply badge bg-yellow-100 text-yellow-800; }
-  .badge-approved { @apply badge bg-green-100 text-green-800; }
-  .badge-rejected { @apply badge bg-red-100 text-red-800; }
-  .badge-synced { @apply badge bg-blue-100 text-blue-800; }
 }

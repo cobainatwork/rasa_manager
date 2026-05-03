@@ -825,9 +825,7 @@ Implementation Plan §2 提及的同步紀錄表：
 - `SameSite=Strict` 本身即為 CSRF 防護：跨站（cross-site）發起的請求不帶 Cookie，攻擊者無法偽造有效 session，**無需額外實作 CSRF token 機制**
 
 ### 15.5 子程序執行限制
-
-- Celery Worker 僅能執行 `agents` 表中設定的 `ingest_script_path` 指向的 script
-- 不開放前端直接指定執行指令
+h
 - 子程序超時強制終止（`subprocess.TimeoutExpired`）
 
 ### 15.6 Ingestion Script 容器化執行細節

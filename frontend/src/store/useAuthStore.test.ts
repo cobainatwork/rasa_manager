@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useAuthStore } from './useAuthStore'
 import { apiClient } from '@/api/client'
+import type { User } from '@/api/types'
 
 // mock apiClient
 vi.mock('@/api/client', () => ({
@@ -15,21 +16,36 @@ const mockApiClient = apiClient as unknown as {
   get: ReturnType<typeof vi.fn>
 }
 
-const FAKE_USER = {
+const FAKE_USER: User = {
   id: 'uid-001',
   username: 'admin',
   is_superadmin: true,
   is_active: true,
+  created_at: '2026-01-01T00:00:00Z',
 }
 
 beforeEach(() => {
   useAuthStore.setState({
     user: null,
-    currentAgent: null,
     isLoading: false,
     isInitialized: false,
   })
   vi.clearAllMocks()
+})
+
+describe('useAuthStore — state shape', () => {
+  it('state 不應包含 currentAgent / setCurrentAgent（B1：唯一 source 由 useAgentContext 提供）', () => {
+    const state = useAuthStore.getState() as unknown as Record<string, unknown>
+    expect('currentAgent' in state).toBe(false)
+    expect('setCurrentAgent' in state).toBe(false)
+  })
+
+  it('state 僅暴露 auth 相關欄位', () => {
+    const state = useAuthStore.getState()
+    expect(Object.keys(state).sort()).toEqual(
+      ['fetchMe', 'initialize', 'isInitialized', 'isLoading', 'login', 'logout', 'user'].sort(),
+    )
+  })
 })
 
 describe('useAuthStore — login', () => {
@@ -47,19 +63,20 @@ describe('useAuthStore — login', () => {
     expect(useAuthStore.getState().isLoading).toBe(false)
   })
 
-  it('login 回傳無 data 時不呼叫 fetchMe', async () => {
+  it('login 一律呼叫 fetchMe（不再依賴 if(data) 死碼，I3）', async () => {
     mockApiClient.post.mockResolvedValueOnce({ data: {} })
+    mockApiClient.get.mockResolvedValueOnce({ data: { data: FAKE_USER } })
 
     await useAuthStore.getState().login('admin', 'Admin1234')
 
-    expect(mockApiClient.get).not.toHaveBeenCalled()
-    expect(useAuthStore.getState().user).toBeNull()
+    expect(mockApiClient.get).toHaveBeenCalledTimes(1)
+    expect(useAuthStore.getState().user).toEqual(FAKE_USER)
   })
 
-  it('login API 失敗後 isLoading 仍歸零', async () => {
+  it('login API 失敗會 rethrow，且 isLoading 仍歸零', async () => {
     mockApiClient.post.mockRejectedValueOnce(new Error('Network Error'))
 
-    await expect(useAuthStore.getState().login('admin', 'wrong')).rejects.toThrow()
+    await expect(useAuthStore.getState().login('admin', 'wrong')).rejects.toThrow('Network Error')
     expect(useAuthStore.getState().isLoading).toBe(false)
   })
 
@@ -69,6 +86,7 @@ describe('useAuthStore — login', () => {
       loadingDuringCall = useAuthStore.getState().isLoading
       return { data: {} }
     })
+    mockApiClient.get.mockResolvedValueOnce({ data: { data: FAKE_USER } })
 
     await useAuthStore.getState().login('admin', 'Admin1234')
 
@@ -77,23 +95,25 @@ describe('useAuthStore — login', () => {
 })
 
 describe('useAuthStore — logout', () => {
-  it('logout 後清除 user 與 currentAgent', async () => {
-    useAuthStore.setState({ user: FAKE_USER as any, currentAgent: { id: 'ag-1' } as any })
+  it('logout 後清除 user', async () => {
+    useAuthStore.setState({ user: FAKE_USER })
     mockApiClient.post.mockResolvedValueOnce({})
 
     await useAuthStore.getState().logout()
 
     expect(useAuthStore.getState().user).toBeNull()
-    expect(useAuthStore.getState().currentAgent).toBeNull()
   })
 
-  it('logout 即使後端失敗也清除本地狀態', async () => {
-    useAuthStore.setState({ user: FAKE_USER as any })
+  it('logout 即使後端失敗也清除本地狀態（並輸出 warning，I4）', async () => {
+    useAuthStore.setState({ user: FAKE_USER })
     mockApiClient.post.mockRejectedValueOnce(new Error('500'))
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
     await useAuthStore.getState().logout()
 
     expect(useAuthStore.getState().user).toBeNull()
+    expect(warnSpy).toHaveBeenCalledWith('[auth] logout backend call failed', expect.any(Error))
+    warnSpy.mockRestore()
   })
 })
 
@@ -141,19 +161,5 @@ describe('useAuthStore — initialize', () => {
     await useAuthStore.getState().initialize()
 
     expect(mockApiClient.get).not.toHaveBeenCalled()
-  })
-})
-
-describe('useAuthStore — setCurrentAgent', () => {
-  it('setCurrentAgent 更新 currentAgent', () => {
-    const agent = { id: 'ag-1', name: '測試 Agent' } as any
-    useAuthStore.getState().setCurrentAgent(agent)
-    expect(useAuthStore.getState().currentAgent).toEqual(agent)
-  })
-
-  it('setCurrentAgent null 清除 currentAgent', () => {
-    useAuthStore.setState({ currentAgent: { id: 'ag-1' } as any })
-    useAuthStore.getState().setCurrentAgent(null)
-    expect(useAuthStore.getState().currentAgent).toBeNull()
   })
 })

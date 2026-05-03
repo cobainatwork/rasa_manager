@@ -8,6 +8,10 @@ from typing import Annotated, Optional
 
 from pydantic import BaseModel, Field
 
+# 注意：密碼強度（大小寫 + 數字）統一由 api.security.password.validate_password_strength
+# 在 router 層執行，以維持 HTTP 400 + 結構化錯誤訊息的 contract（既有測試依賴此格式）。
+# Pydantic 層僅以 min_length=8 做基本長度防呆，避免 422 與 400 兩條路徑分裂。
+
 
 # ── Auth Schemas ──────────────────────────────────────────────────────────
 class LoginRequest(BaseModel):
@@ -18,6 +22,7 @@ class LoginRequest(BaseModel):
 # ── User Schemas ──────────────────────────────────────────────────────────
 class UserCreate(BaseModel):
     username: str = Field(..., min_length=1, max_length=100)
+    # 長度由 Pydantic 防呆（回 422），大小寫 / 數字檢查交由 router 的 validate_password_strength（回 400）。
     password: str = Field(..., min_length=8)
     is_superadmin: bool = False
 
@@ -28,6 +33,7 @@ class UserUpdate(BaseModel):
 
 
 class ResetPasswordRequest(BaseModel):
+    # 長度由 Pydantic 防呆（回 422），大小寫 / 數字檢查交由 router 的 validate_password_strength（回 400）。
     new_password: str = Field(..., min_length=8)
 
 

@@ -126,3 +126,32 @@ export interface ChatMessage {
   text?: string
   image?: string
 }
+
+// ── 後端新端點型別（spec §13） ────────────────────────────────────────────
+
+export interface SyncLogHistoryItem {
+  id: string
+  status: SyncLog['status']
+  triggered_by_username: string | null
+  started_at: string | null
+  finished_at: string | null
+  duration_sec: number | null
+  items_count: number
+  output_file: string | null
+  stdout: string | null
+  stderr: string | null
+}
+
+export interface TestConnectionResult {
+  ok: boolean
+  status_code: number | null
+  latency_ms: number | null
+  error: string | null
+}
+
+export interface ValidateScriptResult {
+  exists: boolean
+  executable: boolean
+  size_bytes: number
+  error: string | null
+}

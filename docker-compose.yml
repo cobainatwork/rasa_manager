@@ -1,5 +1,10 @@
 name: rasa_rag
 
+networks:
+  app:
+  data:
+    internal: true
+
 services:
 
   db:
@@ -11,20 +16,31 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-rasa_knowledge}
     volumes:
       - pg_data:/var/lib/postgresql/data
+    networks:
+      - data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U rasa_admin -d rasa_knowledge"]
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
 
   redis:
     image: redis:7
     restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD 必須在 .env 設定}
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    volumes:
+      - redis_data:/data
+    networks:
+      - data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 5s
 
   backend:
     build:
@@ -32,8 +48,14 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     env_file: .env
+    environment:
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET 必須在 .env 設定}
     ports:
+      # 僅 dev 環境需要對外暴露；production 應由 frontend nginx 反代
       - "8000:8000"
+    networks:
+      - app
+      - data
     depends_on:
       db:
         condition: service_healthy
@@ -52,13 +74,30 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     env_file: .env
+    environment:
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET 必須在 .env 設定}
+      PYTHONPATH: /app   # 確保 celery prefork 子程序能 import api.*
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY 必須在 .env 設定}
+      QDRANT_URL: ${QDRANT_URL:?QDRANT_URL 必須在 .env 設定}
     command: celery -A tasks.celery_app worker --concurrency=2 --loglevel=info
+    healthcheck:
+      # celery worker 不開 HTTP 8000，停用 backend image 繼承來的 HEALTHCHECK
+      disable: true
     volumes:
       - ./scripts:/opt/scripts:ro
-      # 外部 ingestion script 目錄（Windows 路徑）
-      # Agent.ingest_script_path 應設為 /opt/rasa_integration/ingest_kb.py
-      - D:/code-coll/rasa_integration:/opt/rasa_integration:ro
-      - rasa_docs:/opt/rasa_docs
+      # 專案根目錄（ingest_kb.py 所在位置）
+      # Linux：.env 設 PROJECT_ROOT=/opt/rasa_rag → 容器內路徑與主機路徑相同
+      # Windows dev：不設 PROJECT_ROOT → 容器內掛載至 /opt/project（Windows 不使用 ingest_script）
+      - ${PROJECT_ROOT:-.}:${PROJECT_ROOT:-/opt/project}:ro
+      # TXT 輸出目錄掛載：主機路徑 ↔ 容器路徑
+      # Linux 建議：TXT_OUTPUT_HOST_PATH 與 TXT_OUTPUT_CONTAINER_PATH 設為相同值，
+      #             例如 /opt/twlife，agents.txt_output_path 即填容器路徑。
+      # Windows 開發：TXT_OUTPUT_HOST_PATH=D:/SAP（含磁碟機代號），
+      #               TXT_OUTPUT_CONTAINER_PATH=/opt/sap（純 Linux 路徑，不含冒號）。
+      - ${TXT_OUTPUT_HOST_PATH:?TXT_OUTPUT_HOST_PATH 必須在 .env 設定}:${TXT_OUTPUT_CONTAINER_PATH:?TXT_OUTPUT_CONTAINER_PATH 必須在 .env 設定}:rw
+    networks:
+      - app
+      - data
     depends_on:
       db:
         condition: service_healthy
@@ -74,15 +113,18 @@ services:
     restart: unless-stopped
     ports:
       - "5173:8080"
+    networks:
+      - app
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/ >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
 volumes:
   pg_data:
-
-  rasa_docs:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ./data/volumes/rasa_docs
+  redis_data:
