@@ -27,6 +27,7 @@ export interface UseCategoryTreeResult {
 export function useCategoryTree(
   agentId: string | undefined,
   onImportDone?: (mode: 'append' | 'replace') => void,
+  onCategoryRemoved?: (deletedId: string) => void,
 ): UseCategoryTreeResult {
   const [tree, setTree] = useState<CategoryNode[]>([])
   const [loading, setLoading] = useState(true)
@@ -72,6 +73,7 @@ export function useCategoryTree(
       await api.deleteCategory(agentId, id)
       if (selectedId === id) setSelectedId(null)
       reload()
+      onCategoryRemoved?.(id)
     } catch (err) { toastError(err) }
   }
 
@@ -80,11 +82,11 @@ export function useCategoryTree(
   async function exportCategory(id: string) {
     if (!agentId) return
     try {
-      const blob = await api.exportCategoryFaqs(agentId, id)
+      const { blob, filename } = await api.exportCategoryFaqs(agentId, id)
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = 'category_export.xlsx'
+      a.download = filename
       a.click()
       // 延遲 revoke：瀏覽器非同步處理下載，同步 revoke 會導致 URL 在下載前失效
       setTimeout(() => URL.revokeObjectURL(url), 100)

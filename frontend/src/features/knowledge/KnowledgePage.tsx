@@ -30,8 +30,19 @@ export function KnowledgePage() {
     if (mode === 'replace') clearFaqSelection()
   }
 
-  const categoryTree = useCategoryTree(id, handleImportDone)
-  const { setFilter } = useFaqFilter()
+  const { filters, setFilter } = useFaqFilter()
+
+  function handleCategoryRemoved(deletedId: string) {
+    // 任何分類被刪除，都刷新 FAQ 列表以反映最新狀態
+    setListVersion((v) => v + 1)
+    // 若當前篩選器正好篩選的是被刪除的分類，清空篩選器並重置右欄
+    if (filters.category_id === deletedId) {
+      setFilter({ category_id: '' })
+      clearFaqSelection()
+    }
+  }
+
+  const categoryTree = useCategoryTree(id, handleImportDone, handleCategoryRemoved)
 
   const canAddFaq = useMemo(() => {
     if (!categoryTree.selectedId) return false

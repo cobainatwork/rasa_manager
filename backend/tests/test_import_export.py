@@ -127,18 +127,26 @@ class TestImportEndpoint:
         assert resp.status_code == 400
         assert "xlsx" in resp.json()["detail"].lower()
 
-    def test_missing_required_column_rejected(
+    def test_missing_category_path_uses_default_category(
         self, client_superadmin: object, mock_db: MagicMock
     ) -> None:
-        xlsx = _make_xlsx([["Q", "A"]], headers=["question", "answer"])
+        """category_path 為選填：不含 category_path 欄位的 xlsx 應匯入成功並歸入預設分類。"""
+        self._setup_db(mock_db)
+        xlsx = _make_xlsx([["Q_no_cat", "A_no_cat"]], headers=["question", "answer"])
 
-        with patch("api.routes.import_export.require_agent_access", return_value=(MagicMock(), None)):
+        with (
+            patch("api.routes.import_export.require_agent_access", return_value=(MagicMock(), None)),
+            patch("api.routes.import_export._get_or_create_default_category", return_value=uuid.uuid4()),
+        ):
             resp = client_superadmin.post(  # type: ignore[attr-defined]
                 f"/api/v1/agents/{AGENT_ID}/faqs/import",
                 files={"file": ("test.xlsx", xlsx, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
             )
-        assert resp.status_code == 400
-        assert "category_path" in resp.json()["detail"]
+
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["imported"] == 1
+        assert data["errors"] == []
 
     def test_duplicate_question_skipped(
         self, client_superadmin: object, mock_db: MagicMock
@@ -213,6 +221,7 @@ class TestExportEndpoint:
         with (
             patch("api.routes.import_export.require_agent_access", return_value=(MagicMock(), None)),
             patch("api.routes.import_export.build_category_path", return_value="分類A"),
+            patch("api.routes.import_export._get_redis", side_effect=Exception("no redis in test")),
         ):
             resp = client_superadmin.get(  # type: ignore[attr-defined]
                 f"/api/v1/agents/{AGENT_ID}/faqs/export"
@@ -220,7 +229,8 @@ class TestExportEndpoint:
 
         assert resp.status_code == 200
         assert "spreadsheetml" in resp.headers.get("content-type", "")
-        assert "faq_export.xlsx" in resp.headers.get("content-disposition", "")
+        cd = resp.headers.get("content-disposition", "")
+        assert "全量_export_" in cd or "_export_" in cd  # 新檔名格式
 
     def test_export_empty_agent_returns_header_only(
         self, client_superadmin: object, mock_db: MagicMock
@@ -229,7 +239,10 @@ class TestExportEndpoint:
         mock_db.add = MagicMock()
         mock_db.commit = MagicMock()
 
-        with patch("api.routes.import_export.require_agent_access", return_value=(MagicMock(), None)):
+        with (
+            patch("api.routes.import_export.require_agent_access", return_value=(MagicMock(), None)),
+            patch("api.routes.import_export._get_redis", side_effect=Exception("no redis in test")),
+        ):
             resp = client_superadmin.get(  # type: ignore[attr-defined]
                 f"/api/v1/agents/{AGENT_ID}/faqs/export"
             )
@@ -533,7 +546,10 @@ class TestExportCategoryEndpoint:
         cat_id = uuid.uuid4()
         self._make_db(mock_db, cat_id)
 
-        with patch("api.routes.import_export.require_agent_access"):
+        with (
+            patch("api.routes.import_export.require_agent_access"),
+            patch("api.routes.import_export._get_redis", side_effect=Exception("no redis in test")),
+        ):
             resp = client_superadmin.get(  # type: ignore[attr-defined]
                 f"/api/v1/agents/{AGENT_ID}/categories/{cat_id}/export"
             )
@@ -552,9 +568,14 @@ class TestExportCategoryEndpoint:
         mock_faq.status = "approved"
         mock_faq.version = 1
         mock_faq.created_at = None
+        mock_faq.category_id = cat_id
         self._make_db(mock_db, cat_id, faqs=[mock_faq])
 
-        with patch("api.routes.import_export.require_agent_access"):
+        with (
+            patch("api.routes.import_export.require_agent_access"),
+            patch("api.routes.import_export.build_category_path", return_value="測試分類"),
+            patch("api.routes.import_export._get_redis", side_effect=Exception("no redis in test")),
+        ):
             resp = client_superadmin.get(  # type: ignore[attr-defined]
                 f"/api/v1/agents/{AGENT_ID}/categories/{cat_id}/export"
             )
@@ -563,8 +584,9 @@ class TestExportCategoryEndpoint:
         wb = openpyxl.load_workbook(io.BytesIO(resp.content))
         ws = wb.active
         rows = list(ws.iter_rows(values_only=True))  # type: ignore[union-attr]
-        assert rows[0][0] == "question"  # 標題列
-        assert rows[1][0] == "問題一"    # 資料列
+        assert rows[0][0] == "question"       # 標題列第 1 欄
+        assert "category_path" in rows[0]     # 標題列含 category_path
+        assert rows[1][0] == "問題一"          # 資料列
 
     def test_invalid_category_returns_404(
         self, client_superadmin: object, mock_db: MagicMock
