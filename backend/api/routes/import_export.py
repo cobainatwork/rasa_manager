@@ -524,7 +524,7 @@ def import_category_faqs(
     if len(data_rows) > MAX_ROWS:
         raise HTTPException(status_code=400, detail=f"資料列數超過 {MAX_ROWS} 行上限")
 
-    # 只需 question + answer（無 category_path）
+    # 必填：question、answer；選填：tags、category_path
     def require_col(name: str) -> int:
         if name not in header:
             raise HTTPException(status_code=400, detail=f"缺少必填欄位：{name}")
@@ -533,14 +533,25 @@ def import_category_faqs(
     q_idx = require_col("question")
     a_idx = require_col("answer")
     tags_idx: Optional[int] = header.index("tags") if "tags" in header else None
+    # category_path 選填：有則覆寫 URL 指定分類，自動建立不存在的節點
+    cp_idx: Optional[int] = header.index("category_path") if "category_path" in header else None
 
-    # 查詢目標分類子樹的現有問題（replace 模式下 flush 後應為空）
-    # append 模式下用於跳過分類子樹內已存在的重複問題
+    # 查詢現有問題以避免重複
+    # append 模式：若檔案含 category_path（項目可分散至任意分類），擴大至整個 agent；
+    #             否則只檢查 URL 指定分類的子樹範圍
+    # replace 模式：子樹已清空，僅追蹤本次操作內的重複
     if mode == "replace":
-        # replace 後子樹已清空，僅追蹤本次操作內的重複
         existing_questions: set[str] = set()
+    elif cp_idx is not None:
+        # 檔案含 category_path，各列可路由至不同分類，以全 agent 範圍去重
+        existing_questions = {
+            str(q)
+            for (q,) in db.query(KnowledgeItem.question)
+            .filter(KnowledgeItem.agent_id == agent_id)
+            .all()
+        }
     else:
-        # append 模式：載入目標子樹現有問題以避免重複
+        # 無 category_path，只檢查 URL 指定分類子樹
         all_cats_append = db.query(Category).filter(Category.agent_id == agent_id).all()
         cat_map_append: dict[Any, Category] = {c.id: c for c in all_cats_append}
         append_cat_ids = collect_category_subtree(category_id, cat_map_append)
@@ -566,6 +577,7 @@ def import_category_faqs(
         question = cell(q_idx)
         answer = cell(a_idx)
         tags_raw = cell(tags_idx) if tags_idx is not None else ""
+        category_path_val = cell(cp_idx) if cp_idx is not None else ""
 
         # 空列跳過
         if not question and not answer:
@@ -583,10 +595,16 @@ def import_category_faqs(
 
         try:
             with db.begin_nested():
+                # category_path 優先：有值則解析路徑（自動建立缺失節點），否則使用 URL 指定分類
+                if category_path_val:
+                    target_cat_id, _ = _resolve_category_path(db, agent_id, category_path_val)
+                else:
+                    target_cat_id = category_id
+
                 item = KnowledgeItem(
                     id=uuid.uuid4(),
                     agent_id=agent_id,
-                    category_id=category_id,
+                    category_id=target_cat_id,
                     question=question,
                     answer=answer,
                     tags=tags_list,
@@ -603,7 +621,11 @@ def import_category_faqs(
                     item_id=item.id,
                     action="import_category",
                     performed_by=current_user.id,
-                    diff={"question": question, "category_id": str(category_id)},
+                    diff={
+                        "question": question,
+                        "category_id": str(target_cat_id),
+                        "category_path": category_path_val,
+                    },
                 ))
 
             existing_questions.add(question)
