@@ -21,6 +21,7 @@ import { FaqListRow } from './FaqListRow'
 import { useFaqList } from './useFaqList'
 import { useFaqFilter } from './useFaqFilter'
 import * as api from '@/api/endpoints/faqs'
+import { listFaqIds } from '@/api/endpoints/faqs'  // 全選分類用
 import { extractErrorMessage } from '@/api/client'
 import { toast } from 'sonner'
 import type { Faq } from '@/api/types'
@@ -39,6 +40,7 @@ export function FaqList({ agentId, selectedFaqId, onSelectFaq, onNewFaq, canAdd 
   const { data, loading, error, totalPages } = useFaqList(agentId, filters, version)
   const [checked, setChecked] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
+  const [loadingAllIds, setLoadingAllIds] = useState(false)
 
   // 翻頁時清空勾選，避免批次操作靜默處理不可見的舊頁資料
   useEffect(() => { setChecked(new Set()) }, [filters.page])
@@ -69,6 +71,26 @@ export function FaqList({ agentId, selectedFaqId, onSelectFaq, onNewFaq, canAdd 
       else next.add(id)
       return next
     })
+  }
+
+  // 全分類選取：是否已將本次篩選條件下全部 FAQ 都加入 checked
+  const allCategorySelected = !!data && data.total > 0 && checked.size >= data.total
+
+  async function selectAllCategory() {
+    if (loadingAllIds || !agentId) return
+    setLoadingAllIds(true)
+    try {
+      const ids = await listFaqIds(agentId, {
+        status: filters.status || undefined,
+        category_id: filters.category_id || undefined,
+        q: filters.q || undefined,
+      })
+      setChecked(new Set(ids))
+    } catch (err) {
+      toast.error(extractErrorMessage(err))
+    } finally {
+      setLoadingAllIds(false)
+    }
   }
 
   function refreshList() {
@@ -109,7 +131,11 @@ export function FaqList({ agentId, selectedFaqId, onSelectFaq, onNewFaq, canAdd 
       {/* 批次操作列：勾選任一筆後出現 */}
       {checked.size > 0 && (
         <div className="flex items-center gap-2 px-4 py-2 bg-brand-50 border-b border-brand-200 text-sm shrink-0">
-          <span className="text-brand-700 font-medium">已選 {checked.size} 筆</span>
+          <span className="text-brand-700 font-medium">
+            {allCategorySelected && data && data.total > pageIds.length
+              ? `已選全部分類 ${checked.size} 筆`
+              : `已選 ${checked.size} 筆`}
+          </span>
           <Button
             size="sm"
             variant="ghost"
@@ -207,6 +233,21 @@ export function FaqList({ agentId, selectedFaqId, onSelectFaq, onNewFaq, canAdd 
                 {pageAllSelected ? '取消全選' : '全選本頁'}
                 {pageSomeSelected && ` (已選 ${pageCheckedCount} / ${pageIds.length})`}
               </span>
+              {/* 全選此分類：僅在總筆數超過本頁時顯示 */}
+              {data.total > pageIds.length && (
+                <button
+                  type="button"
+                  className="ml-auto text-xs text-brand-600 hover:text-brand-800 underline underline-offset-2 disabled:opacity-40 cursor-pointer"
+                  onClick={allCategorySelected ? () => setChecked(new Set()) : () => void selectAllCategory()}
+                  disabled={loadingAllIds}
+                >
+                  {loadingAllIds
+                    ? '載入中...'
+                    : allCategorySelected
+                    ? `取消全選分類（${data.total} 筆）`
+                    : `全選此分類全部 ${data.total} 筆`}
+                </button>
+              )}
             </div>
             <ul>
               {data.items.map((faq: Faq) => (

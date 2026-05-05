@@ -16,6 +16,14 @@ export async function listFaqs(agentId: string, params: FaqListParams = {}): Pro
   return unwrap(apiClient.get(`/api/v1/agents/${agentId}/faqs`, { params }))
 }
 
+export async function listFaqIds(
+  agentId: string,
+  params: Omit<FaqListParams, 'page' | 'per_page'> = {},
+): Promise<string[]> {
+  const resp = await apiClient.get(`/api/v1/agents/${agentId}/faqs/ids`, { params })
+  return (resp.data?.data?.ids as string[]) ?? []
+}
+
 export async function getFaq(agentId: string, faqId: string): Promise<Faq> {
   return unwrap(apiClient.get(`/api/v1/agents/${agentId}/faqs/${faqId}`))
 }
