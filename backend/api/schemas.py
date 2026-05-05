@@ -6,7 +6,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 # 注意：密碼強度（大小寫 + 數字）統一由 api.security.password.validate_password_strength
 # 在 router 層執行，以維持 HTTP 400 + 結構化錯誤訊息的 contract（既有測試依賴此格式）。
@@ -38,11 +38,28 @@ class ResetPasswordRequest(BaseModel):
 
 
 # ── Agent Schemas ─────────────────────────────────────────────────────────
+def _validate_rasa_url(v: Optional[str]) -> Optional[str]:
+    """rasa_rest_url 必須為合法 http/https URL（含協定前綴）。"""
+    if v is None:
+        return v
+    if not (v.startswith("http://") or v.startswith("https://")):
+        raise ValueError(
+            "Rasa webhook URL 必須以 http:// 或 https:// 開頭，"
+            "請勿包含環境變數名稱（如 RASA_URL=）。"
+        )
+    return v
+
+
 class AgentCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     txt_output_path: str = Field(..., min_length=1, max_length=255)
     rasa_rest_url: Optional[str] = Field(None, max_length=255)
     ingest_script_path: Optional[str] = Field(None, max_length=255)
+
+    @field_validator("rasa_rest_url", mode="before")
+    @classmethod
+    def validate_rasa_url(cls, v: object) -> object:
+        return _validate_rasa_url(v if isinstance(v, str) or v is None else str(v))
 
 
 class AgentUpdate(BaseModel):
@@ -50,6 +67,11 @@ class AgentUpdate(BaseModel):
     txt_output_path: Optional[str] = Field(None, min_length=1, max_length=255)
     rasa_rest_url: Optional[str] = Field(None, max_length=255)
     ingest_script_path: Optional[str] = Field(None, max_length=255)
+
+    @field_validator("rasa_rest_url", mode="before")
+    @classmethod
+    def validate_rasa_url(cls, v: object) -> object:
+        return _validate_rasa_url(v if isinstance(v, str) or v is None else str(v))
 
 
 class RoleAssignRequest(BaseModel):
