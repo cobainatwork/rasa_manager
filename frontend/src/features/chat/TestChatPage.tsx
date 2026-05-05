@@ -13,10 +13,15 @@ export function TestChatPage() {
   const { id } = useParams<{ id: string }>()
   const { messages, sending, send, clear } = useChat(id)
   const [draft, setDraft] = useState('')
-  const endRef = useRef<HTMLDivElement>(null)
+  // scrollAreaRef 指向 Radix ScrollArea 根元素，用於直接捲動 Viewport
+  // 不用 scrollIntoView，避免捲動事件冒泡至 main.overflow-auto
+  const scrollAreaRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const viewport = scrollAreaRef.current?.querySelector<HTMLElement>(
+      '[data-radix-scroll-area-viewport]',
+    )
+    if (viewport) viewport.scrollTop = viewport.scrollHeight
   }, [messages, sending])
 
   async function handleSend() {
@@ -36,14 +41,13 @@ export function TestChatPage() {
       </div>
 
       <Card className="flex-1 flex flex-col overflow-hidden">
-        <ScrollArea className="flex-1 p-4">
+        <ScrollArea ref={scrollAreaRef} className="flex-1 p-4">
           <div className="space-y-3">
             {messages.length === 0 && (
               <p className="text-center text-text-muted text-sm py-8">輸入訊息開始測試對話...</p>
             )}
             {messages.map((m) => <ChatBubble key={m.id} message={m} />)}
             {sending && <TypingIndicator />}
-            <div ref={endRef} />
           </div>
         </ScrollArea>
 

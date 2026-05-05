@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useLayoutEffect, useRef } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { Topbar } from './Topbar'
 import { Sidebar } from './Sidebar'
@@ -9,9 +9,11 @@ export function AppShell() {
   const mainRef = useRef<HTMLElement>(null)
   const { pathname } = useLocation()
 
-  // 路由切換時將 main 捲動位置歸零，避免從對話測試等頁面切換後頂部元素被遮蔽
-  useEffect(() => {
+  // useLayoutEffect 在瀏覽器 paint 前同步執行，確保路由切換時捲動已歸零。
+  // 同時重置 window，避免 Radix ScrollArea scrollIntoView 偶爾捲動到頁面根層。
+  useLayoutEffect(() => {
     mainRef.current?.scrollTo(0, 0)
+    window.scrollTo(0, 0)
   }, [pathname])
 
   return (
