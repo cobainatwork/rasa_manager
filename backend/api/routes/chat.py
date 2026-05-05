@@ -49,7 +49,10 @@ def test_chat(
                 json={"sender": sender, "message": body.message},
             )
             resp.raise_for_status()
-            messages: list[Any] = resp.json()
+            raw = resp.json()
+            # Rasa webhook 應回傳陣列；部分自訂 connector 可能回傳 {} 或其他格式，
+            # 統一正規化為 list，避免前端 .filter is not a function。
+            messages: list[Any] = raw if isinstance(raw, list) else []
     except httpx.TimeoutException as exc:
         logger.warning(
             "rasa_timeout",

@@ -19,7 +19,9 @@ export function useChat(agentId: string | undefined) {
     setSending(true)
     try {
       const resp = await apiClient.post(`/api/v1/agents/${agentId}/chat/test`, { message: text })
-      const replies: { text?: string }[] = resp.data?.data ?? []
+      const raw = resp.data?.data
+      // Rasa 部分自訂 connector 可能回傳 {} 或非陣列，以 Array.isArray 守衛
+      const replies: { text?: string }[] = Array.isArray(raw) ? raw : []
       const botMsgs: ChatMessage[] = replies
         .filter((r) => r.text)
         .map((r, i) => ({ id: `b-${Date.now()}-${i}`, role: 'bot' as const, text: r.text! }))
