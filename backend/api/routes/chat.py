@@ -50,9 +50,15 @@ def test_chat(
             )
             resp.raise_for_status()
             raw = resp.json()
-            # Rasa webhook 應回傳陣列；部分自訂 connector 可能回傳 {} 或其他格式，
-            # 統一正規化為 list，避免前端 .filter is not a function。
-            messages: list[Any] = raw if isinstance(raw, list) else []
+            # Rasa 兩種 response 格式（依 OpenAPI pro.yaml 規格）：
+            # 1. REST channel (/webhooks/rest/webhook)        → 頂層陣列 [{recipient_id, text, ...}]
+            # 2. Custom channel (/webhooks/{name}/webhook)   → {"messages": [...], "conversation_id": ..., ...}
+            if isinstance(raw, list):
+                messages: list[Any] = raw
+            elif isinstance(raw, dict):
+                messages = raw.get("messages") or []
+            else:
+                messages = []
     except httpx.TimeoutException as exc:
         logger.warning(
             "rasa_timeout",
