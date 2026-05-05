@@ -40,7 +40,7 @@ class TestTestConnection:
             client_inst = mock_client_cls.return_value.__enter__.return_value
             resp_mock = MagicMock()
             resp_mock.status_code = 200
-            client_inst.get.return_value = resp_mock
+            client_inst.post.return_value = resp_mock
 
             resp = client_superadmin.post(f"/api/v1/agents/{AGENT_ID}/test-connection")
 
@@ -71,7 +71,7 @@ class TestTestConnection:
             client_inst = mock_client_cls.return_value.__enter__.return_value
             resp_mock = MagicMock()
             resp_mock.status_code = 503
-            client_inst.get.return_value = resp_mock
+            client_inst.post.return_value = resp_mock
 
             resp = client_superadmin.post(f"/api/v1/agents/{AGENT_ID}/test-connection")
 
@@ -85,7 +85,7 @@ class TestTestConnection:
 
         with patch("api.routes.agent_admin.httpx.Client") as mock_client_cls:
             client_inst = mock_client_cls.return_value.__enter__.return_value
-            client_inst.get.side_effect = httpx.TimeoutException("timeout")
+            client_inst.post.side_effect = httpx.TimeoutException("timeout")
 
             resp = client_superadmin.post(f"/api/v1/agents/{AGENT_ID}/test-connection")
 
@@ -100,7 +100,7 @@ class TestTestConnection:
 
         with patch("api.routes.agent_admin.httpx.Client") as mock_client_cls:
             client_inst = mock_client_cls.return_value.__enter__.return_value
-            client_inst.get.side_effect = httpx.ConnectError("DNS resolution failed for internal.host")
+            client_inst.post.side_effect = httpx.ConnectError("DNS resolution failed for internal.host")
 
             resp = client_superadmin.post(f"/api/v1/agents/{AGENT_ID}/test-connection")
 
@@ -210,11 +210,11 @@ class TestAgentAdminNoInternalLeakRegression:
 
         secret_internal = "internal-rasa.private.lan resolved to 10.0.0.5"
 
-        with patch("httpx.Client") as mock_client_cls:
+        with patch("api.routes.agent_admin.httpx.Client") as mock_client_cls:
             mock_client = MagicMock()
             mock_client.__enter__ = MagicMock(return_value=mock_client)
             mock_client.__exit__ = MagicMock(return_value=False)
-            mock_client.get.side_effect = httpx.ConnectError(secret_internal)
+            mock_client.post.side_effect = httpx.ConnectError(secret_internal)
             mock_client_cls.return_value = mock_client
 
             resp = client_superadmin.post(
