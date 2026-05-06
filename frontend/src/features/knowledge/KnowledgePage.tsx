@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useParams } from 'react-router-dom'
 import { FileText } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
@@ -15,9 +15,38 @@ type RightPaneMode = 'detail' | 'new' | 'empty'
 
 export function KnowledgePage() {
   const { id } = useParams<{ id: string }>()
-  const [selectedFaqId, setSelectedFaqId] = useState<string | null>(null)
-  const [rightMode, setRightMode] = useState<RightPaneMode>('empty')
+
+  // 以 localStorage 記憶上次選取的 FAQ，跨路由導覽後能自動還原
+  const [selectedFaqId, setSelectedFaqIdRaw] = useState<string | null>(() => {
+    if (!id) return null
+    try { return localStorage.getItem(`kb_selected_faq_${id}`) ?? null } catch { return null }
+  })
+  // 若有還原的 faqId，直接顯示詳情；否則顯示空狀態
+  const [rightMode, setRightMode] = useState<RightPaneMode>(() => {
+    if (!id) return 'empty'
+    try { return localStorage.getItem(`kb_selected_faq_${id}`) ? 'detail' : 'empty' } catch { return 'empty' }
+  })
   const [listVersion, setListVersion] = useState(0)
+
+  // 切換 agent 時，從 localStorage 還原新 agent 的選取 FAQ
+  useEffect(() => {
+    if (!id) { setSelectedFaqIdRaw(null); setRightMode('empty'); return }
+    try {
+      const faqId = localStorage.getItem(`kb_selected_faq_${id}`)
+      setSelectedFaqIdRaw(faqId)
+      setRightMode(faqId ? 'detail' : 'empty')
+    } catch { setSelectedFaqIdRaw(null); setRightMode('empty') }
+  }, [id])
+
+  // 包裝 setter：同步寫入 localStorage
+  function setSelectedFaqId(faqId: string | null) {
+    setSelectedFaqIdRaw(faqId)
+    if (!id) return
+    try {
+      if (faqId) localStorage.setItem(`kb_selected_faq_${id}`, faqId)
+      else localStorage.removeItem(`kb_selected_faq_${id}`)
+    } catch { /* ignore */ }
+  }
 
   function clearFaqSelection() {
     setSelectedFaqId(null)
