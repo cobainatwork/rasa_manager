@@ -22,6 +22,8 @@ interface Props {
   depth: number
   selectedId: string | null
   pendingRenameId: string | null
+  isExpanded: (id: string) => boolean
+  onToggleExpand: (id: string) => void
   onSelect: (id: string) => void
   onRename: (id: string, name: string) => void
   onAddChild: (parentId: string) => void
@@ -37,6 +39,8 @@ export function CategoryTreeNode({
   depth,
   selectedId,
   pendingRenameId,
+  isExpanded,
+  onToggleExpand,
   onSelect,
   onRename,
   onAddChild,
@@ -46,7 +50,7 @@ export function CategoryTreeNode({
   onImport,
   onSync,
 }: Props) {
-  const [expanded, setExpanded] = useState(true)
+  const expanded = isExpanded(node.id)
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(node.name)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -115,7 +119,7 @@ export function CategoryTreeNode({
           type="button"
           onClick={(e) => {
             e.stopPropagation()
-            if (hasChildren) setExpanded(!expanded)
+            if (hasChildren) onToggleExpand(node.id)
           }}
           className="w-4 h-4 flex items-center justify-center shrink-0"
           aria-label={expanded ? '收合' : '展開'}
@@ -209,6 +213,8 @@ export function CategoryTreeNode({
               depth={depth + 1}
               selectedId={selectedId}
               pendingRenameId={pendingRenameId}
+              isExpanded={isExpanded}
+              onToggleExpand={onToggleExpand}
               onSelect={onSelect}
               onRename={onRename}
               onAddChild={onAddChild}
