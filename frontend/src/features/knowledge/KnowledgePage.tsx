@@ -30,7 +30,7 @@ export function KnowledgePage() {
     if (mode === 'replace') clearFaqSelection()
   }
 
-  const { filters, setFilter } = useFaqFilter()
+  const { filters, setFilter } = useFaqFilter(id)
 
   function handleCategoryRemoved(deletedId: string) {
     // 任何分類被刪除，都刷新 FAQ 列表以反映最新狀態

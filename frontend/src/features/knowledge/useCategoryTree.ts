@@ -31,8 +31,28 @@ export function useCategoryTree(
 ): UseCategoryTreeResult {
   const [tree, setTree] = useState<CategoryNode[]>([])
   const [loading, setLoading] = useState(true)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  // 以 localStorage 記憶上次選取的分類，跨路由導覽後能自動還原
+  const [selectedId, setSelectedId] = useState<string | null>(() => {
+    if (!agentId) return null
+    try { return localStorage.getItem(`kb_selected_${agentId}`) ?? null } catch { return null }
+  })
   const [pendingRenameId, setPendingRenameId] = useState<string | null>(null)
+
+  // 切換 agent 時，從 localStorage 還原新 agent 的 selectedId
+  useEffect(() => {
+    if (!agentId) { setSelectedId(null); return }
+    try { setSelectedId(localStorage.getItem(`kb_selected_${agentId}`) ?? null) } catch { setSelectedId(null) }
+  }, [agentId])
+
+  // 包裝 select：同步更新 state 並寫入 localStorage
+  function select(id: string | null) {
+    setSelectedId(id)
+    if (!agentId) return
+    try {
+      if (id) localStorage.setItem(`kb_selected_${agentId}`, id)
+      else localStorage.removeItem(`kb_selected_${agentId}`)
+    } catch { /* ignore */ }
+  }
 
   const reload = useCallback(() => {
     if (!agentId) return
@@ -71,7 +91,10 @@ export function useCategoryTree(
     if (!agentId) return
     try {
       await api.deleteCategory(agentId, id)
-      if (selectedId === id) setSelectedId(null)
+      if (selectedId === id) {
+        setSelectedId(null)
+        try { localStorage.removeItem(`kb_selected_${agentId}`) } catch { /* ignore */ }
+      }
       reload()
       onCategoryRemoved?.(id)
     } catch (err) { toastError(err) }
@@ -118,7 +141,7 @@ export function useCategoryTree(
 
   return {
     tree, loading, selectedId, pendingRenameId,
-    select: setSelectedId, reload, rename, addChild, remove,
+    select, reload, rename, addChild, remove,
     clearPendingRename, exportCategory, importCategory, syncCategory,
   }
 }

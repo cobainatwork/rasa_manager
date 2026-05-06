@@ -26,7 +26,7 @@ function loadExpanded(agentId: string | undefined): Record<string, boolean> {
 function saveExpanded(agentId: string, map: Record<string, boolean>) {
   try {
     localStorage.setItem(`kb_cat_expanded_${agentId}`, JSON.stringify(map))
-  } catch {}
+  } catch { /* ignore */ }
 }
 
 function useCategoryExpanded(agentId: string | undefined) {
