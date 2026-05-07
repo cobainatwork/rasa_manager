@@ -65,6 +65,55 @@ class TestChatEndpoint:
         assert body["success"] is True
         assert body["data"] == [{"text": "回覆訊息"}]
 
+    def test_custom_channel_dict_response_extracts_messages(
+        self, client_superadmin: TestClient, mock_db: MagicMock, _agent_mock
+    ) -> None:
+        """Custom channel (/webhooks/{name}/webhook) 回傳 {messages: [...], ...} 格式應正確解析。"""
+        mock_db.query.side_effect = _make_se(_agent_mock())
+        fake_response = MagicMock()
+        fake_response.raise_for_status.return_value = None
+        fake_response.json.return_value = {
+            "messages": [{"recipient_id": "user1", "text": "自訂回覆"}],
+            "conversation_id": "conv-123",
+            "tracker_state": {},
+            "metadata": {},
+        }
+
+        with patch("httpx.Client") as mock_client_cls:
+            mock_client = MagicMock()
+            mock_client.__enter__ = MagicMock(return_value=mock_client)
+            mock_client.__exit__ = MagicMock(return_value=False)
+            mock_client.post.return_value = fake_response
+            mock_client_cls.return_value = mock_client
+
+            resp = client_superadmin.post(CHAT_URL, json=CHAT_PAYLOAD)
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["success"] is True
+        assert body["data"] == [{"recipient_id": "user1", "text": "自訂回覆"}]
+
+    def test_empty_messages_dict_returns_empty_list(
+        self, client_superadmin: TestClient, mock_db: MagicMock, _agent_mock
+    ) -> None:
+        """Rasa 回傳 {messages: null} 或無 messages 鍵時，data 應為 []。"""
+        mock_db.query.side_effect = _make_se(_agent_mock())
+        fake_response = MagicMock()
+        fake_response.raise_for_status.return_value = None
+        fake_response.json.return_value = {"conversation_id": "conv-456"}  # 無 messages 鍵
+
+        with patch("httpx.Client") as mock_client_cls:
+            mock_client = MagicMock()
+            mock_client.__enter__ = MagicMock(return_value=mock_client)
+            mock_client.__exit__ = MagicMock(return_value=False)
+            mock_client.post.return_value = fake_response
+            mock_client_cls.return_value = mock_client
+
+            resp = client_superadmin.post(CHAT_URL, json=CHAT_PAYLOAD)
+
+        assert resp.status_code == 200
+        assert resp.json()["data"] == []
+
     def test_no_rasa_url_returns_422(
         self, client_superadmin: TestClient, mock_db: MagicMock, _agent_mock
     ) -> None:

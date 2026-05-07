@@ -41,6 +41,7 @@ export function ImportExportPage() {
       })
       setProgress(100)
       setResult(resp.data?.data ?? null)
+      setTimeout(() => setProgress(0), 1200)
     } catch (err) {
       setError(extractErrorMessage(err))
     } finally {
@@ -57,8 +58,8 @@ export function ImportExportPage() {
         <Card className="p-6 space-y-4">
           <h2 className="text-lg font-semibold">匯入 FAQ</h2>
           <ImportDropzone onFileSelected={setFile} selectedFile={file} />
-          <p className="text-xs text-text-muted">必填欄位：question / answer / category_path（用 / 分隔）。匯入後一律為 draft 狀態。</p>
-          {importing && <Progress value={progress} />}
+          <p className="text-xs text-text-muted">必填欄位：question、answer。category_path 為選填（用 / 分隔多層），留空則歸入「未分類」。匯入後一律為 draft 狀態。</p>
+          {(importing || progress > 0) && <Progress value={progress} />}
           {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
           <Button onClick={handleImport} disabled={!file || importing} className="w-full">
             {importing ? '匯入中...' : '開始匯入'}
@@ -71,7 +72,7 @@ export function ImportExportPage() {
           <p className="text-xs text-text-muted">欄位：id / status / category_path / tags / question / answer / version / created_at / updated_at</p>
           <Button onClick={exportXlsx} disabled={exporting} className="w-full">
             <Download className="w-4 h-4 mr-1" strokeWidth={1.5} />
-            {exporting ? '匯出中...' : '下載 faq_export.xlsx'}
+            {exporting ? '匯出中...' : '下載全量匯出（xlsx）'}
           </Button>
         </Card>
       </div>

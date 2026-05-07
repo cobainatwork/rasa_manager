@@ -255,6 +255,33 @@ def list_faqs(
     }
 
 
+@router.get("/api/v1/agents/{agent_id}/faqs/ids")
+def list_faq_ids(
+    agent_id: uuid.UUID,
+    category_id: Optional[uuid.UUID] = Query(None),
+    status_filter: Optional[str] = Query(None, alias="status"),
+    q: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """回傳符合條件的全部 FAQ ID（不分頁），供前端「全選分類」功能使用。"""
+    require_agent_access(agent_id, current_user, db)
+
+    query = db.query(KnowledgeItem.id).filter(KnowledgeItem.agent_id == agent_id)
+    if category_id:
+        query = query.filter(KnowledgeItem.category_id == category_id)
+    if status_filter:
+        query = query.filter(KnowledgeItem.status == status_filter)
+    if q:
+        query = query.filter(
+            KnowledgeItem.question.ilike(f"%{q}%")
+            | KnowledgeItem.answer.ilike(f"%{q}%")
+        )
+
+    ids = [str(row.id) for row in query.all()]
+    return {"success": True, "data": {"ids": ids}}
+
+
 @router.get("/api/v1/agents/{agent_id}/faqs/{faq_id}")
 def get_faq(
     agent_id: uuid.UUID,

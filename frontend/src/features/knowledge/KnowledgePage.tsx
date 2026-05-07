@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useParams } from 'react-router-dom'
 import { FileText } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
@@ -15,9 +15,38 @@ type RightPaneMode = 'detail' | 'new' | 'empty'
 
 export function KnowledgePage() {
   const { id } = useParams<{ id: string }>()
-  const [selectedFaqId, setSelectedFaqId] = useState<string | null>(null)
-  const [rightMode, setRightMode] = useState<RightPaneMode>('empty')
+
+  // 以 localStorage 記憶上次選取的 FAQ，跨路由導覽後能自動還原
+  const [selectedFaqId, setSelectedFaqIdRaw] = useState<string | null>(() => {
+    if (!id) return null
+    try { return localStorage.getItem(`kb_selected_faq_${id}`) ?? null } catch { return null }
+  })
+  // 若有還原的 faqId，直接顯示詳情；否則顯示空狀態
+  const [rightMode, setRightMode] = useState<RightPaneMode>(() => {
+    if (!id) return 'empty'
+    try { return localStorage.getItem(`kb_selected_faq_${id}`) ? 'detail' : 'empty' } catch { return 'empty' }
+  })
   const [listVersion, setListVersion] = useState(0)
+
+  // 切換 agent 時，從 localStorage 還原新 agent 的選取 FAQ
+  useEffect(() => {
+    if (!id) { setSelectedFaqIdRaw(null); setRightMode('empty'); return }
+    try {
+      const faqId = localStorage.getItem(`kb_selected_faq_${id}`)
+      setSelectedFaqIdRaw(faqId)
+      setRightMode(faqId ? 'detail' : 'empty')
+    } catch { setSelectedFaqIdRaw(null); setRightMode('empty') }
+  }, [id])
+
+  // 包裝 setter：同步寫入 localStorage
+  function setSelectedFaqId(faqId: string | null) {
+    setSelectedFaqIdRaw(faqId)
+    if (!id) return
+    try {
+      if (faqId) localStorage.setItem(`kb_selected_faq_${id}`, faqId)
+      else localStorage.removeItem(`kb_selected_faq_${id}`)
+    } catch { /* ignore */ }
+  }
 
   function clearFaqSelection() {
     setSelectedFaqId(null)
@@ -30,8 +59,19 @@ export function KnowledgePage() {
     if (mode === 'replace') clearFaqSelection()
   }
 
-  const categoryTree = useCategoryTree(id, handleImportDone)
-  const { setFilter } = useFaqFilter()
+  const { filters, setFilter } = useFaqFilter(id)
+
+  function handleCategoryRemoved(deletedId: string) {
+    // 任何分類被刪除，都刷新 FAQ 列表以反映最新狀態
+    setListVersion((v) => v + 1)
+    // 若當前篩選器正好篩選的是被刪除的分類，清空篩選器並重置右欄
+    if (filters.category_id === deletedId) {
+      setFilter({ category_id: '' })
+      clearFaqSelection()
+    }
+  }
+
+  const categoryTree = useCategoryTree(id, handleImportDone, handleCategoryRemoved)
 
   const canAddFaq = useMemo(() => {
     if (!categoryTree.selectedId) return false

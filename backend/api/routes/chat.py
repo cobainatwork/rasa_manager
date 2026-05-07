@@ -49,7 +49,16 @@ def test_chat(
                 json={"sender": sender, "message": body.message},
             )
             resp.raise_for_status()
-            messages: list[Any] = resp.json()
+            raw = resp.json()
+            # Rasa 兩種 response 格式（依 OpenAPI pro.yaml 規格）：
+            # 1. REST channel (/webhooks/rest/webhook)        → 頂層陣列 [{recipient_id, text, ...}]
+            # 2. Custom channel (/webhooks/{name}/webhook)   → {"messages": [...], "conversation_id": ..., ...}
+            if isinstance(raw, list):
+                messages: list[Any] = raw
+            elif isinstance(raw, dict):
+                messages = raw.get("messages") or []
+            else:
+                messages = []
     except httpx.TimeoutException as exc:
         logger.warning(
             "rasa_timeout",

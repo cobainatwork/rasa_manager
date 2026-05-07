@@ -127,18 +127,26 @@ class TestImportEndpoint:
         assert resp.status_code == 400
         assert "xlsx" in resp.json()["detail"].lower()
 
-    def test_missing_required_column_rejected(
+    def test_missing_category_path_uses_default_category(
         self, client_superadmin: object, mock_db: MagicMock
     ) -> None:
-        xlsx = _make_xlsx([["Q", "A"]], headers=["question", "answer"])
+        """category_path 為選填：不含 category_path 欄位的 xlsx 應匯入成功並歸入預設分類。"""
+        self._setup_db(mock_db)
+        xlsx = _make_xlsx([["Q_no_cat", "A_no_cat"]], headers=["question", "answer"])
 
-        with patch("api.routes.import_export.require_agent_access", return_value=(MagicMock(), None)):
+        with (
+            patch("api.routes.import_export.require_agent_access", return_value=(MagicMock(), None)),
+            patch("api.routes.import_export._get_or_create_default_category", return_value=uuid.uuid4()),
+        ):
             resp = client_superadmin.post(  # type: ignore[attr-defined]
                 f"/api/v1/agents/{AGENT_ID}/faqs/import",
                 files={"file": ("test.xlsx", xlsx, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
             )
-        assert resp.status_code == 400
-        assert "category_path" in resp.json()["detail"]
+
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["imported"] == 1
+        assert data["errors"] == []
 
     def test_duplicate_question_skipped(
         self, client_superadmin: object, mock_db: MagicMock
@@ -213,6 +221,7 @@ class TestExportEndpoint:
         with (
             patch("api.routes.import_export.require_agent_access", return_value=(MagicMock(), None)),
             patch("api.routes.import_export.build_category_path", return_value="分類A"),
+            patch("api.routes.import_export._get_redis", side_effect=Exception("no redis in test")),
         ):
             resp = client_superadmin.get(  # type: ignore[attr-defined]
                 f"/api/v1/agents/{AGENT_ID}/faqs/export"
@@ -220,7 +229,8 @@ class TestExportEndpoint:
 
         assert resp.status_code == 200
         assert "spreadsheetml" in resp.headers.get("content-type", "")
-        assert "faq_export.xlsx" in resp.headers.get("content-disposition", "")
+        cd = resp.headers.get("content-disposition", "")
+        assert "全量_export_" in cd or "_export_" in cd  # 新檔名格式
 
     def test_export_empty_agent_returns_header_only(
         self, client_superadmin: object, mock_db: MagicMock
@@ -229,7 +239,10 @@ class TestExportEndpoint:
         mock_db.add = MagicMock()
         mock_db.commit = MagicMock()
 
-        with patch("api.routes.import_export.require_agent_access", return_value=(MagicMock(), None)):
+        with (
+            patch("api.routes.import_export.require_agent_access", return_value=(MagicMock(), None)),
+            patch("api.routes.import_export._get_redis", side_effect=Exception("no redis in test")),
+        ):
             resp = client_superadmin.get(  # type: ignore[attr-defined]
                 f"/api/v1/agents/{AGENT_ID}/faqs/export"
             )
@@ -533,7 +546,10 @@ class TestExportCategoryEndpoint:
         cat_id = uuid.uuid4()
         self._make_db(mock_db, cat_id)
 
-        with patch("api.routes.import_export.require_agent_access"):
+        with (
+            patch("api.routes.import_export.require_agent_access"),
+            patch("api.routes.import_export._get_redis", side_effect=Exception("no redis in test")),
+        ):
             resp = client_superadmin.get(  # type: ignore[attr-defined]
                 f"/api/v1/agents/{AGENT_ID}/categories/{cat_id}/export"
             )
@@ -552,9 +568,14 @@ class TestExportCategoryEndpoint:
         mock_faq.status = "approved"
         mock_faq.version = 1
         mock_faq.created_at = None
+        mock_faq.category_id = cat_id
         self._make_db(mock_db, cat_id, faqs=[mock_faq])
 
-        with patch("api.routes.import_export.require_agent_access"):
+        with (
+            patch("api.routes.import_export.require_agent_access"),
+            patch("api.routes.import_export.build_category_path", return_value="測試分類"),
+            patch("api.routes.import_export._get_redis", side_effect=Exception("no redis in test")),
+        ):
             resp = client_superadmin.get(  # type: ignore[attr-defined]
                 f"/api/v1/agents/{AGENT_ID}/categories/{cat_id}/export"
             )
@@ -563,8 +584,9 @@ class TestExportCategoryEndpoint:
         wb = openpyxl.load_workbook(io.BytesIO(resp.content))
         ws = wb.active
         rows = list(ws.iter_rows(values_only=True))  # type: ignore[union-attr]
-        assert rows[0][0] == "question"  # 標題列
-        assert rows[1][0] == "問題一"    # 資料列
+        assert rows[0][0] == "question"       # 標題列第 1 欄
+        assert "category_path" in rows[0]     # 標題列含 category_path
+        assert rows[1][0] == "問題一"          # 資料列
 
     def test_invalid_category_returns_404(
         self, client_superadmin: object, mock_db: MagicMock
@@ -580,6 +602,82 @@ class TestExportCategoryEndpoint:
             )
 
         assert resp.status_code == 404
+
+    def test_child_faq_shows_full_path_when_exporting_from_parent(
+        self, client_superadmin: object, mock_db: MagicMock
+    ) -> None:
+        """
+        Regression：從父分類 A 匯出時，子分類 AB 的 FAQ 應顯示完整路徑 'A/AB'，
+        而非僅顯示父分類名稱 'A' 或錯誤的 'A/A'。
+
+        此測試刻意不 mock build_category_path，讓真實路徑解析邏輯執行。
+        """
+        root_id = uuid.uuid4()
+        child_id = uuid.uuid4()
+
+        root_cat = MagicMock()
+        root_cat.id = root_id
+        root_cat.name = "A"
+        root_cat.parent_id = None  # 根分類
+
+        child_cat = MagicMock()
+        child_cat.id = child_id
+        child_cat.name = "AB"
+        child_cat.parent_id = root_id  # 子分類，parent 是 root_cat
+
+        # FAQ 存在於子分類 AB，而非根分類 A
+        item_in_child = MagicMock()
+        item_in_child.question = "子分類問題"
+        item_in_child.answer = "子分類答案"
+        item_in_child.tags = []
+        item_in_child.status = "draft"
+        item_in_child.version = 1
+        item_in_child.created_at = None
+        item_in_child.category_id = child_id  # 關鍵：指向 AB，不是 A
+
+        counter = [0]
+
+        def se(*_args, **_kwargs):
+            q = MagicMock()
+            idx = counter[0]
+            counter[0] += 1
+            if idx == 0:   # Category.filter().first() — 驗證分類 A 存在
+                q.filter.return_value.first.return_value = root_cat
+            elif idx == 1:  # Category.filter().all() — cat_map（含 A 與 AB）
+                q.filter.return_value.all.return_value = [root_cat, child_cat]
+            elif idx == 2:  # KnowledgeItem — 子樹 FAQ
+                (q.filter.return_value
+                  .filter.return_value
+                  .order_by.return_value
+                  .all.return_value) = [item_in_child]
+            return q
+
+        mock_db.query.side_effect = se
+        mock_db.add = MagicMock()
+        mock_db.commit = MagicMock()
+
+        with (
+            patch("api.routes.import_export.require_agent_access"),
+            patch("api.routes.import_export._get_redis", side_effect=Exception("no redis in test")),
+        ):
+            resp = client_superadmin.get(  # type: ignore[attr-defined]
+                f"/api/v1/agents/{AGENT_ID}/categories/{root_id}/export"
+            )
+
+        assert resp.status_code == 200
+        wb = openpyxl.load_workbook(io.BytesIO(resp.content))
+        ws = wb.active
+        rows = list(ws.iter_rows(values_only=True))  # type: ignore[union-attr]
+        assert len(rows) == 2, f"應有 1 個標題列 + 1 個資料列，實際 {len(rows)} 列"
+
+        header = list(rows[0])
+        cat_path_col = header.index("category_path")
+
+        actual_path = rows[1][cat_path_col]
+        assert actual_path == "A/AB", (
+            f"從父分類 A 匯出時，子分類 AB 的 FAQ 應顯示 'A/AB'，"
+            f"實際得到 '{actual_path}'（若顯示 'A/A' 代表 item.category_id 被錯誤替換為 selected category_id）"
+        )
 
 
 # ── 分類匯入端點 ──────────────────────────────────────────────────────────────
@@ -785,6 +883,97 @@ class TestImportCategoryEndpoint:
             )
 
         assert resp.status_code == 404
+
+    def test_category_path_in_file_routes_to_resolved_category(
+        self, client_superadmin: object, mock_db: MagicMock
+    ) -> None:
+        """
+        Regression：分類匯入時，若 Excel 含 category_path 欄，應依路徑路由到對應分類（含自動建立），
+        而非一律歸入 URL 指定的分類。
+
+        情境：系統有 A/B，無 A/C；匯入資料 category_path = A/C
+              預期：建立 A/C 並將項目歸入 A/C，不是 A/B。
+        """
+        cat_b_id = uuid.uuid4()   # URL 指定分類 A/B
+        resolved_c_id = uuid.uuid4()  # _resolve_category_path("A/C") 返回的分類 ID
+
+        mock_cat_b = MagicMock()
+        mock_cat_b.id = cat_b_id
+        mock_cat_b.parent_id = None
+        mock_cat_b.agent_id = AGENT_ID
+
+        counter = [0]
+
+        def se(*_args, **_kwargs):
+            q = MagicMock()
+            idx = counter[0]
+            counter[0] += 1
+            if idx == 0:   # Category.filter().first() — 分類驗證
+                q.filter.return_value.first.return_value = mock_cat_b
+            elif idx == 1:  # KnowledgeItem.question — 全 agent 去重查詢（含 category_path 時）
+                q.filter.return_value.all.return_value = []
+            else:
+                q.filter.return_value.all.return_value = []
+                q.filter.return_value.filter.return_value.all.return_value = []
+            return q
+
+        mock_db.query.side_effect = se
+        mock_db.flush = MagicMock()
+        mock_db.add = MagicMock()
+        mock_db.commit = MagicMock()
+        mock_db.begin_nested.return_value.__enter__ = MagicMock(return_value=None)
+        mock_db.begin_nested.return_value.__exit__ = MagicMock(return_value=False)
+
+        xlsx = _make_xlsx(
+            [["問題A/C", "答案A/C", "A/C", ""]],
+            headers=["question", "answer", "category_path", "tags"],
+        )
+
+        with (
+            patch("api.routes.import_export.require_agent_access"),
+            patch(
+                "api.routes.import_export._resolve_category_path",
+                return_value=(resolved_c_id, True),
+            ) as mock_resolve,
+        ):
+            resp = client_superadmin.post(  # type: ignore[attr-defined]
+                f"/api/v1/agents/{AGENT_ID}/categories/{cat_b_id}/import",
+                files={"file": ("t.xlsx", xlsx,
+                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["imported"] == 1, f"應匯入 1 筆，實際 {data['imported']}"
+        # _resolve_category_path 必須被呼叫，且傳入的是檔案裡的路徑（A/C），而非 URL 分類 ID
+        mock_resolve.assert_called_once()
+        call_args = mock_resolve.call_args
+        assert call_args[0][2] == "A/C", (
+            f"應以 'A/C' 呼叫 _resolve_category_path，實際傳入 '{call_args[0][2]}'"
+        )
+
+    def test_category_path_absent_still_uses_url_category(
+        self, client_superadmin: object, mock_db: MagicMock
+    ) -> None:
+        """無 category_path 欄時，行為不變：所有項目歸入 URL 指定分類。"""
+        cat_id = uuid.uuid4()
+        self._make_db(mock_db, cat_id)
+
+        xlsx = _make_xlsx([["問題無Path", "答案無Path"]], headers=["question", "answer"])
+        with (
+            patch("api.routes.import_export.require_agent_access"),
+            patch("api.routes.import_export._resolve_category_path") as mock_resolve,
+        ):
+            resp = client_superadmin.post(  # type: ignore[attr-defined]
+                f"/api/v1/agents/{AGENT_ID}/categories/{cat_id}/import",
+                files={"file": ("t.xlsx", xlsx,
+                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["data"]["imported"] == 1
+        # 沒有 category_path 欄，_resolve_category_path 不應被呼叫
+        mock_resolve.assert_not_called()
 
 
 # ── Regression：匯入子分類不應產生 422 ────────────────────────────────────────

@@ -17,8 +17,11 @@ Excel 批次匯入 / 匯出路由。
 from __future__ import annotations
 
 import io
+import re
 import uuid
+from datetime import datetime
 from typing import Any, Literal, Optional
+from urllib.parse import quote
 
 import openpyxl
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
@@ -27,13 +30,66 @@ from sqlalchemy.orm import Session
 
 from api.database.models import AuditLog, Category, KnowledgeItem, User
 from api.database.session import get_db
-from api.dependencies import get_current_user, require_agent_access
+from api.dependencies import _get_redis, get_current_user, require_agent_access
 from api.utils.category_path import build_category_path, collect_category_subtree
 
 router = APIRouter(tags=["import-export"])
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 MAX_ROWS = 5000
+
+
+def _sanitize_for_filename(scope: str) -> str:
+    """將分類路徑轉為可用於檔名的字串（去除或替換不合法字元）。"""
+    # 把 / 換成 _（分類路徑分隔符號）
+    sanitized = scope.replace("/", "_")
+    # 移除 Windows/Linux 都禁用的特殊字元
+    sanitized = re.sub(r'[\\:*?"<>|]', "", sanitized)
+    # 連續底線合併、去頭尾底線
+    sanitized = re.sub(r"_+", "_", sanitized).strip("_")
+    # 長度上限 50 字元
+    return sanitized[:50] if sanitized else "未命名"
+
+
+def _generate_export_filename(scope: str, agent_id: str) -> str:
+    """產生含每日遞增序號的匯出檔名，例如 全量_export_260504_00.xlsx。"""
+    sanitized = _sanitize_for_filename(scope)
+    yymmdd = datetime.now().strftime("%y%m%d")
+    try:
+        r = _get_redis()
+        key = f"export:counter:{agent_id}:{scope}:{yymmdd}"
+        count = int(r.incr(key)) - 1          # 第一次 incr=1 → count=0 → "00"
+        r.expire(key, 86400 * 7)               # 7 天後過期（日期在 key 中，不會誤重置）
+        nn = f"{count:02d}"
+    except Exception:
+        # Redis 不可用時以秒級時間戳作 fallback（極端並發下仍可能重複，但可接受）
+        nn = datetime.now().strftime("%H%M%S")
+    return f"{sanitized}_export_{yymmdd}_{nn}.xlsx"
+
+
+def _get_or_create_default_category(db: Session, agent_id: Any) -> Any:
+    """取得或建立「未分類」根分類，回傳 category.id。"""
+    DEFAULT_NAME = "未分類"
+    cat = (
+        db.query(Category)
+        .filter(
+            Category.agent_id == agent_id,
+            Category.name == DEFAULT_NAME,
+            Category.parent_id.is_(None),
+        )
+        .first()
+    )
+    if cat is None:
+        cat = Category(
+            id=uuid.uuid4(),
+            agent_id=agent_id,
+            parent_id=None,
+            name=DEFAULT_NAME,
+            sort_order=0,
+        )
+        db.add(cat)
+        db.flush()
+    return cat.id
 
 
 def _resolve_category_path(
@@ -125,7 +181,8 @@ def import_faqs(
 
     q_idx = require_col("question")
     a_idx = require_col("answer")
-    cp_idx = require_col("category_path")
+    # category_path 為選填：有則解析路徑，無則歸入「未分類」
+    cp_idx: Optional[int] = header.index("category_path") if "category_path" in header else None
     tags_idx: Optional[int] = header.index("tags") if "tags" in header else None
 
     # ── 預載已存在的 question（避免重複）──────────────────────────────────────
@@ -141,6 +198,9 @@ def import_faqs(
     errors: list[dict[str, Any]] = []
     new_categories: set[str] = set()
 
+    # 「未分類」根分類 ID 的迴圈層快取（避免在 SAVEPOINT 內建立分類）
+    _default_cat_id: Optional[Any] = None
+
     for row_num, row in enumerate(data_rows, start=2):
         def cell(idx: int) -> str:
             val = row[idx] if idx < len(row) else None  # type: ignore[index]
@@ -148,17 +208,17 @@ def import_faqs(
 
         question = cell(q_idx)
         answer = cell(a_idx)
-        category_path = cell(cp_idx)
+        category_path_val = cell(cp_idx) if cp_idx is not None else ""
         tags_raw = cell(tags_idx) if tags_idx is not None else ""
 
-        # 空列跳過
-        if not question and not answer and not category_path:
+        # 空列跳過（question 與 answer 均空才算空列）
+        if not question and not answer:
             continue
 
-        if not question or not answer or not category_path:
+        if not question or not answer:
             errors.append({
                 "row": row_num,
-                "reason": "question / answer / category_path 不可為空",
+                "reason": "question / answer 不可為空",
             })
             continue
 
@@ -170,14 +230,24 @@ def import_faqs(
 
         # 使用 SAVEPOINT（nested transaction）：單筆失敗只 rollback 該筆，
         # 不影響先前已 flush 的成功項目。
+        # category_path 選填：有則留待 begin_nested 內解析；無則在 begin_nested 外部取得預設分類
+        if not category_path_val:
+            if _default_cat_id is None:
+                _default_cat_id = _get_or_create_default_category(db, agent_id)
+                db.flush()  # 確保 Category 進入 DB（在任何 begin_nested 之前）
+
         try:
             with db.begin_nested():
-                # I2：以 _resolve_category_path 回傳的 created flag 取代前後兩次 count()
-                category_id, created = _resolve_category_path(
-                    db, agent_id, category_path
-                )
-                if created:
-                    new_categories.add(category_path)
+                # category_path 選填：有則解析路徑（自動建立缺失節點），無則歸入「未分類」
+                if category_path_val:
+                    category_id, created = _resolve_category_path(
+                        db, agent_id, category_path_val
+                    )
+                    if created:
+                        new_categories.add(category_path_val)
+                else:
+                    category_id = _default_cat_id
+                    created = False
 
                 item = KnowledgeItem(
                     id=uuid.uuid4(),
@@ -199,7 +269,7 @@ def import_faqs(
                     item_id=item.id,
                     action="import",
                     performed_by=current_user.id,
-                    diff={"question": question, "category_path": category_path},
+                    diff={"question": question, "category_path": category_path_val},
                 ))
 
             existing_questions.add(question)
@@ -280,12 +350,18 @@ def export_faqs(
 
     buf = io.BytesIO()
     wb.save(buf)
+    wb.close()
     buf.seek(0)
+
+    filename = _generate_export_filename("全量", str(agent_id))
+    filename_encoded = quote(filename, encoding="utf-8", safe="")
 
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": "attachment; filename=faq_export.xlsx"},
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{filename_encoded}"
+        },
     )
 
 
@@ -311,6 +387,9 @@ def export_category_faqs(
     all_cats = db.query(Category).filter(Category.agent_id == agent_id).all()
     cat_map: dict[Any, Category] = {c.id: c for c in all_cats}
 
+    # 計算選定分類的路徑（用於檔名）
+    selected_cat_path = build_category_path(category_id, cat_map) or f"category_{category_id}"
+
     cat_ids = collect_category_subtree(category_id, cat_map)
 
     items = (
@@ -324,20 +403,23 @@ def export_category_faqs(
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "FAQs"  # type: ignore[union-attr]
-    ws.append(["question", "answer", "tags", "status", "version"])  # type: ignore[union-attr]
+    ws.append(["question", "answer", "tags", "category_path", "status", "version"])  # type: ignore[union-attr]
 
     for item in items:
         tags_str = ",".join(item.tags) if item.tags else ""
+        item_cat_path = build_category_path(item.category_id, cat_map)
         ws.append([  # type: ignore[union-attr]
             str(item.question),
             str(item.answer),
             tags_str,
+            item_cat_path,
             str(item.status),
             item.version if item.version is not None else 1,
         ])
 
     buf = io.BytesIO()
     wb.save(buf)
+    wb.close()
     buf.seek(0)
 
     db.add(AuditLog(
@@ -350,11 +432,14 @@ def export_category_faqs(
     ))
     db.commit()
 
+    filename = _generate_export_filename(selected_cat_path, str(agent_id))
+    filename_encoded = quote(filename, encoding="utf-8", safe="")
+
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={
-            "Content-Disposition": f"attachment; filename=category_{category_id}_export.xlsx"
+            "Content-Disposition": f"attachment; filename*=UTF-8''{filename_encoded}"
         },
     )
 
@@ -439,7 +524,7 @@ def import_category_faqs(
     if len(data_rows) > MAX_ROWS:
         raise HTTPException(status_code=400, detail=f"資料列數超過 {MAX_ROWS} 行上限")
 
-    # 只需 question + answer（無 category_path）
+    # 必填：question、answer；選填：tags、category_path
     def require_col(name: str) -> int:
         if name not in header:
             raise HTTPException(status_code=400, detail=f"缺少必填欄位：{name}")
@@ -448,14 +533,25 @@ def import_category_faqs(
     q_idx = require_col("question")
     a_idx = require_col("answer")
     tags_idx: Optional[int] = header.index("tags") if "tags" in header else None
+    # category_path 選填：有則覆寫 URL 指定分類，自動建立不存在的節點
+    cp_idx: Optional[int] = header.index("category_path") if "category_path" in header else None
 
-    # 查詢目標分類子樹的現有問題（replace 模式下 flush 後應為空）
-    # append 模式下用於跳過分類子樹內已存在的重複問題
+    # 查詢現有問題以避免重複
+    # append 模式：若檔案含 category_path（項目可分散至任意分類），擴大至整個 agent；
+    #             否則只檢查 URL 指定分類的子樹範圍
+    # replace 模式：子樹已清空，僅追蹤本次操作內的重複
     if mode == "replace":
-        # replace 後子樹已清空，僅追蹤本次操作內的重複
         existing_questions: set[str] = set()
+    elif cp_idx is not None:
+        # 檔案含 category_path，各列可路由至不同分類，以全 agent 範圍去重
+        existing_questions = {
+            str(q)
+            for (q,) in db.query(KnowledgeItem.question)
+            .filter(KnowledgeItem.agent_id == agent_id)
+            .all()
+        }
     else:
-        # append 模式：載入目標子樹現有問題以避免重複
+        # 無 category_path，只檢查 URL 指定分類子樹
         all_cats_append = db.query(Category).filter(Category.agent_id == agent_id).all()
         cat_map_append: dict[Any, Category] = {c.id: c for c in all_cats_append}
         append_cat_ids = collect_category_subtree(category_id, cat_map_append)
@@ -481,6 +577,7 @@ def import_category_faqs(
         question = cell(q_idx)
         answer = cell(a_idx)
         tags_raw = cell(tags_idx) if tags_idx is not None else ""
+        category_path_val = cell(cp_idx) if cp_idx is not None else ""
 
         # 空列跳過
         if not question and not answer:
@@ -498,10 +595,16 @@ def import_category_faqs(
 
         try:
             with db.begin_nested():
+                # category_path 優先：有值則解析路徑（自動建立缺失節點），否則使用 URL 指定分類
+                if category_path_val:
+                    target_cat_id, _ = _resolve_category_path(db, agent_id, category_path_val)
+                else:
+                    target_cat_id = category_id
+
                 item = KnowledgeItem(
                     id=uuid.uuid4(),
                     agent_id=agent_id,
-                    category_id=category_id,
+                    category_id=target_cat_id,
                     question=question,
                     answer=answer,
                     tags=tags_list,
@@ -518,7 +621,11 @@ def import_category_faqs(
                     item_id=item.id,
                     action="import_category",
                     performed_by=current_user.id,
-                    diff={"question": question, "category_id": str(category_id)},
+                    diff={
+                        "question": question,
+                        "category_id": str(target_cat_id),
+                        "category_path": category_path_val,
+                    },
                 ))
 
             existing_questions.add(question)

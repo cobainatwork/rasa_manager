@@ -51,6 +51,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
 )
 
 REDIS_URL: str = os.environ.get("REDIS_URL", "redis://redis:6379/0")

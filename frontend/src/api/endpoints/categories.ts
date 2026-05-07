@@ -1,6 +1,7 @@
 import { apiClient } from '../client'
 import { unwrap } from '../request'
 import type { CategoryNode } from '../types'
+import { extractFilenameFromHeader } from '../filename-utils'
 
 export async function listCategories(agentId: string): Promise<CategoryNode[]> {
   return unwrap(apiClient.get(`/api/v1/agents/${agentId}/categories`), [])
@@ -36,12 +37,14 @@ export interface CategoryImportResult {
 export async function exportCategoryFaqs(
   agentId: string,
   categoryId: string
-): Promise<Blob> {
+): Promise<{ blob: Blob; filename: string }> {
   const res = await apiClient.get(
     `/api/v1/agents/${agentId}/categories/${categoryId}/export`,
     { responseType: 'blob' }
   )
-  return res.data as Blob
+  const disposition = res.headers['content-disposition'] as string | undefined
+  const filename = extractFilenameFromHeader(disposition, 'category_export.xlsx')
+  return { blob: res.data as Blob, filename }
 }
 
 export async function importCategoryFaqs(

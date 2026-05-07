@@ -1,8 +1,21 @@
 # Rasa RAG 系統知識庫管理平台：系統架構與詳細規格書
 
-> **文件版本**：v1.1  
-> **更新日期**：2026-04-27  
+> **文件版本**：v1.2
+> **更新日期**：2026-05-03
 > **系統定位**：專門針對多代理 Rasa Enterprise Search (Extractive/FAQ 模式) 設計的知識庫 (Knowledge Base) 前後端分離管理與同步系統。
+
+> [!IMPORTANT]
+> **文件定位聲明（v1.2 起）**
+>
+> 本規格書為**架構設計決策文件**，記錄系統核心原則（JWT、RBAC、DB Schema、Celery、Docker Compose）。
+>
+> §8「前端規格」描述的是設計期目標，部分細節於實作時調整（路由合併、元件架構重構）。**實際實作細節（含前端架構、目錄結構、已知設計陷阱）以 `docs/Rasa_Manager_beta_v1.0.md` 為準**。
+>
+> | 文件 | 定位 |
+> |------|------|
+> | 本文（`comprehensive-system-design.md`） | 架構設計原則、DB Schema、API 規格、安全設計 |
+> | `docs/Rasa_Manager_beta_v1.0.md` | 實際實作參考、前端架構、部署指南、設計陷阱 |
+> | `implementation_plan.md` | 六階段開發歷程（全部完成） |
 
 ---
 
@@ -1114,3 +1127,160 @@ alembic downgrade <revision>  # 回退到指定版本
 ### 21.21 [D11 補充] .txt 備份回復策略
 
 - **補充**：§19.2 新增「從 PostgreSQL 重建」說明，`.txt` 是派生物，資料源頭在 DB，可隨時透過重新觸發同步重建。
+
+---
+
+## 22. v1.2 補充：實作期新增功能與前端架構差異
+
+> 本章記錄 v1.1 規格凍結後於實作期新增的功能，以及前端 §8 與實際實作之間的差異。
+
+---
+
+### 22.1 新功能：分類層級匯入匯出
+
+v1.1 規格僅定義全域匯入匯出（`/faqs/import`、`/faqs/export`），實作時補充了分類層級的操作。
+
+#### 22.1.1 端點
+
+| Method | Path | 說明 |
+|--------|------|------|
+| `GET` | `/api/v1/agents/{agent_id}/categories/{category_id}/export` | 匯出指定分類（含所有子孫分類）的 FAQ 為 .xlsx |
+| `POST` | `/api/v1/agents/{agent_id}/categories/{category_id}/import` | 匯入 .xlsx 至指定分類；`mode` 參數決定行為 |
+
+#### 22.1.2 匯入模式（`mode` query parameter）
+
+| mode | 行為 |
+|------|------|
+| `append`（預設） | 保留現有資料，僅新增匯入的 FAQ；重複問題（含子孫分類範圍內）跳過 |
+| `replace` | 先刪除該分類（含子孫）所有現有 FAQ，再全量寫入匯入資料 |
+
+#### 22.1.3 重複偵測範圍
+
+重複問題比對範圍限定於**目標分類的子孫分類樹**，不與其他分類的問題比較。
+
+---
+
+### 22.2 新功能：分類精準向量同步
+
+v1.1 規格僅定義全量同步（`POST /sync`，`--clear` 清空整個 collection 重建）。實作時補充了分類層級的精準同步，最小化 Qdrant 操作範圍。
+
+#### 22.2.1 端點
+
+| Method | Path | 說明 |
+|--------|------|------|
+| `POST` | `/api/v1/agents/{agent_id}/categories/{category_id}/sync` | 觸發指定分類（含子孫）的精準向量同步 |
+
+#### 22.2.2 Qdrant Metadata：`category_path`
+
+所有寫入 Qdrant 的向量必須包含 `category_path` 欄位（格式：`根分類/子分類`）。此欄位是分類精準刪除的依據。
+
+```json
+{
+  "payload": {
+    "question": "...",
+    "answer": "...",
+    "category_path": "銷售/常見問題",
+    "agent_id": "...",
+    "doc_id": "knowledgebase_v1"
+  }
+}
+```
+
+#### 22.2.3 精準同步流程
+
+```
+POST /categories/{id}/sync
+  → 查詢 category 子樹所有節點（collect_category_subtree）
+  → 查詢 approved/synced FAQ（僅限子樹範圍）
+  → 為每筆 FAQ 計算 category_path（build_category_path）
+  → 寫出 .txt（含 [Category] 區塊標頭）
+  → 執行 ingest_kb.py --delete-category-paths "路徑1,路徑2"
+      → Qdrant filter_delete（payload.category_path IN [...]）
+      → Upsert 新向量
+  → 更新 sync_log（completed / failed）
+```
+
+#### 22.2.4 ingest_kb.py 新增參數
+
+| 參數 | 說明 |
+|------|------|
+| `--delete-category-paths` | 逗號分隔的 `category_path` 清單；精準刪除對應向量後再寫入 |
+
+與既有 `--clear`（清空整個 collection）互斥，分類同步使用 `--delete-category-paths`，全量同步使用 `--clear`。
+
+#### 22.2.5 相關工具模組
+
+`backend/api/utils/category_path.py`：
+
+| 函式 | 說明 |
+|------|------|
+| `build_category_path(db, category_id)` | 遞迴向上查詢，回傳 `根分類/子分類` 格式字串 |
+| `collect_category_subtree(db, root_id)` | O(N) 反向索引法，收集指定節點的所有子孫 category ID |
+
+---
+
+### 22.3 前端 §8 實作差異說明
+
+以下記錄 §8 規劃內容與實際前端實作的差異，供後續維護人員參考。
+
+#### 22.3.1 路由結構調整
+
+| 規格書 §8.2 | 實際實作 | 說明 |
+|------------|---------|------|
+| `/agents/:id/categories`（獨立頁） | 整合至 `/agents/:id/knowledge` | 分類樹與 FAQ 清單合併為三欄 ResizablePanel 佈局 |
+| `/agents/:id/faqs`（獨立頁） | 整合至 `/agents/:id/knowledge` | 同上 |
+| `/agents/:id/faqs/:faq_id`（獨立頁） | 整合至 `/agents/:id/knowledge` 右欄 | FAQ 詳情為第三欄 inline 編輯，非獨立路由 |
+| `/agents/:id/chat` | `/agents/:id/test-chat` | 路由名稱調整 |
+
+#### 22.3.2 元件庫使用調整
+
+| 規格書 §8.1 | 實際實作 | 說明 |
+|------------|---------|------|
+| TanStack Table（headless） | 自製清單元件 + Tailwind | FAQ 清單需求單純，引入 TanStack 反而增加複雜度 |
+| React Hook Form + Zod | 無 form library | FAQ 採 Inline Edit 模式，每個欄位獨立儲存，不需整表單提交 |
+| React Router v7 | React Router v6（DOM） | v7 語法於實作期尚不穩定，維持 v6 |
+
+#### 22.3.3 目錄結構（§8 未描述，實際採用）
+
+前端由舊版 `src/pages/` 扁平結構全面重寫為 `src/features/` 分層架構：
+
+```
+src/
+├── features/              # 依業務功能分層（每個 feature 自帶 hook + component）
+│   ├── auth/              # 登入、PasswordInput、useLogin
+│   ├── agents/            # Agent 選擇、設定、useAgentList
+│   ├── dashboard/         # KPI、待辦、活動、useDashboardStats
+│   ├── knowledge/         # 分類樹 + FAQ 清單 + FAQ 詳情（三欄整合）
+│   ├── sync/              # 同步觸發 + 歷史 + useSyncTrigger
+│   ├── import-export/     # 拖放上傳 + 匯出 + useExport
+│   ├── audit/             # 稽核日誌 + useAuditLog
+│   ├── chat/              # 測試對話 + useChat
+│   └── users/             # 使用者管理 + 角色指派
+├── components/            # 跨 feature 共用元件（AppShell、EmptyState、ErrorBoundary）
+├── api/                   # Axios client + 各 feature endpoint 函式
+├── store/                 # Zustand stores（useAuthStore、useAgentContext、useUiPreferences）
+├── hooks/                 # 通用 hooks（useDebounce、useLocalStorage、useKeyboardShortcut）
+└── lib/                   # 純函式工具（cn、format、diff、categories）
+```
+
+#### 22.3.4 AppShell 高度繼承鏈（§8 未描述）
+
+KnowledgePage 採三欄 ResizablePanel 佈局，高度繼承鏈為：
+
+```
+AppShell（h-screen overflow-hidden）
+  └── main（flex-1 overflow-hidden）
+       └── KnowledgePage（h-full）
+            └── ResizablePanelGroup（h-full）
+                 └── ResizablePanel（className="h-full !overflow-hidden"）
+```
+
+**關鍵限制**：react-resizable-panels v4 的 `className` 直接套用在 inner wrapper，不可用 `[&>div]:h-full` 父選擇器，須直接設定 `h-full !overflow-hidden`。
+
+#### 22.3.5 Zustand Store 設計（§8 未描述）
+
+| Store | 說明 |
+|-------|------|
+| `useAuthStore` | `user`、`isLoading`、`login()`、`logout()`、`fetchMe()` |
+| `useAgentContext` | `currentAgent`（persist 至 localStorage） |
+| `useUiPreferences` | `sidebarOpen`、`panelWidth`（persist 至 localStorage） |

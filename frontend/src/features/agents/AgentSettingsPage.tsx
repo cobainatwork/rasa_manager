@@ -18,7 +18,13 @@ import type { Agent } from '@/api/types'
 const schema = z.object({
   name: z.string().min(1).max(100),
   txt_output_path: z.string().min(1).max(255),
-  rasa_rest_url: z.string().nullable(),
+  rasa_rest_url: z
+    .string()
+    .nullable()
+    .refine(
+      (v) => !v || v.startsWith('http://') || v.startsWith('https://'),
+      { message: 'Webhook URL 必須以 http:// 或 https:// 開頭' }
+    ),
   ingest_script_path: z.string().nullable(),
 })
 type FormData = z.infer<typeof schema>

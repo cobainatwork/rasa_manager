@@ -15,7 +15,13 @@ import { toast } from 'sonner'
 const schema = z.object({
   name: z.string().min(1, '必填').max(100, '最多 100 字'),
   txt_output_path: z.string().min(1, '必填').max(255, '最多 255 字'),
-  rasa_rest_url: z.string().optional(),
+  rasa_rest_url: z
+    .string()
+    .optional()
+    .refine(
+      (v) => !v || v.startsWith('http://') || v.startsWith('https://'),
+      { message: 'Webhook URL 必須以 http:// 或 https:// 開頭' }
+    ),
   ingest_script_path: z.string().optional(),
 })
 

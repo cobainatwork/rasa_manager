@@ -100,13 +100,16 @@ def update_agent(
     db: Session = Depends(get_db),
 ) -> dict:  # type: ignore[type-arg]
     agent = _get_agent_or_404(db, agent_id)
+    # name / txt_output_path 為必填欄位，null 代表「不更新」
     if body.name is not None:
         agent.name = body.name
     if body.txt_output_path is not None:
         agent.txt_output_path = body.txt_output_path
-    if body.rasa_rest_url is not None:
+    # rasa_rest_url / ingest_script_path 為可選欄位：
+    # 使用 model_fields_set 區分「未帶欄位（不更新）」vs「顯式帶 null（清除）」
+    if "rasa_rest_url" in body.model_fields_set:
         agent.rasa_rest_url = body.rasa_rest_url
-    if body.ingest_script_path is not None:
+    if "ingest_script_path" in body.model_fields_set:
         agent.ingest_script_path = body.ingest_script_path
     db.commit()
     db.refresh(agent)

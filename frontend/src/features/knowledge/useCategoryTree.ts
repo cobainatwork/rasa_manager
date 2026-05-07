@@ -27,11 +27,32 @@ export interface UseCategoryTreeResult {
 export function useCategoryTree(
   agentId: string | undefined,
   onImportDone?: (mode: 'append' | 'replace') => void,
+  onCategoryRemoved?: (deletedId: string) => void,
 ): UseCategoryTreeResult {
   const [tree, setTree] = useState<CategoryNode[]>([])
   const [loading, setLoading] = useState(true)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  // 以 localStorage 記憶上次選取的分類，跨路由導覽後能自動還原
+  const [selectedId, setSelectedId] = useState<string | null>(() => {
+    if (!agentId) return null
+    try { return localStorage.getItem(`kb_selected_${agentId}`) ?? null } catch { return null }
+  })
   const [pendingRenameId, setPendingRenameId] = useState<string | null>(null)
+
+  // 切換 agent 時，從 localStorage 還原新 agent 的 selectedId
+  useEffect(() => {
+    if (!agentId) { setSelectedId(null); return }
+    try { setSelectedId(localStorage.getItem(`kb_selected_${agentId}`) ?? null) } catch { setSelectedId(null) }
+  }, [agentId])
+
+  // 包裝 select：同步更新 state 並寫入 localStorage
+  function select(id: string | null) {
+    setSelectedId(id)
+    if (!agentId) return
+    try {
+      if (id) localStorage.setItem(`kb_selected_${agentId}`, id)
+      else localStorage.removeItem(`kb_selected_${agentId}`)
+    } catch { /* ignore */ }
+  }
 
   const reload = useCallback(() => {
     if (!agentId) return
@@ -70,8 +91,12 @@ export function useCategoryTree(
     if (!agentId) return
     try {
       await api.deleteCategory(agentId, id)
-      if (selectedId === id) setSelectedId(null)
+      if (selectedId === id) {
+        setSelectedId(null)
+        try { localStorage.removeItem(`kb_selected_${agentId}`) } catch { /* ignore */ }
+      }
       reload()
+      onCategoryRemoved?.(id)
     } catch (err) { toastError(err) }
   }
 
@@ -80,11 +105,11 @@ export function useCategoryTree(
   async function exportCategory(id: string) {
     if (!agentId) return
     try {
-      const blob = await api.exportCategoryFaqs(agentId, id)
+      const { blob, filename } = await api.exportCategoryFaqs(agentId, id)
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = 'category_export.xlsx'
+      a.download = filename
       a.click()
       // 延遲 revoke：瀏覽器非同步處理下載，同步 revoke 會導致 URL 在下載前失效
       setTimeout(() => URL.revokeObjectURL(url), 100)
@@ -116,7 +141,7 @@ export function useCategoryTree(
 
   return {
     tree, loading, selectedId, pendingRenameId,
-    select: setSelectedId, reload, rename, addChild, remove,
+    select, reload, rename, addChild, remove,
     clearPendingRename, exportCategory, importCategory, syncCategory,
   }
 }

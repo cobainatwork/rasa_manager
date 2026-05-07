@@ -66,12 +66,16 @@ def test_connection(
 
     start = time.monotonic()
     try:
+        # Rasa webhook 僅接受 POST；使用與 chat 相同的 payload 格式進行連線測試。
+        # GET 請求會收到 404/405，導致 ok=False（原 bug）。
         with httpx.Client(timeout=10.0) as client:
-            resp = client.get(url)
+            resp = client.post(
+                url,
+                json={"sender": "connection_test", "message": "ping"},
+            )
         latency = int((time.monotonic() - start) * 1000)
-        # 4xx 視為可達但 endpoint 行為異常（仍為 ok=false 由前端決定顯示）；
-        # 2xx/3xx 為連線成功；5xx 視為服務錯誤。
-        ok = 200 <= resp.status_code < 400
+        # 2xx 為連線成功；Rasa 正常回傳 200（含空陣列亦可）。
+        ok = 200 <= resp.status_code < 300
         return {
             "success": True,
             "data": {
