@@ -16,6 +16,7 @@ export function makeAgent(over: Partial<Agent> = {}): Agent {
   return {
     id: 'a1',
     name: 'Demo',
+    qdrant_collection: 'agent_a1',
     txt_output_path: '/opt/test',
     rasa_rest_url: null,
     ingest_script_path: null,

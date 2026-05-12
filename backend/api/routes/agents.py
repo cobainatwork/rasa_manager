@@ -32,6 +32,7 @@ def _agent_to_dict(agent: Agent) -> dict:  # type: ignore[type-arg]
     return {
         "id": str(agent.id),
         "name": agent.name,
+        "qdrant_collection": agent.qdrant_collection,
         "txt_output_path": agent.txt_output_path,
         "rasa_rest_url": agent.rasa_rest_url,
         "ingest_script_path": agent.ingest_script_path,
@@ -72,6 +73,7 @@ def create_agent(
     agent = Agent(
         id=uuid.uuid4(),
         name=body.name,
+        qdrant_collection=body.qdrant_collection,
         txt_output_path=body.txt_output_path,
         rasa_rest_url=body.rasa_rest_url,
         ingest_script_path=body.ingest_script_path,
@@ -100,9 +102,11 @@ def update_agent(
     db: Session = Depends(get_db),
 ) -> dict:  # type: ignore[type-arg]
     agent = _get_agent_or_404(db, agent_id)
-    # name / txt_output_path 為必填欄位，null 代表「不更新」
+    # name / txt_output_path / qdrant_collection 為必填欄位，null 代表「不更新」
     if body.name is not None:
         agent.name = body.name
+    if body.qdrant_collection is not None:
+        agent.qdrant_collection = body.qdrant_collection
     if body.txt_output_path is not None:
         agent.txt_output_path = body.txt_output_path
     # rasa_rest_url / ingest_script_path 為可選欄位：

@@ -142,7 +142,7 @@ class TestCreateAgent:
         mock_db.refresh.return_value = None
         resp = client_superadmin.post(
             "/api/v1/agents",
-            json={"name": "NewAgent", "txt_output_path": "/output/new"},
+            json={"name": "NewAgent", "qdrant_collection": "new_agent_kb", "txt_output_path": "/output/new"},
         )
         assert resp.status_code == 201
         assert resp.json()["success"] is True
@@ -151,7 +151,7 @@ class TestCreateAgent:
         mock_db.query.return_value.filter.return_value.first.return_value = _agent_mock()
         resp = client_superadmin.post(
             "/api/v1/agents",
-            json={"name": "TestAgent", "txt_output_path": "/output"},
+            json={"name": "TestAgent", "qdrant_collection": "test_agent_kb", "txt_output_path": "/output"},
         )
         assert resp.status_code == 409
         assert resp.json()["detail"]["code"] == "CONFLICT"

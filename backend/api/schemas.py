@@ -3,6 +3,7 @@ Pydantic schemas for request/response validation.
 """
 from __future__ import annotations
 
+import re as _re
 import uuid
 from typing import Annotated, Optional
 
@@ -38,6 +39,9 @@ class ResetPasswordRequest(BaseModel):
 
 
 # ── Agent Schemas ─────────────────────────────────────────────────────────
+_QDRANT_COLLECTION_RE = _re.compile(r"^[a-zA-Z_][a-zA-Z0-9_-]*$")
+
+
 def _validate_rasa_url(v: Optional[str]) -> Optional[str]:
     """rasa_rest_url 必須為合法 http/https URL（含協定前綴）。"""
     if v is None:
@@ -50,8 +54,19 @@ def _validate_rasa_url(v: Optional[str]) -> Optional[str]:
     return v
 
 
+def _validate_qdrant_collection(v: str) -> str:
+    """Qdrant collection 名稱：英文字母或底線開頭，後續可含英數字、底線、連字號。"""
+    if not _QDRANT_COLLECTION_RE.match(v):
+        raise ValueError(
+            "Qdrant collection 名稱只能包含英文字母、數字、底線與連字號，"
+            "且必須以英文字母或底線開頭。"
+        )
+    return v
+
+
 class AgentCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
+    qdrant_collection: str = Field(..., min_length=1, max_length=255)
     txt_output_path: str = Field(..., min_length=1, max_length=255)
     rasa_rest_url: Optional[str] = Field(None, max_length=255)
     ingest_script_path: Optional[str] = Field(None, max_length=255)
@@ -61,9 +76,15 @@ class AgentCreate(BaseModel):
     def validate_rasa_url(cls, v: object) -> object:
         return _validate_rasa_url(v if isinstance(v, str) or v is None else str(v))
 
+    @field_validator("qdrant_collection", mode="before")
+    @classmethod
+    def validate_qdrant_collection(cls, v: object) -> object:
+        return _validate_qdrant_collection(str(v) if not isinstance(v, str) else v)
+
 
 class AgentUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
+    qdrant_collection: Optional[str] = Field(None, min_length=1, max_length=255)
     txt_output_path: Optional[str] = Field(None, min_length=1, max_length=255)
     rasa_rest_url: Optional[str] = Field(None, max_length=255)
     ingest_script_path: Optional[str] = Field(None, max_length=255)
@@ -72,6 +93,13 @@ class AgentUpdate(BaseModel):
     @classmethod
     def validate_rasa_url(cls, v: object) -> object:
         return _validate_rasa_url(v if isinstance(v, str) or v is None else str(v))
+
+    @field_validator("qdrant_collection", mode="before")
+    @classmethod
+    def validate_qdrant_collection(cls, v: object) -> object:
+        if v is None:
+            return v
+        return _validate_qdrant_collection(str(v) if not isinstance(v, str) else v)
 
 
 class RoleAssignRequest(BaseModel):

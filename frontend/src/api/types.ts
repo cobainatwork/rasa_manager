@@ -22,6 +22,7 @@ export interface User {
 export interface Agent {
   id: string
   name: string
+  qdrant_collection: string
   txt_output_path: string
   rasa_rest_url: string | null
   ingest_script_path: string | null

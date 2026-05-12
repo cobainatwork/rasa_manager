@@ -58,6 +58,7 @@ class Agent(Base):
         server_default=text("gen_random_uuid()"),
     )
     name = Column(String(100), nullable=False)
+    qdrant_collection = Column(String(255), nullable=False)
     txt_output_path = Column(Text, nullable=False)
     rasa_rest_url = Column(String(255), nullable=True)
     ingest_script_path = Column(Text, nullable=True)

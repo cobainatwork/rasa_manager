@@ -14,6 +14,14 @@ import { toast } from 'sonner'
 
 const schema = z.object({
   name: z.string().min(1, '必填').max(100, '最多 100 字'),
+  qdrant_collection: z
+    .string()
+    .min(1, '必填')
+    .max(255, '最多 255 字')
+    .regex(
+      /^[a-zA-Z_][a-zA-Z0-9_-]*$/,
+      '只能含英文字母、數字、底線與連字號，且須以英文字母或底線開頭'
+    ),
   txt_output_path: z.string().min(1, '必填').max(255, '最多 255 字'),
   rasa_rest_url: z
     .string()
@@ -45,6 +53,7 @@ export function CreateAgentInlinePanel({ onCreated, onCancel }: Props) {
     try {
       await createAgent({
         name: data.name,
+        qdrant_collection: data.qdrant_collection,
         txt_output_path: data.txt_output_path,
         rasa_rest_url: data.rasa_rest_url || null,
         ingest_script_path: data.ingest_script_path || null,
@@ -70,6 +79,9 @@ export function CreateAgentInlinePanel({ onCreated, onCancel }: Props) {
       <form onSubmit={handleSubmit(onSubmit)} className="grid grid-cols-2 gap-4">
         <Field label="Agent 名稱" required error={errors.name?.message}>
           <Input {...register('name')} placeholder="例如：客服機器人" />
+        </Field>
+        <Field label="Qdrant Collection 名稱" required error={errors.qdrant_collection?.message}>
+          <Input {...register('qdrant_collection')} placeholder="例如：my_agent_kb" />
         </Field>
         <Field label="TXT 輸出路徑" required error={errors.txt_output_path?.message}>
           <Input {...register('txt_output_path')} placeholder="/opt/sap" />

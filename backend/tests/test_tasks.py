@@ -550,6 +550,7 @@ class TestIngestScriptArgs:
     def _make_agent(self) -> MagicMock:
         agent = MagicMock()
         agent.id = AGENT_ID
+        agent.qdrant_collection = f"agent_{AGENT_ID}"
         agent.txt_output_path = "/opt/rasa_docs/test"
         agent.ingest_script_path = "/opt/project/ingest_kb.py"
         return agent
@@ -609,7 +610,7 @@ class TestIngestScriptArgs:
         assert "--doc-id" in cmd
         # 參數值驗證
         assert cmd[cmd.index("--qdrant-url") + 1] == "http://qdrant.test:6333"
-        assert cmd[cmd.index("--collection") + 1] == f"agent_{agent.id}"
+        assert cmd[cmd.index("--collection") + 1] == agent.qdrant_collection
         # source 應指向匯出 .txt
         source_value = cmd[cmd.index("--source") + 1]
         assert source_value.endswith("faq_export.txt")

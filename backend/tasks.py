@@ -140,15 +140,15 @@ def run_ingestion_sync(self, agent_id: str, sync_log_id: str) -> None:  # type: 
             if not qdrant_url:
                 raise RuntimeError("QDRANT_URL 未設定，無法執行 ingest")
 
-            agent_id_str = str(agent.id)
+            collection_name = str(agent.qdrant_collection)
             # 安全性：禁止 shell=True，使用列表形式（避免空格路徑切割問題）
             cmd = [
                 "python",
                 script_path,
                 "--source", output_path,
                 "--qdrant-url", qdrant_url,
-                "--collection", f"agent_{agent_id_str}",
-                "--doc-id", f"agent_{agent_id_str}_v1",
+                "--collection", collection_name,
+                "--doc-id", f"{collection_name}_v1",
                 "--clear",  # 同步前清空 collection，確保已刪除 FAQ 的舊向量不殘留
             ]
             # 使用 Popen + start_new_session=True，逾時時可透過 killpg 一併回收孫進程
@@ -360,14 +360,14 @@ def run_category_sync(self, agent_id: str, category_id: str, sync_log_id: str) -
             if not qdrant_url:
                 raise RuntimeError("QDRANT_URL 未設定，無法執行 ingest")
 
-            agent_id_str = str(agent.id)
+            collection_name = str(agent.qdrant_collection)
             cmd = [
                 "python",
                 script_path,
                 "--source", output_path,
                 "--qdrant-url", qdrant_url,
-                "--collection", f"agent_{agent_id_str}",
-                "--doc-id", f"agent_{agent_id_str}_v1",
+                "--collection", collection_name,
+                "--doc-id", f"{collection_name}_v1",
                 "--delete-category-paths", ",".join(subtree_paths),
                 # 不帶 --clear：精準刪除指定 category_path 的向量
             ]

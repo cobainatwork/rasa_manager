@@ -17,6 +17,14 @@ import type { Agent } from '@/api/types'
 
 const schema = z.object({
   name: z.string().min(1).max(100),
+  qdrant_collection: z
+    .string()
+    .min(1, 'Collection 名稱必填')
+    .max(255)
+    .regex(
+      /^[a-zA-Z_][a-zA-Z0-9_-]*$/,
+      'Collection 名稱只能含英文字母、數字、底線與連字號，且須以英文字母或底線開頭'
+    ),
   txt_output_path: z.string().min(1).max(255),
   rasa_rest_url: z
     .string()
@@ -41,7 +49,7 @@ export function AgentSettingsPage() {
     register,
     handleSubmit,
     reset,
-    formState: { isDirty, isSubmitting },
+    formState: { isDirty, isSubmitting, errors },
   } = useForm<FormData>({ resolver: zodResolver(schema) })
 
   useEffect(() => {
@@ -53,6 +61,7 @@ export function AgentSettingsPage() {
         if (found) {
           reset({
             name: found.name,
+            qdrant_collection: found.qdrant_collection,
             txt_output_path: found.txt_output_path,
             rasa_rest_url: found.rasa_rest_url ?? '',
             ingest_script_path: found.ingest_script_path ?? '',
@@ -146,6 +155,7 @@ export function AgentSettingsPage() {
 
       <AgentIntegrationFields
         register={register}
+        errors={errors}
         test={{ run: handleTestConnection, busy: testingConn }}
         validate={{ run: handleValidateScript, busy: validatingScript }}
       />
