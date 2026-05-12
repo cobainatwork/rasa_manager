@@ -7,7 +7,8 @@ Excel 批次匯入 / 匯出路由。
   - 選填欄：tags（逗號分隔字串）
   - 一律建立為 draft 狀態
   - category_path 不存在時自動建立節點
-  - 相同 agent_id + question 已存在 → 跳過
+  - mode=append（預設）：相同 agent_id + question 已存在 → 跳過
+  - mode=replace：先刪除該 agent 所有 FAQ 再匯入（全量取代）
   - 操作結束後關閉 workbook（openpyxl read_only 模式）
 
 匯出規格（§4.3）：
@@ -137,6 +138,7 @@ def _resolve_category_path(
 def import_faqs(
     agent_id: uuid.UUID,
     file: UploadFile = File(...),
+    mode: Literal["append", "replace"] = Query("append", description="append=跳過重複；replace=先清空再匯入"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
@@ -185,13 +187,24 @@ def import_faqs(
     cp_idx: Optional[int] = header.index("category_path") if "category_path" in header else None
     tags_idx: Optional[int] = header.index("tags") if "tags" in header else None
 
-    # ── 預載已存在的 question（避免重複）──────────────────────────────────────
-    existing_questions: set[str] = {
-        str(q)
-        for (q,) in db.query(KnowledgeItem.question)
-        .filter(KnowledgeItem.agent_id == agent_id)
-        .all()
-    }
+    # ── replace 模式：先刪除該 agent 所有 FAQ ────────────────────────────────
+    if mode == "replace":
+        db.query(KnowledgeItem).filter(KnowledgeItem.agent_id == agent_id).delete(
+            synchronize_session="fetch"
+        )
+        db.flush()
+
+    # ── 預載已存在的 question（避免重複；replace 模式剛清空，故為空集合）───────
+    existing_questions: set[str] = (
+        set()
+        if mode == "replace"
+        else {
+            str(q)
+            for (q,) in db.query(KnowledgeItem.question)
+            .filter(KnowledgeItem.agent_id == agent_id)
+            .all()
+        }
+    )
 
     success = 0
     skipped = 0

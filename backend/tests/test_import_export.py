@@ -196,6 +196,59 @@ class TestImportEndpoint:
         assert resp.status_code == 200
         assert resp.json()["data"]["imported"] == 2
 
+    def test_replace_mode_calls_delete_then_imports(
+        self, client_superadmin: object, mock_db: MagicMock
+    ) -> None:
+        """mode=replace 應先刪除 agent 所有 FAQ，再以空集合重新匯入。"""
+        self._setup_db(mock_db)
+        # 設定 delete chain（query → filter → delete）
+        mock_db.query.return_value.filter.return_value.delete = MagicMock(return_value=5)
+        xlsx = _make_xlsx([["新問題A", "新答案A", "分類X", ""]])
+
+        with (
+            patch("api.routes.import_export.require_agent_access", return_value=(MagicMock(), None)),
+            patch("api.routes.import_export._resolve_category_path", return_value=(uuid.uuid4(), False)),
+        ):
+            resp = client_superadmin.post(  # type: ignore[attr-defined]
+                f"/api/v1/agents/{AGENT_ID}/faqs/import?mode=replace",
+                files={"file": ("test.xlsx", xlsx, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        # replace 模式：先刪舊資料，再匯入新資料，不會計算 skipped
+        assert data["imported"] == 1
+        assert data["skipped"] == 0
+        # 驗證 delete() 確實被呼叫
+        mock_db.query.return_value.filter.return_value.delete.assert_called_once_with(
+            synchronize_session="fetch"
+        )
+
+    def test_replace_mode_reimports_previously_existing_question(
+        self, client_superadmin: object, mock_db: MagicMock
+    ) -> None:
+        """replace 模式下即使問題曾存在（DB 已有），也應全數匯入（不跳過）。"""
+        self._setup_db(mock_db)
+        mock_db.query.return_value.filter.return_value.delete = MagicMock(return_value=3)
+        xlsx = _make_xlsx([
+            ["舊問題A", "舊答案A", "分類Y", ""],
+            ["舊問題B", "舊答案B", "分類Y", ""],
+        ])
+
+        with (
+            patch("api.routes.import_export.require_agent_access", return_value=(MagicMock(), None)),
+            patch("api.routes.import_export._resolve_category_path", return_value=(uuid.uuid4(), False)),
+        ):
+            resp = client_superadmin.post(  # type: ignore[attr-defined]
+                f"/api/v1/agents/{AGENT_ID}/faqs/import?mode=replace",
+                files={"file": ("test.xlsx", xlsx, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["imported"] == 2
+        assert data["skipped"] == 0
+
 
 # ── 匯出端點（整合測試）──────────────────────────────────────────────────────
 
