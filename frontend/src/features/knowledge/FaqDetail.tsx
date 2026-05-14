@@ -20,7 +20,7 @@ interface Props {
 }
 
 export function FaqDetail({ agentId, faqId, categoryTree, onChanged, onDeleted }: Props) {
-  const { faq, loading, update, reload } = useFaqDetail(agentId, faqId)
+  const { faq, loading, update, reload } = useFaqDetail(agentId, faqId, onChanged)
 
   function handleStatusChanged() {
     reload()
