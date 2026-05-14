@@ -16,7 +16,7 @@ export function AgentCard({ agent, onClick }: AgentCardProps) {
   return (
     <Card
       onClick={() => onClick(agent)}
-      className="p-6 cursor-pointer hover:shadow-md transition-shadow duration-fast"
+      className="p-6 cursor-pointer hover:shadow-md hover:bg-black/[0.02] transition-all duration-fast"
     >
       <h3 className="text-lg font-semibold mb-4 truncate">{agent.name}</h3>
       <div className="space-y-2 text-sm">

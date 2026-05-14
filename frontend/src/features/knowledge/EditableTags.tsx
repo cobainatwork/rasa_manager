@@ -40,7 +40,7 @@ export function EditableTags({ tags, onSave }: Props) {
         {tags.map((t) => (
           <Badge key={t} variant="secondary" className="gap-1">
             {t}
-            <button type="button" onClick={() => remove(t)} className="hover:text-red-600" aria-label={`移除 ${t}`}>
+            <button type="button" onClick={() => remove(t)} className="hover:text-red-600 transition-colors" aria-label={`移除 ${t}`}>
               <X className="w-3 h-3" strokeWidth={1.5} />
             </button>
           </Badge>

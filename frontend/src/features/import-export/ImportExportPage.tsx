@@ -72,7 +72,7 @@ export function ImportExportPage() {
                 type="button"
                 onClick={() => setMode('append')}
                 className={[
-                  'flex-1 rounded-md border px-3 py-2 text-sm transition-colors',
+                  'flex-1 rounded-md border px-3 py-2 text-sm transition-colors cursor-pointer',
                   mode === 'append'
                     ? 'border-brand-500 bg-brand-50 text-brand-700 font-medium'
                     : 'border-border text-text-secondary hover:border-brand-300',
@@ -84,7 +84,7 @@ export function ImportExportPage() {
                 type="button"
                 onClick={() => setMode('replace')}
                 className={[
-                  'flex-1 rounded-md border px-3 py-2 text-sm transition-colors',
+                  'flex-1 rounded-md border px-3 py-2 text-sm transition-colors cursor-pointer',
                   mode === 'replace'
                     ? 'border-red-500 bg-red-50 text-red-700 font-medium'
                     : 'border-border text-text-secondary hover:border-red-300',

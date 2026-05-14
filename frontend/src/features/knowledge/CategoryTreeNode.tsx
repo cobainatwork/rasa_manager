@@ -158,7 +158,7 @@ export function CategoryTreeNode({
             <button
               type="button"
               onClick={(e) => e.stopPropagation()}
-              className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-white"
+              className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-white transition-colors"
               aria-label="更多操作"
             >
               <MoreHorizontal className="w-3.5 h-3.5" strokeWidth={1.5} />

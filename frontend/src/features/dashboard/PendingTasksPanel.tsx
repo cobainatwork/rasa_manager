@@ -41,8 +41,11 @@ export function PendingTasksPanel({ agentId }: Props) {
         {items.map((faq) => (
           <li
             key={faq.id}
-            onClick={() => navigate(`/agents/${id}/knowledge`)}
-            className="p-2 rounded hover:bg-subtle cursor-pointer text-sm flex justify-between items-center"
+            onClick={() => {
+              try { if (id) localStorage.setItem(`kb_selected_faq_${id}`, faq.id) } catch { /* ignore */ }
+              navigate(`/agents/${id}/knowledge`)
+            }}
+            className="p-2 rounded hover:bg-subtle transition-colors cursor-pointer text-sm flex justify-between items-center"
           >
             <span className="truncate flex-1">{faq.question}</span>
             <span className="text-xs text-text-muted ml-2">{relativeTime(faq.updated_at)}</span>
