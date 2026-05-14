@@ -30,8 +30,10 @@ export function TestChatPage() {
     if (!text || sending) return
     setDraft('')
     await send(text)
-    // 送出後立即將焦點歸還輸入框，使用者無需重新點選
-    textareaRef.current?.focus()
+    // React 18 自動批次：setSending(false) 尚未 commit 到 DOM，
+    // disabled={sending} 仍為 true，直接 focus() 無效。
+    // setTimeout(0) 延至下一個 macrotask，確保 disabled 已移除後再 focus。
+    setTimeout(() => textareaRef.current?.focus(), 0)
   }
 
   return (
