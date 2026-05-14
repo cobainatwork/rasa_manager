@@ -19,7 +19,8 @@ const CAT_ID = 'cat-uuid'
 describe('exportCategoryFaqs', () => {
   it('calls GET /categories/{id}/export with blob responseType', async () => {
     const mockBlob = new Blob(['test'])
-    vi.mocked(apiClient.get).mockResolvedValue({ data: mockBlob })
+    // headers 必須存在（函式讀取 content-disposition），空物件代表無 header
+    vi.mocked(apiClient.get).mockResolvedValue({ data: mockBlob, headers: {} })
 
     const result = await exportCategoryFaqs(AGENT_ID, CAT_ID)
 
@@ -27,7 +28,9 @@ describe('exportCategoryFaqs', () => {
       `/api/v1/agents/${AGENT_ID}/categories/${CAT_ID}/export`,
       { responseType: 'blob' }
     )
-    expect(result).toBe(mockBlob)
+    // 函式回傳 { blob, filename }，而非直接回傳 blob
+    expect(result.blob).toBe(mockBlob)
+    expect(result.filename).toBe('category_export.xlsx') // content-disposition 為空時的預設值
   })
 })
 
