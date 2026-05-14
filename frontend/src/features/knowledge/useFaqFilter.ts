@@ -77,7 +77,11 @@ export function useFaqFilter(agentId?: string) {
 
   function setFilter(patch: Partial<FaqFilters>) {
     const merged: FaqFilters = { ...filters, ...patch, page: patch.page ?? 1 }
-    setParams(filtersToParams(merged), { replace: true })
+    // 以現有 params 為基底，保留非 filter keys（如其他 hook 寫入的 URL params）
+    const next = new URLSearchParams(params)
+    ;(['status', 'category_id', 'q', 'page'] as const).forEach(k => next.delete(k))
+    filtersToParams(merged).forEach((v, k) => next.set(k, v))
+    setParams(next, { replace: true })
   }
 
   function clearAll() {

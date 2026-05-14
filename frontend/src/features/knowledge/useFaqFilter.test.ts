@@ -49,18 +49,26 @@ describe('useFaqFilter — setFilter', () => {
     expect(result.current.filters.page).toBe(1)
   })
 
-  it('setFilter 空字串值會從 URL 移除', () => {
+  it('setFilter 空字串值使 status 回到初始值（""）', () => {
     const { result } = renderHook(() => useFaqFilter('a1'), { wrapper })
 
-    act(() => {
-      result.current.setFilter({ status: 'pending' })
-    })
+    act(() => { result.current.setFilter({ status: 'pending' }) })
     expect(result.current.filters.status).toBe('pending')
 
-    act(() => {
-      result.current.setFilter({ status: '' })
-    })
+    act(() => { result.current.setFilter({ status: '' }) })
     expect(result.current.filters.status).toBe('')
+  })
+
+  it('status 清空後 localStorage 不保留 filter 記錄（間接驗證 param 已移除）', () => {
+    // status='' 使 hasActiveFilters 回傳 false，persistence effect 移除 localStorage 項目；
+    // 此行為等價於「URL param 已不存在」的語意結果。
+    const { result } = renderHook(() => useFaqFilter('a1'), { wrapper })
+
+    act(() => { result.current.setFilter({ status: 'pending' }) })
+    expect(localStorage.getItem('kb_filters_a1')).not.toBeNull()
+
+    act(() => { result.current.setFilter({ status: '' }) })
+    expect(localStorage.getItem('kb_filters_a1')).toBeNull()
   })
 })
 

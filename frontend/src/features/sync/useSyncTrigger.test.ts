@@ -57,18 +57,25 @@ describe('useSyncTrigger — trigger', () => {
     expect(result.current.activeLog).toBeNull()
   })
 
-  it('trigger 執行期間 triggering 為 true', async () => {
-    let capturedTriggering = false
-    mockTriggerSync.mockImplementationOnce(async () => {
-      capturedTriggering = true
-      return { task_id: null, sync_log_id: 'sl1' }
-    })
+  it('trigger 執行期間 triggering 為 true，完成後歸零', async () => {
+    // 以可控 Promise 暫停 triggerSync，驗證 setTriggering(true) 已刷新至 state
+    let resolveSync!: (v: { task_id: string | null; sync_log_id: string }) => void
+    mockTriggerSync.mockReturnValueOnce(
+      new Promise<{ task_id: string | null; sync_log_id: string }>(
+        (resolve) => { resolveSync = resolve }
+      )
+    )
     mockGetSyncStatus.mockResolvedValueOnce(FAKE_LOG_RUNNING)
 
     const { result } = renderHook(() => useSyncTrigger('a1'))
-    await act(async () => { await result.current.trigger() })
 
-    expect(capturedTriggering).toBe(true)
+    // 啟動 trigger（非同步，不 await），act 完成後 setTriggering(true) 已刷新
+    act(() => { void result.current.trigger() })
+    expect(result.current.triggering).toBe(true)
+
+    // 解析 triggerSync，讓剩餘流程跑完
+    await act(async () => { resolveSync({ task_id: 'ct1', sync_log_id: 'sl1' }) })
+    expect(result.current.triggering).toBe(false)
   })
 })
 
