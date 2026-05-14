@@ -378,25 +378,26 @@ def update_faq(
             "after": str(body.category_id),
         }
         item.category_id = body.category_id
-    if body.tags is not None:
+    # tags 需比較實際值，避免送相同內容也觸發降級
+    if body.tags is not None and body.tags != (item.tags or []):
         diff["tags"] = {"before": item.tags, "after": body.tags}
         item.tags = body.tags
 
-    # approved / synced → 自動降級為 draft
-    if item.status in ("approved", "synced"):
-        diff["status"] = {"before": item.status, "after": "draft"}
-        item.status = "draft"
+    # 僅在有實際內容變更時才自動降級；純讀取儲存（無 diff）不改變狀態
+    if diff:
+        if item.status in ("approved", "synced"):
+            diff["status"] = {"before": item.status, "after": "draft"}
+            item.status = "draft"
 
-    item.version += 1
+        item.version += 1
+        _record_history(db, item, "edited", current_user.id)
+        _record_audit(db, agent_id, item.id, "update", current_user.id, diff)
+        db.commit()
+        db.refresh(item)
+        return {"success": True, "data": _faq_to_dict(item), "message": "更新成功"}
 
-    _record_history(db, item, "edited", current_user.id)
-    _record_audit(
-        db, agent_id, item.id, "update", current_user.id, diff if diff else None
-    )
-
-    db.commit()
-    db.refresh(item)
-    return {"success": True, "data": _faq_to_dict(item), "message": "更新成功"}
+    # 無任何欄位異動 → 直接回傳現有資料，不觸發降級
+    return {"success": True, "data": _faq_to_dict(item), "message": "無內容變更"}
 
 
 @router.patch("/api/v1/agents/{agent_id}/faqs/{faq_id}/status")

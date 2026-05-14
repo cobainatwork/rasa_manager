@@ -8,21 +8,22 @@ const config: Config = {
     container: { center: true, padding: '1rem' },
     extend: {
       colors: {
-        // 自定義設計 token
+        // macOS-inspired design tokens
         brand: {
-          50: '#EFF6FF',
-          500: '#3B82F6',
-          600: '#2563EB',
-          700: '#1D4ED8',
+          50: '#EAF4FF',
+          100: '#C5E2FF',
+          500: '#007AFF',   // Apple system blue
+          600: '#0066CC',
+          700: '#0052A3',
         },
-        canvas: '#F8FAFC',
+        canvas: '#F2F2F7',        // macOS system background
         surface: '#FFFFFF',
-        subtle: '#F1F5F9',
-        'text-primary': '#0F172A',
-        'text-secondary': '#475569',
-        'text-muted': '#64748B',
-        'border-default': '#E2E8F0',
-        'border-strong': '#CBD5E1',
+        subtle: '#E5E5EA',        // macOS secondary fill
+        'text-primary': '#1C1C1E',
+        'text-secondary': '#3C3C43',
+        'text-muted': '#636366',  // macOS tertiary label
+        'border-default': '#D1D1D6',  // macOS separator
+        'border-strong': '#AEAEB2',
         // shadcn 必要色票（對應 index.css 的 CSS 變數）
         popover: {
           DEFAULT: 'hsl(var(--popover))',
@@ -38,8 +39,8 @@ const config: Config = {
         },
       },
       fontFamily: {
-        sans: ['Inter', 'Noto Sans TC', 'system-ui', 'sans-serif'],
-        mono: ['JetBrains Mono', 'Fira Code', 'Consolas', 'monospace'],
+        sans: ['-apple-system', 'BlinkMacSystemFont', 'SF Pro Text', 'Inter', 'Noto Sans TC', 'system-ui', 'sans-serif'],
+        mono: ['SF Mono', 'JetBrains Mono', 'Fira Code', 'Consolas', 'monospace'],
       },
       transitionDuration: {
         instant: '100ms',
@@ -59,10 +60,11 @@ const config: Config = {
         tooltip: '60',
       },
       boxShadow: {
-        xs: '0 1px 2px 0 rgb(0 0 0 / 0.05)',
-        sm: '0 1px 3px 0 rgb(0 0 0 / 0.07), 0 1px 2px -1px rgb(0 0 0 / 0.05)',
-        md: '0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.05)',
-        lg: '0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.05)',
+        xs: '0 1px 2px rgba(0,0,0,0.06)',
+        sm: '0 1px 4px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04)',
+        md: '0 4px 12px rgba(0,0,0,0.10), 0 1px 3px rgba(0,0,0,0.06)',
+        lg: '0 8px 28px rgba(0,0,0,0.12), 0 3px 8px rgba(0,0,0,0.06)',
+        window: '0 20px 60px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.08)',
       },
       keyframes: {
         'accordion-down': { from: { height: '0' }, to: { height: 'var(--radix-accordion-content-height)' } },

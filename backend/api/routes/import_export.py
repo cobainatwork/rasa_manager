@@ -5,7 +5,7 @@ Excel 批次匯入 / 匯出路由。
   - 僅接受 .xlsx，上限 10 MB / 5000 行
   - 必填欄：question、answer、category_path（/ 分隔）
   - 選填欄：tags（逗號分隔字串）
-  - 一律建立為 draft 狀態
+  - Superadmin 匯入時直接建立為 approved（與單筆建立行為一致）；其他使用者建立為 draft
   - category_path 不存在時自動建立節點
   - mode=append（預設）：相同 agent_id + question 已存在 → 跳過
   - mode=replace：先刪除該 agent 所有 FAQ 再匯入（全量取代）
@@ -206,6 +206,9 @@ def import_faqs(
         }
     )
 
+    # Superadmin 匯入直接核准（與 create_faq 行為一致），其他使用者建立為 draft
+    initial_status = "approved" if current_user.is_superadmin else "draft"
+
     success = 0
     skipped = 0
     errors: list[dict[str, Any]] = []
@@ -269,7 +272,7 @@ def import_faqs(
                     question=question,
                     answer=answer,
                     tags=tags_list,
-                    status="draft",
+                    status=initial_status,
                     version=1,
                     created_by=current_user.id,
                 )
@@ -578,6 +581,9 @@ def import_category_faqs(
             .all()
         }
 
+    # Superadmin 匯入直接核准（與 create_faq 行為一致），其他使用者建立為 draft
+    initial_status = "approved" if current_user.is_superadmin else "draft"
+
     success = 0
     skipped = 0
     errors: list[dict[str, Any]] = []
@@ -621,7 +627,7 @@ def import_category_faqs(
                     question=question,
                     answer=answer,
                     tags=tags_list,
-                    status="draft",
+                    status=initial_status,
                     version=1,
                     created_by=current_user.id,
                 )

@@ -224,6 +224,71 @@ class TestImportEndpoint:
             synchronize_session="fetch"
         )
 
+    def test_superadmin_import_creates_approved_status(
+        self, client_superadmin: object, mock_db: MagicMock
+    ) -> None:
+        """Superadmin 匯入應建立 approved 狀態的 FAQ（與 create_faq 行為一致）。"""
+        from api.database.models import KnowledgeItem as KI
+
+        self._setup_db(mock_db)
+        xlsx = _make_xlsx([["問題核准測試", "答案核准測試", "分類Z", ""]])
+
+        added_items: list[object] = []
+        original_add = mock_db.add.side_effect
+
+        def capture_add(obj: object) -> None:
+            added_items.append(obj)
+            if original_add:
+                original_add(obj)
+
+        mock_db.add.side_effect = capture_add
+
+        with (
+            patch("api.routes.import_export.require_agent_access", return_value=(MagicMock(), None)),
+            patch("api.routes.import_export._resolve_category_path", return_value=(uuid.uuid4(), False)),
+        ):
+            resp = client_superadmin.post(  # type: ignore[attr-defined]
+                f"/api/v1/agents/{AGENT_ID}/faqs/import",
+                files={"file": ("test.xlsx", xlsx, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["data"]["imported"] == 1
+        ki_items = [obj for obj in added_items if isinstance(obj, KI)]
+        assert len(ki_items) == 1, f"應有 1 個 KnowledgeItem，實際 {len(ki_items)} 個"
+        assert ki_items[0].status == "approved", (
+            f"Superadmin 匯入應建立 approved 狀態，實際 {ki_items[0].status}"
+        )
+
+    def test_editor_import_creates_draft_status(
+        self, client_editor: object, mock_db: MagicMock
+    ) -> None:
+        """Editor 匯入應建立 draft 狀態（非 superadmin 不可跳過審核）。"""
+        from api.database.models import KnowledgeItem as KI
+
+        self._setup_db(mock_db)
+        xlsx = _make_xlsx([["問題草稿測試", "答案草稿測試", "分類W", ""]])
+
+        added_items: list[object] = []
+        mock_db.add.side_effect = lambda obj: added_items.append(obj)
+
+        with (
+            patch("api.routes.import_export.require_agent_access", return_value=(MagicMock(), None)),
+            patch("api.routes.import_export._resolve_category_path", return_value=(uuid.uuid4(), False)),
+        ):
+            resp = client_editor.post(  # type: ignore[attr-defined]
+                f"/api/v1/agents/{AGENT_ID}/faqs/import",
+                files={"file": ("test.xlsx", xlsx, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["data"]["imported"] == 1
+        ki_items = [obj for obj in added_items if isinstance(obj, KI)]
+        assert len(ki_items) == 1
+        assert ki_items[0].status == "draft", (
+            f"Editor 匯入應建立 draft 狀態，實際 {ki_items[0].status}"
+        )
+
     def test_replace_mode_reimports_previously_existing_question(
         self, client_superadmin: object, mock_db: MagicMock
     ) -> None:
