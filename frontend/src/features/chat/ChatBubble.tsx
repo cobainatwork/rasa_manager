@@ -14,7 +14,7 @@ export function ChatBubble({ message }: { message: ChatMessage }) {
 
   return (
     <div className={cn('flex flex-col group', isUser ? 'items-start' : 'items-end')}>
-      <div className={cn('flex', isUser ? 'justify-start' : 'justify-end')}>
+      <div className={cn('flex w-full', isUser ? 'justify-start' : 'justify-end')}>
         <div className={cn(
           'max-w-[70%] px-4 py-2 rounded-2xl text-sm',
           isUser ? 'bg-brand-500 text-white' : 'bg-subtle text-text-primary'
