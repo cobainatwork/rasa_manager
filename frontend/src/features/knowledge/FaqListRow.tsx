@@ -18,8 +18,10 @@ export function FaqListRow({ faq, selected, checked, onSelect, onToggleCheck }: 
     <div
       onClick={() => onSelect(faq.id)}
       className={cn(
-        'flex items-start gap-3 px-4 py-3 border-b border-border-default cursor-pointer text-sm',
-        selected ? 'bg-brand-50' : 'hover:bg-subtle'
+        'flex items-start gap-3 px-4 py-3 border-b border-border-default cursor-pointer text-sm transition-colors',
+        selected
+          ? 'bg-brand-500/[0.10] shadow-[inset_3px_0_0_#007AFF] text-brand-700'
+          : 'hover:bg-black/[0.04]'
       )}
     >
       <Checkbox
