@@ -8,6 +8,7 @@ import {
 import { useAuthStore } from '@/store/useAuthStore'
 import { useAgentContext } from '@/store/useAgentContext'
 import { ROUTE_PATHS } from '@/routes/paths'
+import { AppLogo } from './AppLogo'
 import { Breadcrumb } from './Breadcrumb'
 
 export function Topbar() {
@@ -26,11 +27,8 @@ export function Topbar() {
   return (
     <header className="h-11 bg-[#F2F2F7]/80 backdrop-blur-xl border-b border-black/[0.08] flex items-center px-4 sticky top-0 z-sticky shrink-0">
       {/* Logo */}
-      <div className="flex items-center gap-2 mr-4">
-        <div className="w-6 h-6 rounded-[6px] bg-brand-500 flex items-center justify-center font-semibold text-white text-xs">
-          R
-        </div>
-        <span className="font-medium text-[13px] text-text-primary tracking-tight">Rasa KB</span>
+      <div className="mr-4">
+        <AppLogo />
       </div>
 
       {/* Agent 切換 */}

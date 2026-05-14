@@ -2,20 +2,18 @@ import { useState } from 'react'
 import { ChevronRight, ChevronDown, CheckCircle2, XCircle, Loader2, Clock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { relativeTime, formatDate } from '@/lib/format'
+import { SYNC_STATUS_LABEL } from './syncStatus'
+import type { SyncLog } from '@/api/types'
 import type { SyncLogHistoryItem as Item } from '@/api/types'
 
-const STATUS_LABEL: Record<string, string> = {
-  pending: '等待中', running: '執行中', completed: '完成', failed: '失敗',
-}
-
-const STATUS_BG: Record<string, string> = {
+const STATUS_BG: Record<SyncLog['status'], string> = {
   completed: 'bg-emerald-500/[0.06] border-emerald-500/[0.20]',
   failed:    'bg-red-500/[0.06] border-red-500/[0.20]',
   running:   'bg-brand-500/[0.06] border-brand-500/[0.20]',
   pending:   'bg-surface border-border-default',
 }
 
-function StatusIcon({ status }: { status: string }) {
+function StatusIcon({ status }: { status: SyncLog['status'] }) {
   if (status === 'completed') return <CheckCircle2 className="w-4 h-4 text-emerald-600" strokeWidth={1.5} />
   if (status === 'failed')    return <XCircle      className="w-4 h-4 text-red-600"     strokeWidth={1.5} />
   if (status === 'running')   return <Loader2      className="w-4 h-4 text-brand-500 animate-spin" strokeWidth={1.5} />
@@ -26,7 +24,7 @@ export function SyncHistoryItem({ item }: { item: Item }) {
   const [expanded, setExpanded] = useState(false)
 
   return (
-    <li className={cn('border rounded-lg p-3 transition-colors', STATUS_BG[item.status] ?? 'bg-surface border-border-default')}>
+    <li className={cn('border rounded-lg p-3 transition-colors', STATUS_BG[item.status])}>
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
@@ -36,7 +34,7 @@ export function SyncHistoryItem({ item }: { item: Item }) {
           ? <ChevronDown  className="w-4 h-4 text-text-muted shrink-0" strokeWidth={1.5} />
           : <ChevronRight className="w-4 h-4 text-text-muted shrink-0" strokeWidth={1.5} />}
         <StatusIcon status={item.status} />
-        <span className="font-medium">{STATUS_LABEL[item.status] ?? item.status}</span>
+        <span className="font-medium">{SYNC_STATUS_LABEL[item.status]}</span>
         <span className="text-text-muted">{item.triggered_by_username ?? '系統'}</span>
         <span className="text-text-muted ml-auto">{relativeTime(item.started_at)}</span>
         <span className="text-text-muted">{item.duration_sec != null ? `${item.duration_sec}s` : '—'}</span>

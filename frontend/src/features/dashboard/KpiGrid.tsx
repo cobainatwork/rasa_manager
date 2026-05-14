@@ -1,6 +1,7 @@
 import { FileText, Clock, CheckCircle2, RefreshCw } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { cn } from '@/lib/utils'
 import type { AgentStats } from '@/api/types'
 
 interface KpiGridProps {
@@ -27,7 +28,7 @@ export function KpiGrid({ stats, loading }: KpiGridProps) {
     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
       {KPI_CONFIG.map((kpi) => (
         <Card key={kpi.key} className="p-5">
-          <div className={`w-8 h-8 rounded-lg flex items-center justify-center mb-3 ${kpi.chipClass}`}>
+          <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center mb-3', kpi.chipClass)}>
             <kpi.icon className="w-4 h-4" strokeWidth={1.5} />
           </div>
           <p className="text-2xl font-bold tracking-tight">{stats?.[kpi.key] ?? 0}</p>
