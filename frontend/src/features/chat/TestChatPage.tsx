@@ -16,6 +16,7 @@ export function TestChatPage() {
   // scrollAreaRef 指向 Radix ScrollArea 根元素，用於直接捲動 Viewport
   // 不用 scrollIntoView，避免捲動事件冒泡至 main.overflow-auto
   const scrollAreaRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     const viewport = scrollAreaRef.current?.querySelector<HTMLElement>(
@@ -29,6 +30,8 @@ export function TestChatPage() {
     if (!text || sending) return
     setDraft('')
     await send(text)
+    // 送出後立即將焦點歸還輸入框，使用者無需重新點選
+    textareaRef.current?.focus()
   }
 
   return (
@@ -53,6 +56,7 @@ export function TestChatPage() {
 
         <div className="border-t border-border-default p-3 flex gap-2">
           <Textarea
+            ref={textareaRef}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
