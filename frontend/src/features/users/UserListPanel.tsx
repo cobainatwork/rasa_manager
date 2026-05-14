@@ -62,8 +62,10 @@ export function UserListPanel({ users, loading, selectedId, onSelect, onUserCrea
               type="button"
               onClick={() => onSelect(user.id)}
               className={cn(
-                'w-full flex items-center gap-2 p-2 rounded text-sm cursor-pointer text-left',
-                selectedId === user.id ? 'bg-brand-50 text-brand-700' : 'hover:bg-subtle'
+                'w-full flex items-center gap-2 p-2 rounded text-sm cursor-pointer text-left transition-colors',
+                selectedId === user.id
+                  ? 'bg-brand-500/[0.10] shadow-[inset_3px_0_0_#007AFF] text-brand-700'
+                  : 'hover:bg-black/[0.04]'
               )}
             >
               {user.is_superadmin

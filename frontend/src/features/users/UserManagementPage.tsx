@@ -20,11 +20,12 @@ export function UserManagementPage() {
 
   return (
     <div className="min-h-screen bg-canvas flex flex-col">
-      <header className="bg-surface border-b border-border-default px-6 py-3 flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => navigate('/agents')} aria-label="返回">
+      <header className="h-11 bg-[#F2F2F7]/80 backdrop-blur-xl border-b border-black/[0.08] flex items-center px-4 gap-2 sticky top-0 z-sticky shrink-0">
+        <Button variant="ghost" size="icon" className="w-7 h-7" onClick={() => navigate('/agents')} aria-label="返回">
           <ArrowLeft className="w-4 h-4" strokeWidth={1.5} />
         </Button>
-        <h1 className="font-semibold">使用者管理</h1>
+        <span className="h-4 w-px bg-black/[0.12]" />
+        <h1 className="font-medium text-[13px] text-text-primary">使用者管理</h1>
       </header>
 
       <div className="flex-1 flex overflow-hidden">

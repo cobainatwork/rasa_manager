@@ -131,8 +131,8 @@ export function AgentSettingsPage() {
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="p-8 max-w-3xl">
       {isDirty && (
-        <div className="sticky top-0 z-50 bg-amber-50 border border-amber-200 rounded-md p-3 mb-4 flex justify-between items-center">
-          <span className="text-sm text-amber-900">有未儲存變更</span>
+        <div className="sticky top-0 z-sticky bg-amber-500/[0.10] border border-amber-500/[0.25] rounded-lg p-3 mb-4 flex justify-between items-center">
+          <span className="text-sm text-amber-800 font-medium">有未儲存變更</span>
           <Button type="submit" disabled={isSubmitting} size="sm">儲存</Button>
         </div>
       )}

@@ -35,15 +35,15 @@ export function AgentSelectPage() {
 
   return (
     <div className="min-h-screen bg-canvas">
-      <header className="bg-surface border-b border-border-default px-8 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded bg-brand-500 flex items-center justify-center font-bold text-white">R</div>
-          <span className="font-semibold">Rasa KB</span>
+      <header className="h-11 bg-[#F2F2F7]/80 backdrop-blur-xl border-b border-black/[0.08] flex items-center px-6 justify-between sticky top-0 z-sticky shrink-0">
+        <div className="flex items-center gap-2">
+          <div className="w-6 h-6 rounded-[6px] bg-brand-500 flex items-center justify-center font-semibold text-white text-xs">R</div>
+          <span className="font-medium text-[13px] text-text-primary tracking-tight">Rasa KB</span>
         </div>
-        <div className="flex items-center gap-3">
-          <span className="text-sm text-text-secondary">{username}</span>
-          {isSuper && <Button variant="outline" size="sm" onClick={() => navigate(ROUTE_PATHS.adminUsers)}>使用者管理</Button>}
-          <Button variant="ghost" size="sm" onClick={handleLogout}>登出</Button>
+        <div className="flex items-center gap-2">
+          <span className="text-[13px] text-text-secondary">{username}</span>
+          {isSuper && <Button variant="outline" size="sm" className="h-7 text-[13px]" onClick={() => navigate(ROUTE_PATHS.adminUsers)}>使用者管理</Button>}
+          <Button variant="ghost" size="sm" className="h-7 text-[13px]" onClick={handleLogout}>登出</Button>
         </div>
       </header>
 

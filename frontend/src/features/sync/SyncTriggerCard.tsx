@@ -28,7 +28,7 @@ export function SyncTriggerCard({ triggering, activeLog, onTrigger }: Props) {
       </Button>
 
       {inProgress && (
-        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded animate-pulse text-sm text-blue-900">
+        <div className="mt-4 p-3 bg-brand-500/[0.08] border border-brand-500/[0.20] rounded-lg text-sm text-brand-700">
           任務 {activeLog!.id.slice(0, 8)}... 進行中（{STATUS_LABEL[activeLog!.status]}）
         </div>
       )}
