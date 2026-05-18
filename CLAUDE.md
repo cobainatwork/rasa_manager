@@ -79,7 +79,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 |------|---------|
 | [A1] Cookie SameSite=Strict 澄清 + CORS 完整配置 | §15.4 |
 | [A2] CSRF 防護說明（SameSite=Strict 已覆蓋） | §15.4 |
-| [A3] Vite proxy 目標 `http://localhost:8000` | §8.4 |
+| [A3] Vite proxy 目標 `http://localhost:8050` | §8.4 |
 | [A4] Compose `env_file: .env` 注入機制 | §10.5 |
 | [B1] `{agent_name}` 路徑改用 `txt_output_path`（推薦 UUID 子目錄） | §1.2、§10.2、§12.3、§15.6 |
 | [B2] Refresh Token Rotation + Redis `jti` 黑名單 | §6.1、§6.2、§6.3 |
@@ -119,7 +119,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### 前端（於 `D:\mini_test\frontend\`）
 
-- 開發：`npm run dev`（vite dev server，proxy `/api` → `http://localhost:8000`）
+- 開發：`npm run dev`（vite dev server，proxy `/api` → `http://localhost:8050`）
 - 測試：`npm test`（vitest，含 a11y smoke）
 - Lint：`npm run lint`
 - 型別檢查：`npx tsc --noEmit`

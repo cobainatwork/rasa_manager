@@ -46,7 +46,7 @@ alembic upgrade head
 alembic revision --autogenerate -m "describe change"
 
 # 啟動開發用 server
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+uvicorn main:app --host 0.0.0.0 --port 8050 --reload
 ```
 
 ## 專案結構

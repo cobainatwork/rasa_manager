@@ -23,7 +23,7 @@ React 18 + Vite 5 + TypeScript 5 的單頁應用，透過 `/api` proxy 連接後
 # 安裝依賴
 npm install
 
-# 啟動 dev server（proxy /api → http://localhost:8000）
+# 啟動 dev server（proxy /api → http://localhost:8050）
 npm run dev
 
 # 執行單元測試（watch mode）
