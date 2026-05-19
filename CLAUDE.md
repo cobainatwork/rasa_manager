@@ -144,3 +144,40 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 3. 中文排版遵循台灣繁體規範：中英文 / 半形數字之間保留半形空格；統一使用全形中文標點；不混用簡體字；技術名詞遵循官方拼寫（FastAPI、TypeScript、PostgreSQL）。
 4. 規格書 §20 為「v0.2 廢止宣告」，不可在新內容中復用 v0.2 命名（如 `ingest_command`、`knowledge_items_history` 單數形）。
 5. 開始第一階段實作前，建議先 `git init` 並建立 `.gitignore`，將 `.env`、`node_modules/`、`__pycache__/`、`data/volumes/` 加入排除。
+
+---
+
+## 九、容器化開發守則（Container Operations Rules）
+
+**這些規則違反會導致 production 靜默失敗，已有實際案例。**
+
+### 9.1 修改 COPY 進 Image 的檔案 → 必須 `--build`
+
+下列任何檔案修改後，必須以 `docker compose up --build -d <service>` 重建，否則容器執行的仍是舊版：
+
+| 檔案 | 影響服務 |
+|------|---------|
+| `backend/entrypoint.sh` | `backend`、`celery_worker` |
+| `frontend/nginx.conf` | `frontend` |
+| `backend/Dockerfile` | `backend`、`celery_worker` |
+| `frontend/Dockerfile` | `frontend` |
+| `backend/requirements.txt` | `backend`、`celery_worker` |
+
+**錯誤症狀對照：**
+- Backend 仍執行舊 port → `entrypoint.sh` 未重建
+- Nginx `upstream: "http://backend:8000"` 登入 502 → `nginx.conf` 未重建
+
+### 9.2 Port 設定的正確做法
+
+`entrypoint.sh` 與 Dockerfile `HEALTHCHECK` 使用 env var 形式 `${APP_PORT:-8050}`。  
+更改 port 只需修改 `.env` 的 `APP_PORT=`，再執行 `docker compose up --build -d`。
+
+### 9.3 驗證容器已使用新設定
+
+```bash
+# 確認 backend 使用正確 port
+docker compose logs backend | grep "Uvicorn running"
+
+# 確認 nginx proxy 目標正確
+docker compose exec frontend cat /etc/nginx/conf.d/default.conf | grep proxy_pass
+```
