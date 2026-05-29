@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
-import { Send, Trash2 } from 'lucide-react'
+import { Send, Trash2, RotateCcw } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -11,7 +11,7 @@ import { TypingIndicator } from './TypingIndicator'
 
 export function TestChatPage() {
   const { id } = useParams<{ id: string }>()
-  const { messages, sending, resetting, send, clear } = useChat(id)
+  const { messages, sending, resetting, restarting, send, clear, restart } = useChat(id)
   const [draft, setDraft] = useState('')
   // scrollAreaRef 指向 Radix ScrollArea 根元素，用於直接捲動 Viewport
   // 不用 scrollIntoView，避免捲動事件冒泡至 main.overflow-auto
@@ -40,15 +40,26 @@ export function TestChatPage() {
     <div className="p-8 max-w-3xl h-full flex flex-col">
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">對話測試</h1>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => void clear()}
-          disabled={resetting || sending}
-        >
-          <Trash2 className="w-4 h-4 mr-1" strokeWidth={1.5} />
-          {resetting ? '清除中...' : '清除對話'}
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void restart()}
+            disabled={restarting || resetting || sending}
+          >
+            <RotateCcw className="w-4 h-4 mr-1" strokeWidth={1.5} />
+            {restarting ? '重新中...' : '重新對話'}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void clear()}
+            disabled={resetting || restarting || sending}
+          >
+            <Trash2 className="w-4 h-4 mr-1" strokeWidth={1.5} />
+            {resetting ? '清除中...' : '清除對話'}
+          </Button>
+        </div>
       </div>
 
       <Card className="flex-1 flex flex-col overflow-hidden">

@@ -175,4 +175,112 @@ describe('useChat', () => {
       expect(result.current.resetting).toBe(false)
     })
   })
+
+  describe('restart', () => {
+    it('成功時送出 message:「再見」到 chat/test 並清空訊息', async () => {
+      let sentBody: { message?: string } | null = null
+      server.use(
+        http.post('/api/v1/agents/:id/chat/test', async ({ request }) => {
+          sentBody = (await request.json()) as { message?: string }
+          return HttpResponse.json({ success: true, data: [{ text: '再見，下次見' }] })
+        }),
+      )
+
+      const { result } = renderHook(() => useChat(AGENT_ID))
+
+      await act(async () => {
+        await result.current.send('你好')
+      })
+      expect(result.current.messages.length).toBeGreaterThan(0)
+
+      await act(async () => {
+        await result.current.restart()
+      })
+
+      expect(sentBody).toEqual({ message: '再見' })
+      expect(result.current.messages).toHaveLength(0)
+      expect(result.current.restarting).toBe(false)
+    })
+
+    it('restart 失敗時保留訊息並 toast.error', async () => {
+      const { toast } = await import('sonner')
+      // 第一次 send 用預設 handler（成功），第二次 restart 才回 502
+      let callCount = 0
+      server.use(
+        http.post('/api/v1/agents/:id/chat/test', () => {
+          callCount += 1
+          if (callCount === 1) {
+            return HttpResponse.json({ success: true, data: [{ text: '測試回覆' }] })
+          }
+          return HttpResponse.json(
+            { detail: { code: 'BAD_GATEWAY', message: 'Rasa 連線失敗' } },
+            { status: 502 },
+          )
+        }),
+      )
+
+      const { result } = renderHook(() => useChat(AGENT_ID))
+
+      await act(async () => {
+        await result.current.send('你好')
+      })
+      const lenBefore = result.current.messages.length
+      expect(lenBefore).toBeGreaterThan(0)
+
+      await act(async () => {
+        await result.current.restart()
+      })
+
+      expect(result.current.messages).toHaveLength(lenBefore)
+      expect(result.current.restarting).toBe(false)
+      expect(toast.error).toHaveBeenCalled()
+    })
+
+    it('restart 執行期間 restarting 為 true，完成後為 false', async () => {
+      let resolveRestart!: () => void
+      server.use(
+        http.post('/api/v1/agents/:id/chat/test', async () => {
+          await new Promise<void>((r) => {
+            resolveRestart = r
+          })
+          return HttpResponse.json({ success: true, data: [] })
+        }),
+      )
+
+      const { result } = renderHook(() => useChat(AGENT_ID))
+
+      let restartPromise!: Promise<void>
+      act(() => {
+        restartPromise = result.current.restart()
+      })
+
+      await waitFor(() => expect(result.current.restarting).toBe(true))
+
+      resolveRestart()
+      await act(async () => {
+        await restartPromise
+      })
+
+      expect(result.current.restarting).toBe(false)
+    })
+
+    it('agentId 為 undefined 時不呼叫 chat/test', async () => {
+      let called = false
+      server.use(
+        http.post('/api/v1/agents/:id/chat/test', () => {
+          called = true
+          return HttpResponse.json({ success: true, data: [] })
+        }),
+      )
+
+      const { result } = renderHook(() => useChat(undefined))
+
+      await act(async () => {
+        await result.current.restart()
+      })
+
+      expect(called).toBe(false)
+      expect(result.current.restarting).toBe(false)
+    })
+  })
 })

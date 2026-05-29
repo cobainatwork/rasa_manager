@@ -14,6 +14,7 @@ export function useChat(agentId: string | undefined) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [sending, setSending] = useState(false)
   const [resetting, setResetting] = useState(false)
+  const [restarting, setRestarting] = useState(false)
 
   async function send(text: string) {
     if (!agentId || !text.trim()) return
@@ -57,5 +58,21 @@ export function useChat(agentId: string | undefined) {
       setResetting(false)
     }
   }
-  return { messages, sending, resetting, send, clear }
+
+  async function restart() {
+    // 「重新對話」走 Rasa 自然告別 flow：送「再見」讓 Rasa 自行結束 session，
+    // 再清前端訊息。比 clear() 軟性，依賴 Rasa flows 設計能否觸發 hangup_flow。
+    if (!agentId || restarting) return
+    setRestarting(true)
+    try {
+      await apiClient.post(`/api/v1/agents/${agentId}/chat/test`, { message: '再見' })
+      setMessages([])
+    } catch (err) {
+      toast.error(extractErrorMessage(err))
+    } finally {
+      setRestarting(false)
+    }
+  }
+
+  return { messages, sending, resetting, restarting, send, clear, restart }
 }
