@@ -13,6 +13,7 @@ export interface ChatMessage {
 export function useChat(agentId: string | undefined) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [sending, setSending] = useState(false)
+  const [resetting, setResetting] = useState(false)
 
   async function send(text: string) {
     if (!agentId || !text.trim()) return
@@ -42,6 +43,19 @@ export function useChat(agentId: string | undefined) {
     }
   }
 
-  function clear() { setMessages([]) }
-  return { messages, sending, send, clear }
+  async function clear() {
+    // 「清除對話」不只清前端 state，還要同步 reset Rasa conversation tracker，
+    // 避免 Rasa Pro flow 卡在某個 slot 後續訊息全被吞掉。
+    if (!agentId || resetting) return
+    setResetting(true)
+    try {
+      await apiClient.post(`/api/v1/agents/${agentId}/chat/reset`)
+      setMessages([])
+    } catch (err) {
+      toast.error(extractErrorMessage(err))
+    } finally {
+      setResetting(false)
+    }
+  }
+  return { messages, sending, resetting, send, clear }
 }

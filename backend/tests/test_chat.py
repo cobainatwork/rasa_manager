@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from tests.conftest import AGENT_ID
 
 CHAT_URL = f"/api/v1/agents/{AGENT_ID}/chat/test"
+RESET_URL = f"/api/v1/agents/{AGENT_ID}/chat/reset"
 CHAT_PAYLOAD = {"message": "你好"}
 
 
@@ -257,6 +258,141 @@ class TestChatEndpoint:
         mock_db.query.side_effect = se2
         resp = client_editor.post(CHAT_URL, json=CHAT_PAYLOAD)
         assert resp.status_code == 422  # 有 agent access，但 rasa_url 未設定
+
+
+# ── /chat/reset endpoint ────────────────────────────────────────────────────
+
+
+class TestChatResetEndpoint:
+    """POST /chat/reset：PUT empty events 至 Rasa，重置 conversation tracker。"""
+
+    def test_success_returns_200(
+        self, client_superadmin: TestClient, mock_db: MagicMock, _agent_mock
+    ) -> None:
+        mock_db.query.side_effect = _make_se(
+            _agent_mock(rasa_rest_url="http://rasa:5005/webhooks/myio/webhook")
+        )
+        fake_response = MagicMock()
+        fake_response.raise_for_status.return_value = None
+
+        with patch("httpx.Client") as mock_client_cls:
+            mock_client = MagicMock()
+            mock_client.__enter__ = MagicMock(return_value=mock_client)
+            mock_client.__exit__ = MagicMock(return_value=False)
+            mock_client.put.return_value = fake_response
+            mock_client_cls.return_value = mock_client
+
+            resp = client_superadmin.post(RESET_URL)
+
+            # 驗證實際呼叫 Rasa 的 URL 由 webhook URL 推導出 base + tracker/events
+            called_url = mock_client.put.call_args[0][0]
+            assert called_url.startswith("http://rasa:5005/conversations/")
+            assert called_url.endswith("/tracker/events")
+            # PUT body 必須是空 list
+            assert mock_client.put.call_args.kwargs["json"] == []
+
+        assert resp.status_code == 200
+        assert resp.json() == {"success": True}
+
+    def test_no_rasa_url_returns_422(
+        self, client_superadmin: TestClient, mock_db: MagicMock, _agent_mock
+    ) -> None:
+        mock_db.query.side_effect = _make_se(_agent_mock(rasa_rest_url=None))
+        resp = client_superadmin.post(RESET_URL)
+        assert resp.status_code == 422
+        assert resp.json()["detail"]["code"] == "UNPROCESSABLE"
+
+    def test_malformed_rasa_url_returns_422(
+        self, client_superadmin: TestClient, mock_db: MagicMock, _agent_mock
+    ) -> None:
+        """rasa_rest_url 缺 scheme/netloc（例如純 path）→ 推導 base 失敗 → 422。"""
+        mock_db.query.side_effect = _make_se(
+            _agent_mock(rasa_rest_url="not-a-valid-url")
+        )
+        resp = client_superadmin.post(RESET_URL)
+        assert resp.status_code == 422
+        assert resp.json()["detail"]["code"] == "UNPROCESSABLE"
+
+    def test_timeout_returns_504(
+        self, client_superadmin: TestClient, mock_db: MagicMock, _agent_mock
+    ) -> None:
+        mock_db.query.side_effect = _make_se(
+            _agent_mock(rasa_rest_url="http://rasa:5005/webhooks/myio/webhook")
+        )
+        with patch("httpx.Client") as mock_client_cls:
+            mock_client = MagicMock()
+            mock_client.__enter__ = MagicMock(return_value=mock_client)
+            mock_client.__exit__ = MagicMock(return_value=False)
+            mock_client.put.side_effect = httpx.TimeoutException("timeout")
+            mock_client_cls.return_value = mock_client
+
+            resp = client_superadmin.post(RESET_URL)
+
+        assert resp.status_code == 504
+        assert resp.json()["detail"]["code"] == "TIMEOUT"
+
+    def test_http_status_error_returns_502(
+        self, client_superadmin: TestClient, mock_db: MagicMock, _agent_mock
+    ) -> None:
+        mock_db.query.side_effect = _make_se(
+            _agent_mock(rasa_rest_url="http://rasa:5005/webhooks/myio/webhook")
+        )
+        with patch("httpx.Client") as mock_client_cls:
+            mock_client = MagicMock()
+            mock_client.__enter__ = MagicMock(return_value=mock_client)
+            mock_client.__exit__ = MagicMock(return_value=False)
+            fake_resp = MagicMock()
+            fake_resp.status_code = 500
+            mock_client.put.side_effect = httpx.HTTPStatusError(
+                "500", request=MagicMock(), response=fake_resp
+            )
+            mock_client_cls.return_value = mock_client
+
+            resp = client_superadmin.post(RESET_URL)
+
+        assert resp.status_code == 502
+        assert resp.json()["detail"]["code"] == "BAD_GATEWAY"
+
+    def test_connection_error_returns_502_no_internal_leak(
+        self, client_superadmin: TestClient, mock_db: MagicMock, _agent_mock
+    ) -> None:
+        """RequestError 訊息不可洩漏內網位址（與 chat/test 同安全要求）。"""
+        mock_db.query.side_effect = _make_se(
+            _agent_mock(rasa_rest_url="http://internal-rasa.lan:5555/webhooks/m/webhook")
+        )
+        secret = "internal-rasa.lan:5555 refused"
+        with patch("httpx.Client") as mock_client_cls:
+            mock_client = MagicMock()
+            mock_client.__enter__ = MagicMock(return_value=mock_client)
+            mock_client.__exit__ = MagicMock(return_value=False)
+            mock_client.put.side_effect = httpx.ConnectError(secret)
+            mock_client_cls.return_value = mock_client
+
+            resp = client_superadmin.post(RESET_URL)
+
+        assert resp.status_code == 502
+        msg = resp.json()["detail"]["message"]
+        assert "internal-rasa.lan" not in msg
+        assert secret not in msg
+
+    def test_unauthenticated_returns_401(self, client_no_auth: TestClient) -> None:
+        resp = client_no_auth.post(RESET_URL)
+        assert resp.status_code == 401
+
+    def test_invalid_agent_id_returns_404(
+        self, client_superadmin: TestClient, mock_db: MagicMock
+    ) -> None:
+        def se(*args: object) -> MagicMock:
+            q = MagicMock()
+            q.filter.return_value.first.return_value = None
+            return q
+
+        mock_db.query.side_effect = se
+        invalid_id = "00000000-0000-0000-0000-0000000099ff"
+        resp = client_superadmin.post(
+            f"/api/v1/agents/{invalid_id}/chat/reset"
+        )
+        assert resp.status_code == 404
 
 
 # ── Regression: B8 (response must not leak internal exception details) ──────

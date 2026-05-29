@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import uuid
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 import structlog
@@ -100,3 +101,80 @@ def test_chat(
         )
 
     return {"success": True, "data": messages}
+
+
+@router.post("/reset")
+def reset_chat_tracker(
+    agent_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    重置 Rasa conversation tracker：PUT 空 events 至 Rasa REST API。
+
+    用途：前端「清除對話」按鈕，避免 Rasa Pro flow 卡在某個 slot/state 後
+    後續訊息全被吞掉（symptom：對話測試突然沒回覆）。
+    """
+    agent, _ = require_agent_access(agent_id, current_user, db)
+
+    if not agent.rasa_rest_url:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "UNPROCESSABLE", "message": "此 Agent 未設定 Rasa REST URL"},
+        )
+
+    # 從完整 webhook URL（如 http://host:5005/webhooks/myio/webhook）推導 base URL
+    parsed = urlparse(str(agent.rasa_rest_url))
+    if not parsed.scheme or not parsed.netloc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "UNPROCESSABLE", "message": "Rasa REST URL 格式不正確"},
+        )
+
+    sender = f"{agent_id}_{current_user.id}"
+    events_url = f"{parsed.scheme}://{parsed.netloc}/conversations/{sender}/tracker/events"
+
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            resp = client.put(events_url, json=[])
+            resp.raise_for_status()
+    except httpx.TimeoutException as exc:
+        logger.warning(
+            "rasa_reset_timeout",
+            agent_id=str(agent_id),
+            url=events_url,
+            error=str(exc),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail={"code": "TIMEOUT", "message": "Rasa 服務回應逾時"},
+        )
+    except httpx.HTTPStatusError as exc:
+        logger.warning(
+            "rasa_reset_http_error",
+            agent_id=str(agent_id),
+            url=events_url,
+            status_code=exc.response.status_code,
+            error=str(exc),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "code": "BAD_GATEWAY",
+                "message": f"Rasa 服務回應 HTTP {exc.response.status_code}",
+            },
+        )
+    except httpx.RequestError as exc:
+        logger.warning(
+            "rasa_reset_request_error",
+            agent_id=str(agent_id),
+            url=events_url,
+            error_type=type(exc).__name__,
+            error=str(exc),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={"code": "BAD_GATEWAY", "message": "Rasa 服務連線失敗"},
+        )
+
+    return {"success": True}
