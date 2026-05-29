@@ -60,12 +60,16 @@ export function useChat(agentId: string | undefined) {
   }
 
   async function restart() {
-    // 「重新對話」走 Rasa 自然告別 flow：送「再見」讓 Rasa 自行結束 session，
-    // 再清前端訊息。比 clear() 軟性，依賴 Rasa flows 設計能否觸發 hangup_flow。
+    // 「重新對話」二段：
+    //   1) 送「再見」讓 Rasa 跑 hangup_flow（會回 ##end_call## 並把 conversation
+    //      terminate，後續訊息會被吞掉、回 messages:[]）
+    //   2) 必須緊接 PUT 空 events 強制 reset tracker，否則使用者下次對話永遠卡死
+    // 為何不只 reset？保留「再見」可讓 Rasa audit / session_log 看到自然告別訊號。
     if (!agentId || restarting) return
     setRestarting(true)
     try {
       await apiClient.post(`/api/v1/agents/${agentId}/chat/test`, { message: '再見' })
+      await apiClient.post(`/api/v1/agents/${agentId}/chat/reset`)
       setMessages([])
     } catch (err) {
       toast.error(extractErrorMessage(err))

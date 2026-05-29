@@ -177,12 +177,18 @@ describe('useChat', () => {
   })
 
   describe('restart', () => {
-    it('成功時送出 message:「再見」到 chat/test 並清空訊息', async () => {
-      let sentBody: { message?: string } | null = null
+    it('成功時送「再見」到 chat/test 並接著呼叫 chat/reset 才清空訊息', async () => {
+      const calls: string[] = []
+      let farewellBody: { message?: string } | null = null
       server.use(
         http.post('/api/v1/agents/:id/chat/test', async ({ request }) => {
-          sentBody = (await request.json()) as { message?: string }
-          return HttpResponse.json({ success: true, data: [{ text: '再見，下次見' }] })
+          farewellBody = (await request.json()) as { message?: string }
+          calls.push('chat/test')
+          return HttpResponse.json({ success: true, data: [{ text: '##end_call##' }] })
+        }),
+        http.post('/api/v1/agents/:id/chat/reset', () => {
+          calls.push('chat/reset')
+          return HttpResponse.json({ success: true })
         }),
       )
 
@@ -191,15 +197,50 @@ describe('useChat', () => {
       await act(async () => {
         await result.current.send('你好')
       })
-      expect(result.current.messages.length).toBeGreaterThan(0)
+      const lenAfterSend = result.current.messages.length
+      expect(lenAfterSend).toBeGreaterThan(0)
+      // 重置 calls 排除 send 的 chat/test
+      calls.length = 0
 
       await act(async () => {
         await result.current.restart()
       })
 
-      expect(sentBody).toEqual({ message: '再見' })
+      // 驗證二段呼叫順序：先「再見」、後 reset
+      expect(calls).toEqual(['chat/test', 'chat/reset'])
+      expect(farewellBody).toEqual({ message: '再見' })
       expect(result.current.messages).toHaveLength(0)
       expect(result.current.restarting).toBe(false)
+    })
+
+    it('chat/test 成功但 chat/reset 失敗時保留訊息並 toast.error', async () => {
+      const { toast } = await import('sonner')
+      server.use(
+        http.post('/api/v1/agents/:id/chat/test', () =>
+          HttpResponse.json({ success: true, data: [{ text: '##end_call##' }] }),
+        ),
+        http.post('/api/v1/agents/:id/chat/reset', () =>
+          HttpResponse.json(
+            { detail: { code: 'BAD_GATEWAY', message: 'reset 失敗' } },
+            { status: 502 },
+          ),
+        ),
+      )
+
+      const { result } = renderHook(() => useChat(AGENT_ID))
+
+      await act(async () => {
+        await result.current.send('你好')
+      })
+      const lenBefore = result.current.messages.length
+
+      await act(async () => {
+        await result.current.restart()
+      })
+
+      // 任一段失敗都應保留 messages，避免「清空後 Rasa 仍卡死」的不對稱狀態
+      expect(result.current.messages).toHaveLength(lenBefore)
+      expect(toast.error).toHaveBeenCalled()
     })
 
     it('restart 失敗時保留訊息並 toast.error', async () => {
