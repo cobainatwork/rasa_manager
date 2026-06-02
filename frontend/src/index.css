@@ -74,3 +74,33 @@
     scrollbar-color: theme('colors.border-strong') transparent;
   }
 }
+
+/* 全域 macOS 風 scrollbar：細、半透明、hover 才顯著
+   避免廠商預設 16px 灰條的廉價感（特別在 Windows 上） */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(15, 23, 42, 0.15);
+  border-radius: 8px;
+  background-clip: padding-box;
+  border: 2px solid transparent;
+  transition: background-color 200ms ease-out;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(15, 23, 42, 0.3);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+/* Firefox（無法自定 thumb radius / border，僅控制粗細與顏色） */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(15, 23, 42, 0.2) transparent;
+}

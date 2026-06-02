@@ -19,9 +19,11 @@ const config: Config = {
         canvas: '#F2F2F7',        // macOS system background
         surface: '#FFFFFF',
         subtle: '#E5E5EA',        // macOS secondary fill
-        'text-primary': '#1C1C1E',
-        'text-secondary': '#3C3C43',
-        'text-muted': '#636366',  // macOS tertiary label
+        // 文字色軟化：從 macOS 純灰調轉向 slate 冷調（含 hint of blue），
+        // 大面積閱讀更柔和、整體質感更現代（避免「死黑 + 中性灰」的廉價感）。
+        'text-primary': '#11182C',    // 介於 slate-900 與 macOS label 之間
+        'text-secondary': '#374151',  // slate-700
+        'text-muted': '#64748B',      // slate-500（原 macOS tertiary 偏暖）
         'border-default': '#D1D1D6',  // macOS separator
         'border-strong': '#AEAEB2',
         // shadcn 必要色票（對應 index.css 的 CSS 變數）
@@ -77,11 +79,13 @@ const config: Config = {
         tooltip: '60',
       },
       boxShadow: {
-        xs: '0 1px 2px rgba(0,0,0,0.06)',
-        sm: '0 1px 4px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04)',
-        md: '0 4px 12px rgba(0,0,0,0.10), 0 1px 3px rgba(0,0,0,0.06)',
-        lg: '0 8px 28px rgba(0,0,0,0.12), 0 3px 8px rgba(0,0,0,0.06)',
-        window: '0 20px 60px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.08)',
+        // 雙層光源陰影（ambient + key light），用 slate-900 rgb(15,23,42)
+        // 取代純黑 — 帶輕微冷色，避免「廉價硬黑」陰影，整體更高級。
+        xs: '0 1px 1px rgba(15,23,42,0.04), 0 0 1px rgba(15,23,42,0.04)',
+        sm: '0 1px 2px rgba(15,23,42,0.04), 0 2px 6px rgba(15,23,42,0.04)',
+        md: '0 2px 4px rgba(15,23,42,0.04), 0 8px 20px rgba(15,23,42,0.06)',
+        lg: '0 4px 8px rgba(15,23,42,0.04), 0 16px 40px rgba(15,23,42,0.08)',
+        window: '0 8px 24px rgba(15,23,42,0.06), 0 32px 72px rgba(15,23,42,0.12)',
       },
       keyframes: {
         'accordion-down': { from: { height: '0' }, to: { height: 'var(--radix-accordion-content-height)' } },
