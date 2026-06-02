@@ -75,121 +75,82 @@ describe('useChat', () => {
   })
 
   describe('clear', () => {
-    it('成功時呼叫 chat/reset 端點並清空訊息', async () => {
-      let resetUrl: string | null = null
+    it('清空訊息並換新 sender — 下次 send 應帶新 sender', async () => {
+      // 攔截兩次 send 的 sender 值
+      const senders: string[] = []
       server.use(
-        http.post('/api/v1/agents/:id/chat/reset', ({ request }) => {
-          resetUrl = new URL(request.url).pathname
-          return HttpResponse.json({ success: true })
+        http.post('/api/v1/agents/:id/chat/test', async ({ request }) => {
+          const body = (await request.json()) as { sender?: string }
+          if (body.sender) senders.push(body.sender)
+          return HttpResponse.json({ success: true, data: [{ text: 'ok' }] })
         }),
       )
 
       const { result } = renderHook(() => useChat(AGENT_ID))
 
       await act(async () => {
-        await result.current.send('你好')
+        await result.current.send('第一句')
       })
       expect(result.current.messages.length).toBeGreaterThan(0)
+      const senderBefore = senders[0]
 
       await act(async () => {
         await result.current.clear()
       })
 
-      expect(resetUrl).toBe(`/api/v1/agents/${AGENT_ID}/chat/reset`)
       expect(result.current.messages).toHaveLength(0)
       expect(result.current.resetting).toBe(false)
+
+      // clear 後再 send 應使用新 sender
+      await act(async () => {
+        await result.current.send('第二句')
+      })
+      const senderAfter = senders[1]
+      expect(senderBefore).toBeTruthy()
+      expect(senderAfter).toBeTruthy()
+      expect(senderAfter).not.toEqual(senderBefore)
     })
 
-    it('reset 失敗時保留訊息並 toast.error', async () => {
-      const { toast } = await import('sonner')
+    it('clear 不打任何 chat/reset 端點（per-session sender 是隔離正解）', async () => {
+      let resetCalled = false
       server.use(
-        http.post('/api/v1/agents/:id/chat/reset', () =>
-          HttpResponse.json(
-            { detail: { code: 'BAD_GATEWAY', message: '重置失敗' } },
-            { status: 502 },
-          ),
-        ),
+        http.post('/api/v1/agents/:id/chat/reset', () => {
+          resetCalled = true
+          return HttpResponse.json({ success: true })
+        }),
       )
 
       const { result } = renderHook(() => useChat(AGENT_ID))
-
       await act(async () => {
         await result.current.send('你好')
       })
-      const lenBefore = result.current.messages.length
-      expect(lenBefore).toBeGreaterThan(0)
 
       await act(async () => {
         await result.current.clear()
       })
 
-      expect(result.current.messages).toHaveLength(lenBefore)
-      expect(result.current.resetting).toBe(false)
-      expect(toast.error).toHaveBeenCalled()
+      expect(resetCalled).toBe(false)
     })
 
-    it('clear 執行期間 resetting 為 true，完成後為 false', async () => {
-      let resolveReset!: () => void
-      server.use(
-        http.post('/api/v1/agents/:id/chat/reset', async () => {
-          await new Promise<void>((r) => {
-            resolveReset = r
-          })
-          return HttpResponse.json({ success: true })
-        }),
-      )
-
-      const { result } = renderHook(() => useChat(AGENT_ID))
-
-      let clearPromise!: Promise<void>
-      act(() => {
-        clearPromise = result.current.clear()
-      })
-
-      await waitFor(() => expect(result.current.resetting).toBe(true))
-
-      resolveReset()
-      await act(async () => {
-        await clearPromise
-      })
-
-      expect(result.current.resetting).toBe(false)
-    })
-
-    it('agentId 為 undefined 時不呼叫 reset', async () => {
-      let called = false
-      server.use(
-        http.post('/api/v1/agents/:id/chat/reset', () => {
-          called = true
-          return HttpResponse.json({ success: true })
-        }),
-      )
-
+    it('agentId 為 undefined 時 clear 不改 sender 不清訊息', async () => {
       const { result } = renderHook(() => useChat(undefined))
 
       await act(async () => {
         await result.current.clear()
       })
 
-      expect(called).toBe(false)
       expect(result.current.resetting).toBe(false)
     })
   })
 
   describe('restart', () => {
-    it('成功時送「再見」到 chat/test 並接著呼叫 chat/reset 才清空訊息', async () => {
-      const calls: string[] = []
-      let farewellBody: { message?: string } | null = null
+    it('用舊 sender 送「再見」，然後換新 sender 並清空訊息', async () => {
+      const requests: { sender?: string; message?: string }[] = []
       server.use(
         http.post('/api/v1/agents/:id/chat/test', async ({ request }) => {
-          farewellBody = (await request.json()) as { message?: string }
-          calls.push('chat/test')
+          requests.push((await request.json()) as { sender?: string; message?: string })
           return HttpResponse.json({ success: true, data: [{ text: '##end_call##' }] })
         }),
-        http.post('/api/v1/agents/:id/chat/reset', () => {
-          calls.push('chat/reset')
-          return HttpResponse.json({ success: true })
-        }),
       )
 
       const { result } = renderHook(() => useChat(AGENT_ID))
@@ -197,50 +158,28 @@ describe('useChat', () => {
       await act(async () => {
         await result.current.send('你好')
       })
-      const lenAfterSend = result.current.messages.length
-      expect(lenAfterSend).toBeGreaterThan(0)
-      // 重置 calls 排除 send 的 chat/test
-      calls.length = 0
+      const senderBefore = requests[0].sender
+      expect(senderBefore).toBeTruthy()
+      expect(result.current.messages.length).toBeGreaterThan(0)
 
       await act(async () => {
         await result.current.restart()
       })
 
-      // 驗證二段呼叫順序：先「再見」、後 reset
-      expect(calls).toEqual(['chat/test', 'chat/reset'])
-      expect(farewellBody).toEqual({ message: '再見' })
+      // 第二筆（restart 內送的「再見」）應用舊 sender
+      const farewellReq = requests[1]
+      expect(farewellReq.sender).toEqual(senderBefore)
+      expect(farewellReq.message).toEqual('再見')
       expect(result.current.messages).toHaveLength(0)
       expect(result.current.restarting).toBe(false)
-    })
 
-    it('chat/test 成功但 chat/reset 失敗時保留訊息並 toast.error', async () => {
-      const { toast } = await import('sonner')
-      server.use(
-        http.post('/api/v1/agents/:id/chat/test', () =>
-          HttpResponse.json({ success: true, data: [{ text: '##end_call##' }] }),
-        ),
-        http.post('/api/v1/agents/:id/chat/reset', () =>
-          HttpResponse.json(
-            { detail: { code: 'BAD_GATEWAY', message: 'reset 失敗' } },
-            { status: 502 },
-          ),
-        ),
-      )
-
-      const { result } = renderHook(() => useChat(AGENT_ID))
-
+      // restart 後再 send 應用「新」 sender（與 senderBefore 不同）
       await act(async () => {
-        await result.current.send('你好')
+        await result.current.send('再對話')
       })
-      const lenBefore = result.current.messages.length
-
-      await act(async () => {
-        await result.current.restart()
-      })
-
-      // 任一段失敗都應保留 messages，避免「清空後 Rasa 仍卡死」的不對稱狀態
-      expect(result.current.messages).toHaveLength(lenBefore)
-      expect(toast.error).toHaveBeenCalled()
+      const senderAfter = requests[2].sender
+      expect(senderAfter).toBeTruthy()
+      expect(senderAfter).not.toEqual(senderBefore)
     })
 
     it('restart 失敗時保留訊息並 toast.error', async () => {

@@ -38,7 +38,10 @@ def test_chat(
             detail={"code": "UNPROCESSABLE", "message": "此 Agent 未設定 Rasa REST URL"},
         )
 
-    sender = f"{agent_id}_{current_user.id}"
+    # sender：前端產生的 per-session UUID 優先（對齊 Rasa OpenAPI spec），
+    # 未帶則 fallback 到 {agent_id}_{user_id}（向後相容，無 nonce 等同 v1 行為）。
+    # 換 sender 是 conversation 隔離的正解 — Rasa 用 sender_id 當 tracker key。
+    sender = body.sender or f"{agent_id}_{current_user.id}"
     # rasa_rest_url 儲存完整 webhook URL（例如 http://host:5555/webhooks/myio/webhook）
     # 直接使用，不再拼接路徑
     webhook_url = str(agent.rasa_rest_url).rstrip("/")

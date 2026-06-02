@@ -150,3 +150,7 @@ class RollbackRequest(BaseModel):
 # ── Sync Schemas ──────────────────────────────────────────────────────────
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1)
+    # sender 由前端產生（per-session UUID），透過 backend 原樣 forward 給 Rasa。
+    # 對齊 Rasa OpenAPI spec custom channel webhook 的 sender 欄位。
+    # Optional 為了向後相容：未帶時 backend fallback 到 {agent_id}_{user_id}（舊行為）。
+    sender: Optional[str] = Field(None, min_length=1, max_length=255)
