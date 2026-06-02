@@ -75,6 +75,14 @@
   }
 }
 
+/* Form 錯誤 shake 動畫 — 配合 aria-invalid 樣式給使用者明確負向回饋。
+   位移幅度 4px、總長 360ms，prefers-reduced-motion 已由 base layer 全域抑制。 */
+@keyframes shake-x {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-4px); }
+  40%, 80% { transform: translateX(4px); }
+}
+
 /* 全域 macOS 風 scrollbar：細、半透明、hover 才顯著
    避免廠商預設 16px 灰條的廉價感（特別在 Windows 上） */
 ::-webkit-scrollbar {
