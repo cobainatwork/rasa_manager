@@ -30,7 +30,7 @@ export function Sidebar() {
   if (!id) return null
 
   return (
-    <aside className="w-52 h-screen shrink-0 bg-[#EBEBEF] border-r border-black/[0.08] flex flex-col py-2 px-2 gap-0.5 sticky top-0 overflow-y-auto">
+    <aside className="w-52 h-screen shrink-0 bg-gradient-to-b from-[#EFEFF3] to-[#E5E5EA] border-r border-black/[0.06] flex flex-col py-2 px-2 gap-0.5 sticky top-0 overflow-y-auto">
       {NAV_ITEMS.filter((it) => !it.superadminOnly || isSuper).map((item) => (
         <NavLink
           key={item.to}
