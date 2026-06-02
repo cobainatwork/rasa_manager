@@ -37,7 +37,16 @@
 
   body {
     @apply bg-canvas text-text-primary font-sans antialiased;
-    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    /* Inter 字符變體：cv02/03/04（小寫 a/g/l 替代字形）、cv11（單層 a）
+       palt：CJK 比例間距（縮緊中文標點佔寬，整體更精緻）
+       kern：英數對距 */
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11', 'palt', 'kern';
+    /* 中文排版微調：字距 0.01em（避免過擠）、行距 1.65（zh-TW body text 甜蜜點） */
+    letter-spacing: 0.01em;
+    line-height: 1.65;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   /* 焦點環統一規格 */

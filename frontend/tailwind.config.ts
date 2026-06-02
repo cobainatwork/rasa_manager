@@ -39,7 +39,24 @@ const config: Config = {
         },
       },
       fontFamily: {
-        sans: ['-apple-system', 'BlinkMacSystemFont', 'SF Pro Text', 'Inter', 'Noto Sans TC', 'system-ui', 'sans-serif'],
+        // 字型 fallback 策略（瀏覽器 per-character lookup）：
+        //   英數：Inter（已由 @fontsource/inter 載入）→ 系統 sans
+        //   中文：macOS PingFang TC → Windows 11 Microsoft JhengHei UI →
+        //         Windows 10 Microsoft JhengHei → Linux Noto Sans CJK / Noto Sans TC
+        sans: [
+          'Inter',
+          '-apple-system',
+          'BlinkMacSystemFont',
+          'SF Pro Text',
+          '"Segoe UI"',
+          '"PingFang TC"',
+          '"Microsoft JhengHei UI"',
+          '"Microsoft JhengHei"',
+          '"Noto Sans CJK TC"',
+          '"Noto Sans TC"',
+          'system-ui',
+          'sans-serif',
+        ],
         mono: ['SF Mono', 'JetBrains Mono', 'Fira Code', 'Consolas', 'monospace'],
       },
       transitionDuration: {
