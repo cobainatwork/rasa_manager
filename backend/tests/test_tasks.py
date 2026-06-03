@@ -680,23 +680,23 @@ class TestIngestScriptMissingQdrantUrl:
 
 
 class TestEmbeddingCliArgs:
-    """tasks._embedding_cli_args：將 agent.embedding_provider/model 轉成 ingest_kb.py CLI args。"""
+    """tasks._build_embedding_args_from_env：將 agent.embedding_provider/model 轉成 ingest_kb.py CLI args。"""
 
     def test_openai_provider_omits_base_url_and_api_key(self) -> None:
-        from tasks import _embedding_cli_args  # noqa: PLC0415
-        args = _embedding_cli_args("openai", "text-embedding-3-small")
+        from tasks import _build_embedding_args_from_env  # noqa: PLC0415
+        args = _build_embedding_args_from_env("openai", "text-embedding-3-small")
         assert args == [
             "--provider", "openai",
             "--model", "text-embedding-3-small",
         ]
 
     def test_local_provider_includes_base_url_and_api_key_from_env(self) -> None:
-        from tasks import _embedding_cli_args  # noqa: PLC0415
+        from tasks import _build_embedding_args_from_env  # noqa: PLC0415
         with patch.dict(os.environ, {
             "LOCAL_EMBEDDING_BASE_URL": "http://10.2.66.102/v1/embeddings",
             "LOCAL_EMBEDDING_API_KEY": "secret-key",
         }, clear=False):
-            args = _embedding_cli_args("local", "bge-m3-q8_0")
+            args = _build_embedding_args_from_env("local", "bge-m3-q8_0")
         assert args == [
             "--provider", "local",
             "--model", "bge-m3-q8_0",
@@ -705,20 +705,20 @@ class TestEmbeddingCliArgs:
         ]
 
     def test_local_provider_defaults_api_key_when_unset(self) -> None:
-        from tasks import _embedding_cli_args  # noqa: PLC0415
+        from tasks import _build_embedding_args_from_env  # noqa: PLC0415
         env = {k: v for k, v in os.environ.items() if k != "LOCAL_EMBEDDING_API_KEY"}
         env["LOCAL_EMBEDDING_BASE_URL"] = "http://local-only/v1"
         with patch.dict(os.environ, env, clear=True):
-            args = _embedding_cli_args("local", "bge-m3-q8_0")
+            args = _build_embedding_args_from_env("local", "bge-m3-q8_0")
         # 預設 api_key 為 'any'（多數地端 server 不檢查但 OpenAI SDK 要求非空）
         assert "--api-key" in args
         idx = args.index("--api-key")
         assert args[idx + 1] == "any"
 
     def test_local_provider_missing_base_url_raises(self) -> None:
-        from tasks import _embedding_cli_args  # noqa: PLC0415
+        from tasks import _build_embedding_args_from_env  # noqa: PLC0415
         env = {k: v for k, v in os.environ.items() if k != "LOCAL_EMBEDDING_BASE_URL"}
         with patch.dict(os.environ, env, clear=True), pytest.raises(
             RuntimeError, match="LOCAL_EMBEDDING_BASE_URL"
         ):
-            _embedding_cli_args("local", "bge-m3-q8_0")
+            _build_embedding_args_from_env("local", "bge-m3-q8_0")

@@ -34,11 +34,14 @@ INGEST_SUBPROCESS_TIMEOUT_SEC = 280
 INGEST_KILL_GRACE_SEC = 5             # SIGKILL 後等待子程序回收的寬限
 
 
-def _embedding_cli_args(agent_provider: str, agent_model: str) -> list[str]:
-    """根據 agent.embedding_provider 從 env 取對應憑證，組成 ingest_kb.py CLI args。
+def _build_embedding_args_from_env(agent_provider: str, agent_model: str) -> list[str]:
+    """組成 ingest_kb.py 的 embedding CLI args（會讀環境變數，名字明示副作用）。
 
     - openai：不附 --base-url / --api-key，由 OpenAI SDK 自行讀 OPENAI_API_KEY env
-    - local ：從 LOCAL_EMBEDDING_BASE_URL / LOCAL_EMBEDDING_API_KEY env 注入
+    - local ：讀 LOCAL_EMBEDDING_BASE_URL（**必填**）與 LOCAL_EMBEDDING_API_KEY（預設 'any'）
+
+    Raises:
+        RuntimeError: provider=local 但 LOCAL_EMBEDDING_BASE_URL env 未設定。
     """
     args = ["--provider", agent_provider, "--model", agent_model]
     if agent_provider.lower() == "local":
@@ -143,14 +146,12 @@ def run_ingestion_sync(self, agent_id: str, sync_log_id: str) -> None:  # type: 
         sync_log.output_file = output_path
 
         # 寫入 .txt
-        import os as _os  # noqa: PLC0415
-
-        parent_dir = _os.path.dirname(output_path)
+        parent_dir = os.path.dirname(output_path)
         if not parent_dir:
             raise RuntimeError(
                 f"txt_output_path 設定無效（dirname 為空）：{agent.txt_output_path!r}"
             )
-        _os.makedirs(parent_dir, exist_ok=True)
+        os.makedirs(parent_dir, exist_ok=True)
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(txt_content)
 
@@ -167,7 +168,7 @@ def run_ingestion_sync(self, agent_id: str, sync_log_id: str) -> None:  # type: 
                 )
 
             # 早期診斷：腳本檔案不存在時立即報錯，避免 subprocess 回傳曖昧的 exit 2
-            if not _os.path.isfile(script_path):
+            if not os.path.isfile(script_path):
                 raise RuntimeError(
                     f"Ingestion script 不存在或無法存取：{script_path}"
                 )
@@ -187,7 +188,7 @@ def run_ingestion_sync(self, agent_id: str, sync_log_id: str) -> None:  # type: 
                 "--collection", collection_name,
                 "--doc-id", f"{collection_name}_v1",
                 "--clear",  # 同步前清空 collection，確保已刪除 FAQ 的舊向量不殘留
-                *_embedding_cli_args(
+                *_build_embedding_args_from_env(
                     str(agent.embedding_provider), str(agent.embedding_model)
                 ),
             ]
@@ -370,15 +371,12 @@ def run_category_sync(self, agent_id: str, category_id: str, sync_log_id: str) -
             + f"/category_{category_id}_export.txt"
         )
         sync_log.output_file = output_path
-
-        import os as _os  # noqa: PLC0415
-
-        parent_dir = _os.path.dirname(output_path)
+        parent_dir = os.path.dirname(output_path)
         if not parent_dir:
             raise RuntimeError(
                 f"txt_output_path 設定無效（dirname 為空）：{agent.txt_output_path!r}"
             )
-        _os.makedirs(parent_dir, exist_ok=True)
+        os.makedirs(parent_dir, exist_ok=True)
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(txt_content)
 
@@ -391,7 +389,7 @@ def run_category_sync(self, agent_id: str, category_id: str, sync_log_id: str) -
                 raise RuntimeError(
                     f"ingest_script_path 包含不允許的上級目錄引用：{script_path}"
                 )
-            if not _os.path.isfile(script_path):
+            if not os.path.isfile(script_path):
                 raise RuntimeError(
                     f"Ingestion script 不存在或無法存取：{script_path}"
                 )
@@ -410,7 +408,7 @@ def run_category_sync(self, agent_id: str, category_id: str, sync_log_id: str) -
                 "--doc-id", f"{collection_name}_v1",
                 "--delete-category-paths", ",".join(subtree_paths),
                 # 不帶 --clear：精準刪除指定 category_path 的向量
-                *_embedding_cli_args(
+                *_build_embedding_args_from_env(
                     str(agent.embedding_provider), str(agent.embedding_model)
                 ),
             ]

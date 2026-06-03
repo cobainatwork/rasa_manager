@@ -270,30 +270,11 @@ class TestChatEndpoint:
     def test_editor_can_access_chat(
         self, client_editor: TestClient, mock_db: MagicMock, _agent_mock
     ) -> None:
-        """Editor 有 agent access，可使用 chat 功能。"""
+        """Editor 有 agent access，可使用 chat 功能（無 rasa_url 才會 422）。"""
+        agent = _agent_mock(rasa_rest_url=None)
         counter = [0]
 
-        def se(*args: object) -> MagicMock:
-            q = MagicMock()
-            idx = counter[0]
-            counter[0] += 1
-            if idx == 0:
-                agent = MagicMock()
-                agent.id = AGENT_ID
-                q.filter.return_value.first.return_value = agent
-            elif idx == 1:
-                role = MagicMock()
-                role.role = "editor"
-                q.filter.return_value.first.return_value = role
-            return q
-
-        mock_db.query.side_effect = se
-
-        # agent 無 rasa_url → 422，但確認有進入路由（非 401/403）
-        agent = _agent_mock(rasa_rest_url=None)
-        counter[0] = 0
-
-        def se2(*args: object) -> MagicMock:
+        def query_se(*args: object) -> MagicMock:
             q = MagicMock()
             idx = counter[0]
             counter[0] += 1
@@ -305,9 +286,10 @@ class TestChatEndpoint:
                 q.filter.return_value.first.return_value = role
             return q
 
-        mock_db.query.side_effect = se2
+        mock_db.query.side_effect = query_se
         resp = client_editor.post(CHAT_URL, json=CHAT_PAYLOAD)
-        assert resp.status_code == 422  # 有 agent access，但 rasa_url 未設定
+        # agent access 通過（非 401/403），但 rasa_url 未設 → 422
+        assert resp.status_code == 422
 
 
 # ── Regression: B8 (response must not leak internal exception details) ──────

@@ -2,7 +2,7 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import type { UseFormRegister, FieldError } from 'react-hook-form'
+import type { UseFormRegister, FieldErrors } from 'react-hook-form'
 
 interface FormData {
   name: string
@@ -21,11 +21,14 @@ interface ActionState {
 
 interface Props {
   register: UseFormRegister<FormData>
-  errors?: {
-    qdrant_collection?: FieldError
-  }
+  errors?: FieldErrors<FormData>
   test: ActionState
   validate: ActionState
+}
+
+function FieldError({ message }: { message?: string }) {
+  if (!message) return null
+  return <p className="text-xs text-destructive">{message}</p>
 }
 
 export function AgentIntegrationFields({ register, errors, test, validate }: Props) {
@@ -40,9 +43,7 @@ export function AgentIntegrationFields({ register, errors, test, validate }: Pro
               {...register('qdrant_collection')}
               placeholder="例如：my_agent_kb"
             />
-            {errors?.qdrant_collection && (
-              <p className="text-xs text-red-600">{errors.qdrant_collection.message}</p>
-            )}
+            <FieldError message={errors?.qdrant_collection?.message} />
             <p className="text-xs text-text-muted">
               Qdrant 向量資料庫的 Collection 名稱。只能含英文字母、數字、底線與連字號，且須以英文字母或底線開頭。
             </p>
@@ -56,6 +57,7 @@ export function AgentIntegrationFields({ register, errors, test, validate }: Pro
           <div className="space-y-1.5">
             <Label>Webhook URL</Label>
             <Input {...register('rasa_rest_url')} placeholder="http://host:port/webhooks/.../webhook" />
+            <FieldError message={errors?.rasa_rest_url?.message} />
             <p className="text-xs text-text-muted">完整 Rasa REST webhook URL</p>
           </div>
           <Button type="button" variant="outline" onClick={test.run} disabled={test.busy}>
@@ -70,10 +72,12 @@ export function AgentIntegrationFields({ register, errors, test, validate }: Pro
           <div className="space-y-1.5">
             <Label>腳本路徑（容器內絕對路徑）</Label>
             <Input {...register('ingest_script_path')} placeholder="/opt/project/ingest_kb.py" />
+            <FieldError message={errors?.ingest_script_path?.message} />
           </div>
           <div className="space-y-1.5">
             <Label>TXT 輸出路徑</Label>
             <Input {...register('txt_output_path')} />
+            <FieldError message={errors?.txt_output_path?.message} />
             <p className="text-xs text-text-muted">faq_export.txt 寫入此目錄</p>
           </div>
           <Button type="button" variant="outline" onClick={validate.run} disabled={validate.busy}>

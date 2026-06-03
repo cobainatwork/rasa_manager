@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { z } from 'zod'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -13,34 +12,8 @@ import { extractErrorMessage } from '@/api/client'
 import { toast } from 'sonner'
 import { DangerZone } from './DangerZone'
 import { AgentIntegrationFields } from './AgentIntegrationFields'
+import { agentEditSchema, type AgentEditFormData as FormData } from './agentFormSchema'
 import type { Agent } from '@/api/types'
-
-const schema = z.object({
-  name: z.string().min(1).max(100),
-  qdrant_collection: z
-    .string()
-    .min(1, 'Collection 名稱必填')
-    .max(255)
-    .regex(
-      /^[a-zA-Z_][a-zA-Z0-9_-]*$/,
-      'Collection 名稱只能含英文字母、數字、底線與連字號，且須以英文字母或底線開頭'
-    ),
-  txt_output_path: z.string().min(1).max(255),
-  rasa_rest_url: z
-    .string()
-    .nullable()
-    .refine(
-      (v) => !v || v.startsWith('http://') || v.startsWith('https://'),
-      { message: 'Webhook URL 必須以 http:// 或 https:// 開頭' }
-    ),
-  ingest_script_path: z.string().nullable(),
-  embedding_provider: z.enum(['openai', 'local']),
-  embedding_model: z
-    .string()
-    .min(1, 'Embedding model 名稱必填')
-    .max(100),
-})
-type FormData = z.infer<typeof schema>
 
 export function AgentSettingsPage() {
   const { id } = useParams<{ id: string }>()
@@ -55,7 +28,7 @@ export function AgentSettingsPage() {
     handleSubmit,
     reset,
     formState: { isDirty, isSubmitting, errors },
-  } = useForm<FormData>({ resolver: zodResolver(schema) })
+  } = useForm<FormData>({ resolver: zodResolver(agentEditSchema) })
 
   useEffect(() => {
     if (!id) return
@@ -75,17 +48,15 @@ export function AgentSettingsPage() {
           })
         }
       })
+      .catch((err) => toast.error(extractErrorMessage(err)))
       .finally(() => setLoading(false))
   }, [id, reset])
 
   async function onSubmit(data: FormData) {
     if (!id) return
     try {
-      await updateAgent(id, {
-        ...data,
-        rasa_rest_url: data.rasa_rest_url || null,
-        ingest_script_path: data.ingest_script_path || null,
-      })
+      // schema 已 transform 空字串為 null（rasa_rest_url / ingest_script_path）
+      await updateAgent(id, data)
       toast.success('已儲存')
       reset(data)
     } catch (err) {

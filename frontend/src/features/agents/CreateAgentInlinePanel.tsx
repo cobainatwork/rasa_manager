@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { z } from 'zod'
 import { X } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -11,29 +10,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { createAgent } from '@/api/endpoints/agents'
 import { extractErrorMessage } from '@/api/client'
 import { toast } from 'sonner'
-
-const schema = z.object({
-  name: z.string().min(1, '必填').max(100, '最多 100 字'),
-  qdrant_collection: z
-    .string()
-    .min(1, '必填')
-    .max(255, '最多 255 字')
-    .regex(
-      /^[a-zA-Z_][a-zA-Z0-9_-]*$/,
-      '只能含英文字母、數字、底線與連字號，且須以英文字母或底線開頭'
-    ),
-  txt_output_path: z.string().min(1, '必填').max(255, '最多 255 字'),
-  rasa_rest_url: z
-    .string()
-    .optional()
-    .refine(
-      (v) => !v || v.startsWith('http://') || v.startsWith('https://'),
-      { message: 'Webhook URL 必須以 http:// 或 https:// 開頭' }
-    ),
-  ingest_script_path: z.string().optional(),
-})
-
-type FormData = z.infer<typeof schema>
+import { agentCreateSchema, type AgentCreateFormData as FormData } from './agentFormSchema'
 
 interface Props {
   onCreated: () => void
@@ -44,7 +21,7 @@ export function CreateAgentInlinePanel({ onCreated, onCancel }: Props) {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const { register, handleSubmit, formState: { errors } } = useForm<FormData>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(agentCreateSchema),
   })
 
   async function onSubmit(data: FormData) {
@@ -52,11 +29,7 @@ export function CreateAgentInlinePanel({ onCreated, onCancel }: Props) {
     setError(null)
     try {
       await createAgent({
-        name: data.name,
-        qdrant_collection: data.qdrant_collection,
-        txt_output_path: data.txt_output_path,
-        rasa_rest_url: data.rasa_rest_url || null,
-        ingest_script_path: data.ingest_script_path || null,
+        ...data,
         // Embedding 預設 OpenAI 雲端；建立後可在「Agent 設定」頁切換 provider/model
         embedding_provider: 'openai',
         embedding_model: 'text-embedding-3-small',
