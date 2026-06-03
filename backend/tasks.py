@@ -13,6 +13,7 @@ import subprocess
 import sys
 import uuid
 from datetime import datetime, timezone
+from typing import Any
 
 import structlog
 from celery import Celery
@@ -32,6 +33,9 @@ RETRY_BACKOFF_BASE_SEC = TASK_RETRY_DELAY_SEC  # B1 手動 countdown 基數，�
 # 比 task_soft_time_limit 早 20 秒，留餘裕讓我們自行 kill 並寫 sync_log
 INGEST_SUBPROCESS_TIMEOUT_SEC = 280
 INGEST_KILL_GRACE_SEC = 5             # SIGKILL 後等待子程序回收的寬限
+
+# 寫 sync_log.stderr 的長度上限（避免 DB 欄位爆量）
+STDERR_MAX_CHARS = 1000
 
 
 def _build_embedding_args_from_env(agent_provider: str, agent_model: str) -> list[str]:
@@ -54,8 +58,148 @@ def _build_embedding_args_from_env(agent_provider: str, agent_model: str) -> lis
         args.extend(["--base-url", base_url, "--api-key", api_key])
     return args
 
-# 寫 sync_log.stderr 的長度上限（避免 DB 欄位爆量）
-STDERR_MAX_CHARS = 1000
+
+def _run_ingest_subprocess(
+    cmd: list[str], timeout_seconds: int
+) -> tuple[int, str, str]:
+    """以 subprocess.Popen 執行 ingest 指令，封裝 timeout 強制終止邏輯。
+
+    安全性：禁止 shell=True，cmd 必須為列表形式。
+    POSIX：start_new_session=True，逾時時透過 killpg 一併回收孫進程。
+    Windows：走 proc.kill() 路徑（無 killpg）。
+
+    Returns:
+        (exit_code, stdout, stderr)
+
+    Raises:
+        subprocess.TimeoutExpired: 子程序逾時且已強制終止（不吞例外，由 caller 轉換）。
+        OSError / subprocess.SubprocessError: Popen 自身錯誤原樣冒出。
+    """
+    popen_kwargs: dict[str, Any] = {
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "text": True,
+    }
+    if sys.platform != "win32":
+        popen_kwargs["start_new_session"] = True
+    proc = subprocess.Popen(cmd, **popen_kwargs)  # noqa: S603
+    try:
+        stdout_data, stderr_data = proc.communicate(timeout=timeout_seconds)
+        return proc.returncode, stdout_data, stderr_data
+    except subprocess.TimeoutExpired:
+        # 強制終止整個 process group，回收子 / 孫進程，避免殭屍
+        if sys.platform != "win32":
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                proc.kill()
+        else:
+            proc.kill()
+        try:
+            proc.wait(timeout=INGEST_KILL_GRACE_SEC)
+        except subprocess.TimeoutExpired:
+            pass
+        raise
+
+
+def _finalize_sync_log_failed(
+    db: Any, sync_log: Any, error_message: str
+) -> None:
+    """將 sync_log 標記為 failed 終態並 commit。
+
+    用於 retry 已用盡或外部前置錯誤時的統一收尾。
+    """
+    sync_log.status = "failed"
+    sync_log.stderr = error_message[:STDERR_MAX_CHARS]
+    sync_log.finished_at = datetime.now(timezone.utc)
+    db.commit()
+
+
+def _finalize_sync_log_completed(
+    db: Any,
+    sync_log: Any,
+    *,
+    items_count: int,
+    stdout_data: str,
+    stderr_data: str,
+) -> None:
+    """將 sync_log 標記為 completed 終態並計算 duration_sec、commit。
+
+    started_at 可能無 tzinfo（SQLite 場景），補上 UTC 後再算秒差。
+    """
+    finished_at = datetime.now(timezone.utc)
+    started_at = sync_log.started_at
+    if started_at and started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=timezone.utc)
+
+    sync_log.status = "completed"
+    sync_log.items_count = items_count
+    sync_log.stdout = stdout_data
+    sync_log.stderr = stderr_data
+    sync_log.finished_at = finished_at
+    sync_log.duration_sec = (
+        int((finished_at - started_at).total_seconds()) if started_at else None
+    )
+    db.commit()
+
+
+def _execute_ingest_with_subprocess(
+    cmd: list[str], sync_log: Any
+) -> tuple[str, str]:
+    """執行 ingest 子程序並處理 non-zero exit / timeout 的錯誤轉換。
+
+    成功時回傳 (stdout, stderr)；失敗時 raise RuntimeError（讓上層 narrow except 統一處理）。
+    """
+    try:
+        returncode, stdout_data, stderr_data = _run_ingest_subprocess(
+            cmd, INGEST_SUBPROCESS_TIMEOUT_SEC
+        )
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(
+            f"Ingestion script 執行逾時（{INGEST_SUBPROCESS_TIMEOUT_SEC} 秒）"
+        )
+
+    if returncode != 0:
+        # 先把 stdout/stderr 寫入 sync_log，確保運維可透過 /sync-logs 查詢原因
+        sync_log.stdout = stdout_data
+        sync_log.stderr = stderr_data[:STDERR_MAX_CHARS]
+        # 在錯誤訊息中附帶 stderr 摘要，方便直接從 Celery log 診斷
+        stderr_snippet = (stderr_data.strip() or stdout_data.strip())[:300]
+        detail = f"\nstderr: {stderr_snippet}" if stderr_snippet else ""
+        raise RuntimeError(f"Ingestion script 退出碼 {returncode}{detail}")
+
+    return stdout_data, stderr_data
+
+
+def _validate_ingest_script_path(script_path: str) -> None:
+    """檢查 ingest_script_path 路徑安全與檔案存在性。"""
+    # 防止路徑穿越攻擊，允許完整絕對路徑（如 /opt/rasa_integration/ingest_kb.py）
+    if ".." in script_path:
+        raise RuntimeError(
+            f"ingest_script_path 包含不允許的上級目錄引用：{script_path}"
+        )
+    # 早期診斷：腳本檔案不存在時立即報錯，避免 subprocess 回傳曖昧的 exit 2
+    if not os.path.isfile(script_path):
+        raise RuntimeError(
+            f"Ingestion script 不存在或無法存取：{script_path}"
+        )
+
+
+def _write_export_txt(output_path: str, txt_content: str, txt_output_path: str) -> None:
+    """寫入匯出 .txt 並驗證父目錄非空。"""
+    parent_dir = os.path.dirname(output_path)
+    if not parent_dir:
+        raise RuntimeError(
+            f"txt_output_path 設定無效（dirname 為空）：{txt_output_path!r}"
+        )
+    os.makedirs(parent_dir, exist_ok=True)
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(txt_content)
+
+
+def _escape_reserved_keywords(text: str) -> str:
+    """將 [Question] / [Answer] 保留字串改寫為全形，避免污染匯出格式。"""
+    return text.replace("[Question]", "【Question】").replace("[Answer]", "【Answer】")
 
 
 celery_app = Celery("tasks", broker=REDIS_URL)
@@ -71,9 +215,12 @@ def run_ingestion_sync(self, agent_id: str, sync_log_id: str) -> None:  # type: 
     """
     1. 取出 approved/synced 的 FAQ
     2. 寫入 {txt_output_path}/faq_export.txt（[Question]/[Answer] 格式）
-    3. 執行 /opt/scripts/{ingest_script_path}
+    3. 透過 _run_ingest_subprocess（內部呼叫 subprocess.Popen(cmd, ...)）執行 ingest 腳本
     4. 更新 sync_logs 狀態與輸出
     5. 標記所有已同步項目為 synced
+
+    例外控制：narrow except 限定 (RuntimeError, OSError, subprocess.SubprocessError, IOError)，
+    KeyboardInterrupt 等 BaseException 必須原樣冒出。
     """
     from api.database.models import Agent, KnowledgeItem, SyncLog  # noqa: PLC0415
     from api.database.session import SessionLocal  # noqa: PLC0415
@@ -112,14 +259,8 @@ def run_ingestion_sync(self, agent_id: str, sync_log_id: str) -> None:  # type: 
         # 組合 .txt 內容（防保留字符污染）
         blocks: list[str] = []
         for item in items:
-            question = (
-                item.question.replace("[Question]", "【Question】")
-                .replace("[Answer]", "【Answer】")
-            )
-            answer = (
-                item.answer.replace("[Question]", "【Question】")
-                .replace("[Answer]", "【Answer】")
-            )
+            question = _escape_reserved_keywords(item.question)
+            answer = _escape_reserved_keywords(item.answer)
             blocks.append(f"[Question]\n{question}\n\n[Answer]\n{answer}")
 
         # ── 無資料提前結束（避免以空 txt 清空 Qdrant collection）──────────────
@@ -145,15 +286,7 @@ def run_ingestion_sync(self, agent_id: str, sync_log_id: str) -> None:  # type: 
         output_path = str(agent.txt_output_path).rstrip("/") + "/faq_export.txt"
         sync_log.output_file = output_path
 
-        # 寫入 .txt
-        parent_dir = os.path.dirname(output_path)
-        if not parent_dir:
-            raise RuntimeError(
-                f"txt_output_path 設定無效（dirname 為空）：{agent.txt_output_path!r}"
-            )
-        os.makedirs(parent_dir, exist_ok=True)
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(txt_content)
+        _write_export_txt(output_path, txt_content, str(agent.txt_output_path))
 
         # 執行 ingest script（若有設定）
         stdout_data = ""
@@ -161,17 +294,7 @@ def run_ingestion_sync(self, agent_id: str, sync_log_id: str) -> None:  # type: 
 
         if agent.ingest_script_path:
             script_path = str(agent.ingest_script_path)
-            # 防止路徑穿越攻擊，允許完整絕對路徑（如 /opt/rasa_integration/ingest_kb.py）
-            if ".." in script_path:
-                raise RuntimeError(
-                    f"ingest_script_path 包含不允許的上級目錄引用：{script_path}"
-                )
-
-            # 早期診斷：腳本檔案不存在時立即報錯，避免 subprocess 回傳曖昧的 exit 2
-            if not os.path.isfile(script_path):
-                raise RuntimeError(
-                    f"Ingestion script 不存在或無法存取：{script_path}"
-                )
+            _validate_ingest_script_path(script_path)
 
             # 從環境變數讀 Qdrant URL（與 OpenAI key 一樣由 docker-compose 注入）
             qdrant_url = os.environ.get("QDRANT_URL")
@@ -179,7 +302,6 @@ def run_ingestion_sync(self, agent_id: str, sync_log_id: str) -> None:  # type: 
                 raise RuntimeError("QDRANT_URL 未設定，無法執行 ingest")
 
             collection_name = str(agent.qdrant_collection)
-            # 安全性：禁止 shell=True，使用列表形式（避免空格路徑切割問題）
             cmd = [
                 "python",
                 script_path,
@@ -192,63 +314,18 @@ def run_ingestion_sync(self, agent_id: str, sync_log_id: str) -> None:  # type: 
                     str(agent.embedding_provider), str(agent.embedding_model)
                 ),
             ]
-            # 使用 Popen + start_new_session=True，逾時時可透過 killpg 一併回收孫進程
-            popen_kwargs: dict = {
-                "stdout": subprocess.PIPE,
-                "stderr": subprocess.PIPE,
-                "text": True,
-            }
-            if sys.platform != "win32":
-                popen_kwargs["start_new_session"] = True
-            proc = subprocess.Popen(cmd, **popen_kwargs)  # noqa: S603
-            try:
-                stdout_data, stderr_data = proc.communicate(timeout=INGEST_SUBPROCESS_TIMEOUT_SEC)
-                returncode = proc.returncode
-                if returncode != 0:
-                    # 先把 stdout/stderr 寫入 sync_log，確保運維可透過 /sync-logs 查詢原因
-                    sync_log.stdout = stdout_data
-                    sync_log.stderr = stderr_data[:STDERR_MAX_CHARS]
-                    # 在錯誤訊息中附帶 stderr 摘要，方便直接從 Celery log 診斷
-                    stderr_snippet = (stderr_data.strip() or stdout_data.strip())[:300]
-                    detail = f"\nstderr: {stderr_snippet}" if stderr_snippet else ""
-                    raise RuntimeError(
-                        f"Ingestion script 退出碼 {returncode}{detail}"
-                    )
-            except subprocess.TimeoutExpired:
-                # 強制終止整個 process group，回收子 / 孫進程，避免殭屍
-                if sys.platform != "win32":
-                    try:
-                        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                    except (ProcessLookupError, PermissionError):
-                        proc.kill()
-                else:
-                    proc.kill()
-                try:
-                    proc.wait(timeout=INGEST_KILL_GRACE_SEC)
-                except subprocess.TimeoutExpired:
-                    pass
-                raise RuntimeError(
-                    f"Ingestion script 執行逾時（{INGEST_SUBPROCESS_TIMEOUT_SEC} 秒）"
-                )
+            stdout_data, stderr_data = _execute_ingest_with_subprocess(cmd, sync_log)
 
         # 標記所有項目為 synced
         for item in items:
             item.status = "synced"
 
-        finished_at = datetime.now(timezone.utc)
-        started_at = sync_log.started_at
-        if started_at and started_at.tzinfo is None:
-            started_at = started_at.replace(tzinfo=timezone.utc)
-
-        sync_log.status = "completed"
-        sync_log.items_count = len(items)
-        sync_log.stdout = stdout_data
-        sync_log.stderr = stderr_data
-        sync_log.finished_at = finished_at
-        sync_log.duration_sec = (
-            int((finished_at - started_at).total_seconds()) if started_at else None
+        _finalize_sync_log_completed(
+            db, sync_log,
+            items_count=len(items),
+            stdout_data=stdout_data,
+            stderr_data=stderr_data,
         )
-        db.commit()
 
     except (RuntimeError, OSError, subprocess.SubprocessError, IOError) as exc:
         logger.exception(
@@ -264,10 +341,7 @@ def run_ingestion_sync(self, agent_id: str, sync_log_id: str) -> None:  # type: 
         if self.request.retries >= max_retries:
             # 已是最後一次失敗，寫入終態
             if sync_log:
-                sync_log.status = "failed"
-                sync_log.stderr = str(exc)[:STDERR_MAX_CHARS]
-                sync_log.finished_at = datetime.now(timezone.utc)
-                db.commit()
+                _finalize_sync_log_failed(db, sync_log, str(exc))
             raise  # 讓 Celery 也標記任務為 FAILURE
         # 仍有 retry 額度，排程重試（中間狀態維持 running）
         countdown = RETRY_BACKOFF_BASE_SEC * (2 ** self.request.retries)
@@ -283,9 +357,12 @@ def run_category_sync(self, agent_id: str, category_id: str, sync_log_id: str) -
     1. 收集分類樹（目標 + 所有子孫）
     2. 取出 approved/synced 的 FAQ
     3. 寫入含 [Category] 區塊的 txt
-    4. 執行 ingest_script_path（不帶 --clear，帶 --delete-category-paths）
+    4. 透過 _run_ingest_subprocess（內部使用 subprocess.Popen）執行 ingest_script_path
+       （不帶 --clear，帶 --delete-category-paths）
     5. 標記同步項目為 synced
     6. 更新 sync_logs
+
+    例外控制：narrow except 限定 (RuntimeError, OSError, subprocess.SubprocessError, IOError)。
     """
     from api.database.models import Agent, Category, KnowledgeItem, SyncLog  # noqa: PLC0415
     from api.database.session import SessionLocal  # noqa: PLC0415
@@ -353,14 +430,8 @@ def run_category_sync(self, agent_id: str, category_id: str, sync_log_id: str) -
         blocks: list[str] = []
         for item in items:
             cat_path = build_category_path(item.category_id, cat_map)
-            question = (
-                item.question.replace("[Question]", "【Question】")
-                .replace("[Answer]", "【Answer】")
-            )
-            answer = (
-                item.answer.replace("[Question]", "【Question】")
-                .replace("[Answer]", "【Answer】")
-            )
+            question = _escape_reserved_keywords(item.question)
+            answer = _escape_reserved_keywords(item.answer)
             blocks.append(
                 f"[Category]\n{cat_path}\n\n[Question]\n{question}\n\n[Answer]\n{answer}"
             )
@@ -371,28 +442,14 @@ def run_category_sync(self, agent_id: str, category_id: str, sync_log_id: str) -
             + f"/category_{category_id}_export.txt"
         )
         sync_log.output_file = output_path
-        parent_dir = os.path.dirname(output_path)
-        if not parent_dir:
-            raise RuntimeError(
-                f"txt_output_path 設定無效（dirname 為空）：{agent.txt_output_path!r}"
-            )
-        os.makedirs(parent_dir, exist_ok=True)
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(txt_content)
+        _write_export_txt(output_path, txt_content, str(agent.txt_output_path))
 
         stdout_data = ""
         stderr_data = ""
 
         if agent.ingest_script_path:
             script_path = str(agent.ingest_script_path)
-            if ".." in script_path:
-                raise RuntimeError(
-                    f"ingest_script_path 包含不允許的上級目錄引用：{script_path}"
-                )
-            if not os.path.isfile(script_path):
-                raise RuntimeError(
-                    f"Ingestion script 不存在或無法存取：{script_path}"
-                )
+            _validate_ingest_script_path(script_path)
 
             qdrant_url = os.environ.get("QDRANT_URL")
             if not qdrant_url:
@@ -412,60 +469,17 @@ def run_category_sync(self, agent_id: str, category_id: str, sync_log_id: str) -
                     str(agent.embedding_provider), str(agent.embedding_model)
                 ),
             ]
-            popen_kwargs: dict = {
-                "stdout": subprocess.PIPE,
-                "stderr": subprocess.PIPE,
-                "text": True,
-            }
-            if sys.platform != "win32":
-                popen_kwargs["start_new_session"] = True
-            proc = subprocess.Popen(cmd, **popen_kwargs)  # noqa: S603
-            try:
-                stdout_data, stderr_data = proc.communicate(
-                    timeout=INGEST_SUBPROCESS_TIMEOUT_SEC
-                )
-                returncode = proc.returncode
-                if returncode != 0:
-                    sync_log.stdout = stdout_data
-                    sync_log.stderr = stderr_data[:STDERR_MAX_CHARS]
-                    stderr_snippet = (stderr_data.strip() or stdout_data.strip())[:300]
-                    detail = f"\nstderr: {stderr_snippet}" if stderr_snippet else ""
-                    raise RuntimeError(
-                        f"Ingestion script 退出碼 {returncode}{detail}"
-                    )
-            except subprocess.TimeoutExpired:
-                if sys.platform != "win32":
-                    try:
-                        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                    except (ProcessLookupError, PermissionError):
-                        proc.kill()
-                else:
-                    proc.kill()
-                try:
-                    proc.wait(timeout=INGEST_KILL_GRACE_SEC)
-                except subprocess.TimeoutExpired:
-                    pass
-                raise RuntimeError(
-                    f"Ingestion script 執行逾時（{INGEST_SUBPROCESS_TIMEOUT_SEC} 秒）"
-                )
+            stdout_data, stderr_data = _execute_ingest_with_subprocess(cmd, sync_log)
 
         for item in items:
             item.status = "synced"
 
-        finished_at = datetime.now(timezone.utc)
-        started_at = sync_log.started_at
-        if started_at and started_at.tzinfo is None:
-            started_at = started_at.replace(tzinfo=timezone.utc)
-
-        sync_log.status = "completed"
-        sync_log.items_count = len(items)
-        sync_log.stdout = stdout_data
-        sync_log.stderr = stderr_data
-        sync_log.finished_at = finished_at
-        sync_log.duration_sec = (
-            int((finished_at - started_at).total_seconds()) if started_at else None
+        _finalize_sync_log_completed(
+            db, sync_log,
+            items_count=len(items),
+            stdout_data=stdout_data,
+            stderr_data=stderr_data,
         )
-        db.commit()
 
     except (RuntimeError, OSError, subprocess.SubprocessError, IOError) as exc:
         logger.exception(
@@ -478,10 +492,7 @@ def run_category_sync(self, agent_id: str, category_id: str, sync_log_id: str) -
         max_retries = self.max_retries if self.max_retries is not None else TASK_MAX_RETRIES
         if self.request.retries >= max_retries:
             if sync_log:
-                sync_log.status = "failed"
-                sync_log.stderr = str(exc)[:STDERR_MAX_CHARS]
-                sync_log.finished_at = datetime.now(timezone.utc)
-                db.commit()
+                _finalize_sync_log_failed(db, sync_log, str(exc))
             raise
         countdown = RETRY_BACKOFF_BASE_SEC * (2 ** self.request.retries)
         raise self.retry(exc=exc, countdown=countdown)

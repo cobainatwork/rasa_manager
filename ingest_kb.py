@@ -35,6 +35,7 @@ import os
 import re
 import sys
 import uuid
+from enum import Enum
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -106,6 +107,73 @@ def _restore_reserved(text: str) -> str:
     return text.replace("【Question】", "[Question]").replace("【Answer】", "[Answer]")
 
 
+def _split_blocks_by_marker(text: str, marker: str) -> list[str]:
+    """
+    以雙換行 + marker 切分 text 為多個 block，每個 block 以 marker 起始。
+
+    若 text strip 後不以 marker 起始，回傳空 list（觸發 caller 走 fallback 格式）。
+    """
+    parts = text.split(f"\n\n{marker}")
+    blocks: list[str] = []
+    for i, part in enumerate(parts):
+        part = part.strip()
+        if not part:
+            continue
+        if i == 0:
+            if not part.startswith(marker):
+                return []
+            blocks.append(part)
+        else:
+            blocks.append(f"{marker}\n" + part.lstrip("\n"))
+    return blocks
+
+
+def _parse_with_category(text: str) -> list[dict]:
+    """解析含 [Category] 的新格式。無法解析時回傳 []。"""
+    if "[Category]" not in text:
+        return []
+    records: list[dict] = []
+    for block in _split_blocks_by_marker(text, "[Category]"):
+        m = _CAT_BLOCK_RE.match(block)
+        if not m:
+            continue
+        category_path = m.group(1).strip()
+        q = _restore_reserved(m.group(2).strip())
+        a = _restore_reserved(m.group(3).strip())
+        records.append(
+            {
+                "question": q,
+                "answer": a,
+                "text": f"問題：{q}\n答案：{a}",
+                "category_path": category_path,
+            }
+        )
+    return records
+
+
+def _parse_question_answer(text: str) -> list[dict]:
+    """解析 [Question]/[Answer] 無 [Category] 的格式（全局同步格式）。"""
+    records: list[dict] = []
+    for block in _split_blocks_by_marker(text, "[Question]"):
+        m = _BLOCK_RE.match(block)
+        if not m:
+            continue
+        q = _restore_reserved(m.group(1).strip())
+        a = _restore_reserved(m.group(2).strip())
+        records.append({"question": q, "answer": a, "text": f"問題：{q}\n答案：{a}"})
+    return records
+
+
+def _parse_legacy_qa(text: str) -> list[dict]:
+    """向後相容：解析舊版 Q:/A: 格式。"""
+    records: list[dict] = []
+    for q, a in _LEGACY_RE.findall(text):
+        q = q.strip()
+        a = a.strip()
+        records.append({"question": q, "answer": a, "text": f"問題：{q}\n答案：{a}"})
+    return records
+
+
 def parse_kb(path: str | Path) -> list[dict]:
     """
     解析匯出 .txt。
@@ -114,74 +182,12 @@ def parse_kb(path: str | Path) -> list[dict]:
     回傳 records，每筆含 question / answer / text，新格式另含 category_path。
     """
     text = Path(path).read_text(encoding="utf-8")
-    records: list[dict] = []
 
-    # ── 優先：含 [Category] 的新格式 ──────────────────────────────────
-    if "[Category]" in text:
-        parts = text.split("\n\n[Category]")
-        blocks: list[str] = []
-        for i, part in enumerate(parts):
-            part = part.strip()
-            if not part:
-                continue
-            if i == 0:
-                if not part.startswith("[Category]"):
-                    blocks = []
-                    break
-                blocks.append(part)
-            else:
-                blocks.append("[Category]\n" + part.lstrip("\n"))
-
-        for block in blocks:
-            m = _CAT_BLOCK_RE.match(block)
-            if not m:
-                continue
-            category_path = m.group(1).strip()
-            q = _restore_reserved(m.group(2).strip())
-            a = _restore_reserved(m.group(3).strip())
-            records.append(
-                {
-                    "question": q,
-                    "answer": a,
-                    "text": f"問題：{q}\n答案：{a}",
-                    "category_path": category_path,
-                }
-            )
+    for parser in (_parse_with_category, _parse_question_answer, _parse_legacy_qa):
+        records = parser(text)
         if records:
             return records
-
-    # ── 次選：[Question]/[Answer] 無 [Category]（全局同步格式）──────────
-    parts = text.split("\n\n[Question]")
-    blocks = []
-    for i, part in enumerate(parts):
-        part = part.strip()
-        if not part:
-            continue
-        if i == 0:
-            if not part.startswith("[Question]"):
-                blocks = []
-                break
-            blocks.append(part)
-        else:
-            blocks.append("[Question]\n" + part.lstrip("\n"))
-
-    for block in blocks:
-        m = _BLOCK_RE.match(block)
-        if not m:
-            continue
-        q = _restore_reserved(m.group(1).strip())
-        a = _restore_reserved(m.group(2).strip())
-        records.append({"question": q, "answer": a, "text": f"問題：{q}\n答案：{a}"})
-
-    if records:
-        return records
-
-    # ── 向後相容：Q:/A: 格式 ─────────────────────────────────────────────
-    for q, a in _LEGACY_RE.findall(text):
-        q = q.strip()
-        a = a.strip()
-        records.append({"question": q, "answer": a, "text": f"問題：{q}\n答案：{a}"})
-    return records
+    return []
 
 
 # -------------------------
@@ -310,6 +316,72 @@ def upload(
 
 
 # -------------------------
+# Delete 策略
+# -------------------------
+class DeleteStrategy(Enum):
+    """同步前的向量刪除策略。"""
+
+    CLEAR_ALL = "clear_all"                  # args.clear == True
+    BY_CATEGORY_PATHS = "by_category_paths"  # explicit_paths != []
+    AUTO_FROM_RECORDS = "auto_from_records"  # unique_paths_from_records 有值
+    ENSURE_ONLY = "ensure_only"              # 以上皆否：僅確保 collection 存在
+
+
+def _decide_delete_strategy(
+    args: argparse.Namespace, records: list[dict]
+) -> tuple[DeleteStrategy, list[str]]:
+    """
+    依 args 與 records 決定刪除策略。
+
+    回傳 (策略, 受影響的 category_paths)。
+    優先序：CLEAR_ALL > BY_CATEGORY_PATHS > AUTO_FROM_RECORDS > ENSURE_ONLY。
+    """
+    if args.clear:
+        return DeleteStrategy.CLEAR_ALL, []
+
+    explicit_paths = [
+        p.strip() for p in args.delete_category_paths.split(",") if p.strip()
+    ]
+    if explicit_paths:
+        return DeleteStrategy.BY_CATEGORY_PATHS, explicit_paths
+
+    unique_paths_from_records = list(
+        {r["category_path"] for r in records if r.get("category_path")}
+    )
+    if unique_paths_from_records:
+        return DeleteStrategy.AUTO_FROM_RECORDS, unique_paths_from_records
+
+    return DeleteStrategy.ENSURE_ONLY, []
+
+
+def _apply_delete_strategy(
+    qdrant: QdrantClient,
+    openai_client: OpenAI,
+    collection: str,
+    *,
+    model: str,
+    strategy: DeleteStrategy,
+    paths: list[str],
+) -> None:
+    """根據策略執行 init_collection + 視情況精準刪除。"""
+    if strategy is DeleteStrategy.CLEAR_ALL:
+        # 全局同步：刪整個 collection 再重建
+        init_collection(qdrant, openai_client, collection, model=model, clear=True)
+        return
+
+    # 其餘策略皆需確保 collection 存在
+    init_collection(qdrant, openai_client, collection, model=model, clear=False)
+
+    if strategy is DeleteStrategy.BY_CATEGORY_PATHS:
+        # 分類同步（Celery task 明確傳入）：精準刪除
+        delete_by_category_paths(qdrant, collection, paths)
+    elif strategy is DeleteStrategy.AUTO_FROM_RECORDS:
+        # 從 records 自動偵測（手動執行新格式 txt 時使用）
+        delete_by_category_paths(qdrant, collection, paths)
+    # ENSURE_ONLY：僅確保 collection 存在，無刪除動作
+
+
+# -------------------------
 # CLI
 # -------------------------
 def _build_parser() -> argparse.ArgumentParser:
@@ -376,51 +448,37 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Step 1: parse_args + 前置驗證
     args = _build_parser().parse_args(argv)
-
     if not args.qdrant_url:
         raise RuntimeError(
             "QDRANT_URL 未設定：請以 --qdrant-url 參數或環境變數 QDRANT_URL 提供"
         )
-
     source_path = Path(args.source)
     if not source_path.exists():
         raise RuntimeError(f"來源檔不存在：{source_path}")
 
+    # Step 2: 建立 clients
     openai_client = make_openai_client(args.provider, args.base_url, args.api_key)
     qdrant = QdrantClient(url=args.qdrant_url)
     print(f"Embedding provider={args.provider} model={args.model}")
 
+    # Step 3: 讀取 records
     records = parse_kb(source_path)
     print(f"載入 {len(records)} 筆 Q&A（來源：{source_path}）")
 
-    # 計算 records 中的 category_path（若有）
-    unique_paths_from_records = list(
-        {r["category_path"] for r in records if r.get("category_path")}
+    # Step 4: 決定並執行刪除策略
+    strategy, paths = _decide_delete_strategy(args, records)
+    _apply_delete_strategy(
+        qdrant,
+        openai_client,
+        args.collection,
+        model=args.model,
+        strategy=strategy,
+        paths=paths,
     )
 
-    # 決定刪除策略
-    explicit_paths = [
-        p.strip()
-        for p in args.delete_category_paths.split(",")
-        if p.strip()
-    ]
-
-    if args.clear:
-        # 全局同步：刪整個 collection 再重建
-        init_collection(qdrant, openai_client, args.collection, model=args.model, clear=True)
-    elif explicit_paths:
-        # 分類同步（Celery task 明確傳入）：確保 collection 存在 + 精準刪除
-        init_collection(qdrant, openai_client, args.collection, model=args.model, clear=False)
-        delete_by_category_paths(qdrant, args.collection, explicit_paths)
-    elif unique_paths_from_records:
-        # 從 records 自動偵測（手動執行新格式 txt 時使用）
-        init_collection(qdrant, openai_client, args.collection, model=args.model, clear=False)
-        delete_by_category_paths(qdrant, args.collection, unique_paths_from_records)
-    else:
-        # 無 --clear 也無 category_path：確保 collection 存在即可
-        init_collection(qdrant, openai_client, args.collection, model=args.model, clear=False)
-
+    # Step 5: embed + upsert
     if records:
         upload(
             qdrant,
