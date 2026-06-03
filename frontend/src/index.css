@@ -75,40 +75,47 @@
   }
 }
 
-/* Form 錯誤 shake 動畫 — 配合 aria-invalid 樣式給使用者明確負向回饋。
-   位移幅度 4px、總長 360ms，prefers-reduced-motion 已由 base layer 全域抑制。 */
+/* Form 錯誤 shake 動畫 — 已同步在 tailwind.config keyframes/animation 註冊（animate-shake-x）。
+   保留純 CSS 定義作為 fallback，並支援 `animate-[shake-x_...]` 內聯語法。 */
 @keyframes shake-x {
   0%, 100% { transform: translateX(0); }
   20%, 60% { transform: translateX(-4px); }
   40%, 80% { transform: translateX(4px); }
 }
 
-/* 全域 macOS 風 scrollbar：細、半透明、hover 才顯著
+/* 全域 macOS 風 scrollbar（限定在 html，避免 `*` 通配套用影響所有元素的 layout / 效能）
+   ─ WebKit/Chromium：限定 html 與一般可捲動容器，不影響 Radix ScrollArea 等自訂捲軸區
+   ─ Firefox：限定 html 套用 scrollbar-width / scrollbar-color
    避免廠商預設 16px 灰條的廉價感（特別在 Windows 上） */
-::-webkit-scrollbar {
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
-::-webkit-scrollbar-track {
+html::-webkit-scrollbar-track,
+body::-webkit-scrollbar-track {
   background: transparent;
 }
-::-webkit-scrollbar-thumb {
+html::-webkit-scrollbar-thumb,
+body::-webkit-scrollbar-thumb {
   background: rgba(15, 23, 42, 0.15);
   border-radius: 8px;
   background-clip: padding-box;
   border: 2px solid transparent;
   transition: background-color 200ms ease-out;
 }
-::-webkit-scrollbar-thumb:hover {
+html::-webkit-scrollbar-thumb:hover,
+body::-webkit-scrollbar-thumb:hover {
   background: rgba(15, 23, 42, 0.3);
   background-clip: padding-box;
   border: 2px solid transparent;
 }
-::-webkit-scrollbar-corner {
+html::-webkit-scrollbar-corner,
+body::-webkit-scrollbar-corner {
   background: transparent;
 }
 /* Firefox（無法自定 thumb radius / border，僅控制粗細與顏色） */
-* {
+html {
   scrollbar-width: thin;
   scrollbar-color: rgba(15, 23, 42, 0.2) transparent;
 }

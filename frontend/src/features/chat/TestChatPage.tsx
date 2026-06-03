@@ -13,6 +13,7 @@ export function TestChatPage() {
   const { id } = useParams<{ id: string }>()
   const { messages, sending, resetting, restarting, send, clear, restart } = useChat(id)
   const [draft, setDraft] = useState('')
+  const [refocusTick, setRefocusTick] = useState(0)
   // scrollAreaRef 指向 Radix ScrollArea 根元素，用於直接捲動 Viewport
   // 不用 scrollIntoView，避免捲動事件冒泡至 main.overflow-auto
   const scrollAreaRef = useRef<HTMLDivElement>(null)
@@ -25,15 +26,18 @@ export function TestChatPage() {
     if (viewport) viewport.scrollTop = viewport.scrollHeight
   }, [messages, sending])
 
+  // 在 sending 由 true → false 後（disabled 已移除）以 effect 自然觸發 focus，
+  // 取代原本的 setTimeout(0) trick。refocusTick 用來在每次「送完一則」後重新觸發。
+  useEffect(() => {
+    if (!sending && refocusTick > 0) textareaRef.current?.focus()
+  }, [sending, refocusTick])
+
   async function handleSend() {
     const text = draft.trim()
     if (!text || sending) return
     setDraft('')
     await send(text)
-    // React 18 自動批次：setSending(false) 尚未 commit 到 DOM，
-    // disabled={sending} 仍為 true，直接 focus() 無效。
-    // setTimeout(0) 延至下一個 macrotask，確保 disabled 已移除後再 focus。
-    setTimeout(() => textareaRef.current?.focus(), 0)
+    setRefocusTick((t) => t + 1)
   }
 
   return (
@@ -64,7 +68,7 @@ export function TestChatPage() {
 
       <Card className="flex-1 flex flex-col overflow-hidden">
         <ScrollArea ref={scrollAreaRef} className="flex-1 p-4">
-          <div className="space-y-3">
+          <div className="space-y-3" role="log" aria-live="polite" aria-label="對話訊息">
             {messages.length === 0 && (
               <p className="text-center text-text-muted text-sm py-8">輸入訊息開始測試對話...</p>
             )}

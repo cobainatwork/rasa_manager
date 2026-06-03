@@ -90,10 +90,18 @@ const config: Config = {
       keyframes: {
         'accordion-down': { from: { height: '0' }, to: { height: 'var(--radix-accordion-content-height)' } },
         'accordion-up': { from: { height: 'var(--radix-accordion-content-height)' }, to: { height: '0' } },
+        // Form 錯誤 shake — 配合 aria-invalid 在 Input/Textarea 套用，
+        // 位移 4px、總長 360ms；prefers-reduced-motion 已由 index.css 全域抑制。
+        'shake-x': {
+          '0%, 100%': { transform: 'translateX(0)' },
+          '20%, 60%': { transform: 'translateX(-4px)' },
+          '40%, 80%': { transform: 'translateX(4px)' },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 200ms ease-out',
         'accordion-up': 'accordion-up 200ms ease-out',
+        'shake-x': 'shake-x 360ms ease-out',
       },
     },
   },

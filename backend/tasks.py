@@ -27,7 +27,7 @@ REDIS_URL: str = os.environ.get("REDIS_URL", "redis://redis:6379/0")
 TASK_SOFT_TIME_LIMIT_SEC = 300        # Celery soft time limit
 TASK_MAX_RETRIES = 3                  # 重試次數上限
 TASK_RETRY_DELAY_SEC = 10             # 第一次重試延遲（後續指數退避）
-RETRY_BACKOFF_BASE_SEC = TASK_RETRY_DELAY_SEC  # B1 手動 countdown 基數，刻意與 default_retry_delay 保持一致
+RETRY_BACKOFF_BASE_SEC = TASK_RETRY_DELAY_SEC  # 手動 countdown 基數，刻意與 default_retry_delay 保持一致
 
 # Ingest subprocess 層
 # 比 task_soft_time_limit 早 20 秒，留餘裕讓我們自行 kill 並寫 sync_log
@@ -334,7 +334,7 @@ def run_ingestion_sync(self, agent_id: str, sync_log_id: str) -> None:  # type: 
             sync_log_id=sync_log_id,
             error=str(exc),
         )
-        # B1 修法：先判斷 retry 是否已用盡，再決定是否標 failed。
+        # 先判斷 retry 是否已用盡，再決定是否標 failed。
         # self.retry(exc=...) 用盡 max_retries 時會「重拋原本 exc」，不是 MaxRetriesExceededError，
         # 所以不能單靠 try/except MaxRetriesExceededError 攔截。
         max_retries = self.max_retries if self.max_retries is not None else TASK_MAX_RETRIES

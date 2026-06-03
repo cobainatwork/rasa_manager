@@ -7,6 +7,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { FORM_FIELD_BASE } from '@/components/ui/form-field-base'
+import { cn } from '@/lib/utils'
 import { listAgents, updateAgent, deleteAgent, testConnection, validateScript } from '@/api/endpoints/agents'
 import { extractErrorMessage } from '@/api/client'
 import { toast } from 'sonner'
@@ -148,7 +150,7 @@ export function AgentSettingsPage() {
             <Label>Provider</Label>
             <select
               {...register('embedding_provider')}
-              className="flex h-9 w-full rounded-md border border-black/[0.12] bg-[#F2F2F7] px-3 py-1 text-sm transition-colors focus:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+              className={cn(FORM_FIELD_BASE, 'h-9 py-1')}
             >
               <option value="openai">OpenAI（雲端）</option>
               <option value="local">Local（地端 OpenAI-compatible）</option>

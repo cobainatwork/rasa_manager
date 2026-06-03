@@ -6,7 +6,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from api.database.models import Agent, Category, KnowledgeItem, User, UserAgentRole
@@ -161,8 +161,6 @@ def get_agent_stats(
     db: Session = Depends(get_db),
 ) -> dict:  # type: ignore[type-arg]
     require_agent_access(agent_id, current_user, db)
-
-    from sqlalchemy import case  # noqa: PLC0415
 
     row = db.query(
         func.count(KnowledgeItem.id).label("total"),

@@ -22,6 +22,20 @@ logger = structlog.get_logger()
 router = APIRouter(prefix="/api/v1/agents/{agent_id}/chat", tags=["chat"])
 
 
+def _extract_messages(raw: Any) -> list[Any]:
+    """正規化 Rasa 兩種 response 格式為訊息陣列。
+
+    REST channel (/webhooks/rest/webhook)         → 頂層陣列 [{recipient_id, text, ...}]
+    Custom channel (/webhooks/{name}/webhook)     → {"messages": [...], "conversation_id": ..., ...}
+    其他（含 None / 非預期型別）一律回傳 []。
+    """
+    if isinstance(raw, list):
+        return raw
+    if isinstance(raw, dict):
+        return raw.get("messages") or []
+    return []
+
+
 @router.post("/test")
 def test_chat(
     agent_id: uuid.UUID,
@@ -52,16 +66,7 @@ def test_chat(
                 json={"sender": sender, "message": body.message},
             )
             resp.raise_for_status()
-            raw = resp.json()
-            # Rasa 兩種 response 格式（依 OpenAPI pro.yaml 規格）：
-            # 1. REST channel (/webhooks/rest/webhook)        → 頂層陣列 [{recipient_id, text, ...}]
-            # 2. Custom channel (/webhooks/{name}/webhook)   → {"messages": [...], "conversation_id": ..., ...}
-            if isinstance(raw, list):
-                messages: list[Any] = raw
-            elif isinstance(raw, dict):
-                messages = raw.get("messages") or []
-            else:
-                messages = []
+            messages = _extract_messages(resp.json())
     except httpx.TimeoutException as exc:
         logger.warning(
             "rasa_timeout",

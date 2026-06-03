@@ -2,6 +2,7 @@
 // I11：使用 factories.ts 共用 factory，並讓 submit/approve/reject/unapprove/rollback 回傳完整 Faq。
 import { http, HttpResponse } from 'msw'
 import { makeUser, makeAgent, makeCategory, makeFaq } from './factories'
+import type { FaqStatus } from '@/api/types'
 
 const ok = <T>(data: T) => HttpResponse.json({ success: true, data })
 
@@ -56,8 +57,8 @@ export const handlers = [
   // 之前 submit/approve/reject/unapprove 4 個假 endpoint 與 backend 完全不一致，
   // 測試形同虛設（real frontend 走 PATCH /status，這些假 mock 永不被命中）。
   http.patch('/api/v1/agents/:id/faqs/:faqId/status', async ({ request }) => {
-    const body = (await request.json()) as { status?: string }
-    return ok(makeFaq({ status: (body?.status as 'draft' | 'pending' | 'approved' | 'rejected' | 'synced') ?? 'draft' }))
+    const body = (await request.json()) as { status?: FaqStatus }
+    return ok(makeFaq({ status: body?.status ?? 'draft' }))
   }),
   http.get('/api/v1/agents/:id/faqs/:faqId/histories', () => ok([])),
   http.post('/api/v1/agents/:id/faqs/:faqId/rollback', () => ok(makeFaq({ version: 3 }))),

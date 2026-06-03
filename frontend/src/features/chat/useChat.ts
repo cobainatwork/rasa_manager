@@ -20,6 +20,21 @@ function newSenderId(): string {
   return `s-${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
+/** 解析 Rasa REST webhook 回應為 ChatMessage 陣列。
+ *  回應 schema：`data` 為 `{ text?: string, image?: string, ... }[]`。
+ *  僅保留含 text 的回覆；最後一則 bot 訊息掛上 responseMs。 */
+function parseReplies(raw: unknown, responseMs: number): ChatMessage[] {
+  const replies: { text?: string }[] = Array.isArray(raw) ? raw : []
+  const filtered = replies.filter((r) => r.text)
+  const ts = Date.now()
+  return filtered.map((r, i) => ({
+    id: `b-${ts}-${i}`,
+    role: 'bot' as const,
+    text: r.text!,
+    ...(i === filtered.length - 1 ? { responseMs } : {}),
+  }))
+}
+
 export function useChat(agentId: string | undefined) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [sending, setSending] = useState(false)
@@ -39,15 +54,7 @@ export function useChat(agentId: string | undefined) {
         message: text,
       })
       const responseMs = Date.now() - startAt
-      const raw = resp.data?.data
-      const replies: { text?: string }[] = Array.isArray(raw) ? raw : []
-      const filtered = replies.filter((r) => r.text)
-      const botMsgs: ChatMessage[] = filtered.map((r, i) => ({
-        id: `b-${Date.now()}-${i}`,
-        role: 'bot' as const,
-        text: r.text!,
-        ...(i === filtered.length - 1 ? { responseMs } : {}),
-      }))
+      const botMsgs = parseReplies(resp.data?.data, responseMs)
       setMessages((m) => [...m, ...botMsgs])
     } catch (err) {
       toast.error(extractErrorMessage(err))
