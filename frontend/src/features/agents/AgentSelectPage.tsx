@@ -36,7 +36,7 @@ export function AgentSelectPage() {
 
   return (
     <div className="min-h-screen bg-canvas">
-      <header className="h-11 bg-[#F2F2F7]/80 backdrop-blur-xl border-b border-black/[0.08] flex items-center px-6 justify-between sticky top-0 z-sticky shrink-0">
+      <header className="h-11 bg-canvas/80 backdrop-blur-xl border-b border-black/[0.08] flex items-center px-6 justify-between sticky top-0 z-sticky shrink-0">
         <AppLogo />
         <div className="flex items-center gap-2">
           <span className="text-[13px] text-text-secondary">{username}</span>

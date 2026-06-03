@@ -2,7 +2,10 @@ import type { Config } from 'tailwindcss'
 import tailwindcssAnimate from 'tailwindcss-animate'
 
 const config: Config = {
-  darkMode: ['class'],
+  // 不實作 dark mode：當前 design tokens（canvas/surface/subtle 等）採固定 light
+  // 色票，且 index.css 未提供 .dark CSS variable overrides。若未來要支援
+  // dark mode，需重新設計 token system（補 .dark { --background, --foreground,
+  // --card, --border, ... } 並全面套用 dark: 變體）。
   content: ['./index.html', './src/**/*.{ts,tsx,js,jsx}'],
   theme: {
     container: { center: true, padding: '1rem' },
