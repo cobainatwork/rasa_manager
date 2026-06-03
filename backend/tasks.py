@@ -102,6 +102,22 @@ def _run_ingest_subprocess(
         raise
 
 
+def _snapshot_embedding_to_sync_log(sync_log: Any, agent: Any) -> None:
+    """將 agent 當下的 embedding 設定凍結拷貝至 sync_log。
+
+    在「找到 agent 之後、改 status=running 之前」呼叫，與 started_at 同一個
+    transaction 一起 commit。日後 agent 切 model，歷史紀錄不會「歪掉」。
+
+    不寫 base_url / api_key（敏感資訊，且 base_url 可在 Agent 詳情頁查）。
+    """
+    sync_log.embedding_provider = (
+        str(agent.embedding_provider) if agent.embedding_provider is not None else None
+    )
+    sync_log.embedding_model = (
+        str(agent.embedding_model) if agent.embedding_model is not None else None
+    )
+
+
 def _finalize_sync_log_failed(
     db: Any, sync_log: Any, error_message: str
 ) -> None:
@@ -242,6 +258,8 @@ def run_ingestion_sync(self, agent_id: str, sync_log_id: str) -> None:  # type: 
             db.commit()
             return
 
+        # 凍結 embedding 快照（必須在改 status=running 之前，與 started_at 一同 commit）
+        _snapshot_embedding_to_sync_log(sync_log, agent)
         sync_log.status = "running"
         sync_log.started_at = datetime.now(timezone.utc)
         db.commit()
@@ -395,6 +413,8 @@ def run_category_sync(self, agent_id: str, category_id: str, sync_log_id: str) -
             db.commit()
             return
 
+        # 凍結 embedding 快照（必須在改 status=running 之前，與 started_at 一同 commit）
+        _snapshot_embedding_to_sync_log(sync_log, agent)
         sync_log.status = "running"
         sync_log.started_at = datetime.now(timezone.utc)
         db.commit()

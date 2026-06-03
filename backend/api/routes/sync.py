@@ -202,6 +202,9 @@ def get_sync_history(
             "output_file": log.output_file,
             "stdout": log.stdout,
             "stderr": log.stderr,
+            # 同步當下凍結的 embedding 快照（migration 006 之前為 None）
+            "embedding_provider": log.embedding_provider,
+            "embedding_model": log.embedding_model,
         })
 
     return {"success": True, "data": items}
@@ -236,5 +239,8 @@ def get_sync_status(
             "finished_at": sync_log.finished_at.isoformat() if sync_log.finished_at else None,
             "duration_sec": sync_log.duration_sec,
             "created_at": sync_log.created_at.isoformat() if sync_log.created_at else None,
+            # 同步當下凍結的 embedding 快照（migration 006 之前為 None）
+            "embedding_provider": sync_log.embedding_provider,
+            "embedding_model": sync_log.embedding_model,
         },
     }

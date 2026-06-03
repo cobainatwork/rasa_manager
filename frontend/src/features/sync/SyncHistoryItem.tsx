@@ -3,6 +3,7 @@ import { ChevronRight, ChevronDown, CheckCircle2, XCircle, Loader2, Clock } from
 import { cn } from '@/lib/utils'
 import { relativeTime, formatDate } from '@/lib/format'
 import { SYNC_STATUS_LABEL } from './syncStatus'
+import { formatEmbeddingSnapshot } from './embeddingSnapshot'
 import type { SyncLog } from '@/api/types'
 import type { SyncLogHistoryItem as Item } from '@/api/types'
 
@@ -39,12 +40,23 @@ export function SyncHistoryItem({ item }: { item: Item }) {
         <span className="text-text-muted ml-auto">{relativeTime(item.started_at)}</span>
         <span className="text-text-muted">{item.duration_sec != null ? `${item.duration_sec}s` : '—'}</span>
         <span className="text-text-muted">{item.items_count} 筆</span>
+        <span
+          className="text-text-muted text-xs"
+          title="同步當下凍結的 Embedding 模型"
+          data-testid="embedding-snapshot"
+        >
+          {formatEmbeddingSnapshot(item.embedding_provider, item.embedding_model)}
+        </span>
       </button>
 
       {expanded && (
         <div className="mt-3 pl-7 space-y-2 text-xs">
           <div><span className="text-text-muted">開始：</span>{formatDate(item.started_at)}</div>
           <div><span className="text-text-muted">完成：</span>{formatDate(item.finished_at)}</div>
+          <div>
+            <span className="text-text-muted">Embedding 模型：</span>
+            {formatEmbeddingSnapshot(item.embedding_provider, item.embedding_model)}
+          </div>
           {item.output_file && <div><span className="text-text-muted">輸出：</span><code className="bg-subtle px-1 rounded">{item.output_file}</code></div>}
           {item.stdout && (
             <details>

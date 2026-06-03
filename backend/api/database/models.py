@@ -296,6 +296,10 @@ class SyncLog(Base):
     started_at = Column(DateTime(timezone=True), nullable=True)
     finished_at = Column(DateTime(timezone=True), nullable=True)
     duration_sec = Column(Integer, nullable=True)
+    # 同步當下 agent 使用的 embedding 快照（凍結）：日後 agent 切 model，歷史不歪掉。
+    # nullable=True：migration 006 之前的既有 row 為 NULL。
+    embedding_provider = Column(String(20), nullable=True)
+    embedding_model = Column(String(100), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     agent = relationship("Agent", back_populates="sync_logs")
