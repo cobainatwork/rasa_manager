@@ -12,15 +12,11 @@ export interface EmptyStateProps {
 export function EmptyState({ icon: Icon, title, description, action, className }: EmptyStateProps) {
   return (
     <div className={cn('flex flex-col items-center justify-center text-center py-16', className)}>
-      {/* relative + 模糊光暈讓圖示有「漂浮」質感而非貼平 */}
       {Icon && (
-        <div className="relative mb-6">
-          <div className="absolute inset-0 bg-brand-500/10 rounded-full blur-2xl" aria-hidden />
-          <Icon
-            className="relative w-20 h-20 text-text-muted/70"
-            strokeWidth={1}
-          />
-        </div>
+        <Icon
+          className="w-20 h-20 text-text-muted/70 mb-6"
+          strokeWidth={1}
+        />
       )}
       <h3 className="text-base font-semibold text-text-primary mb-1.5">{title}</h3>
       {description && (
