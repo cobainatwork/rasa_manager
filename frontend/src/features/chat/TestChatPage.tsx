@@ -9,6 +9,8 @@ import { useChat } from './useChat'
 import { ChatBubble } from './ChatBubble'
 import { TypingIndicator } from './TypingIndicator'
 
+const SUGGESTED_PROMPTS = ['你好', '請問退費政策？', '請問今天天氣？'] as const
+
 export function TestChatPage() {
   const { id } = useParams<{ id: string }>()
   const { messages, sending, resetting, restarting, send, clear, restart } = useChat(id)
@@ -70,7 +72,28 @@ export function TestChatPage() {
         <ScrollArea ref={scrollAreaRef} className="flex-1 p-4">
           <div className="space-y-3" role="log" aria-live="polite" aria-label="對話訊息">
             {messages.length === 0 && (
-              <p className="text-center text-text-muted text-sm py-8">輸入訊息開始測試對話...</p>
+              <div className="py-8 flex flex-col items-center gap-4">
+                <p className="text-center text-text-muted text-sm">輸入訊息開始測試對話...</p>
+                <div
+                  className="flex flex-wrap justify-center gap-2"
+                  role="group"
+                  aria-label="範例提示"
+                >
+                  {SUGGESTED_PROMPTS.map((prompt) => (
+                    <button
+                      key={prompt}
+                      type="button"
+                      onClick={() => {
+                        setDraft(prompt)
+                        textareaRef.current?.focus()
+                      }}
+                      className="px-3 py-1.5 rounded-full bg-canvas text-text-primary border border-border-default text-sm hover:bg-subtle transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                    >
+                      {prompt}
+                    </button>
+                  ))}
+                </div>
+              </div>
             )}
             {messages.map((m) => <ChatBubble key={m.id} message={m} />)}
             {sending && <TypingIndicator />}
