@@ -16,9 +16,17 @@ interface Props {
 export function FaqListRow({ faq, selected, checked, onSelect, onToggleCheck }: Props) {
   return (
     <div
+      role="button"
+      tabIndex={0}
       onClick={() => onSelect(faq.id)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onSelect(faq.id)
+        }
+      }}
       className={cn(
-        'flex items-start gap-3 px-4 py-3 border-b border-border-default cursor-pointer text-sm transition-colors',
+        'flex items-start gap-3 px-4 py-3 border-b border-border-default cursor-pointer text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-inset',
         selected
           ? 'bg-brand-500/[0.10] shadow-[inset_3px_0_0_#007AFF] text-brand-700'
           : 'hover:bg-black/[0.04]'

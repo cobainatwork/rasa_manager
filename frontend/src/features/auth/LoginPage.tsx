@@ -33,7 +33,7 @@ export function LoginPage() {
             <h1 className="text-3xl font-bold">Rasa 知識庫管理平台</h1>
           </div>
           <p className="text-lg text-white/90 mb-12">集中管理多 Agent 的 FAQ 與分類，一鍵同步至 Rasa。</p>
-          <ul className="space-y-3 text-white/80">
+          <ul className="space-y-3 text-white">
             <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 rounded-full bg-white/80" />多 Agent 隔離管理</li>
             <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 rounded-full bg-white/80" />FAQ 版本歷史與比對</li>
             <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 rounded-full bg-white/80" />一鍵同步至 Rasa REST</li>
@@ -55,14 +55,35 @@ export function LoginPage() {
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
             <div className="space-y-1.5">
               <Label htmlFor="username">帳號</Label>
-              <Input id="username" autoComplete="username" autoFocus {...register('username')} />
-              {errors.username && <p className="text-xs text-red-600">{errors.username.message}</p>}
+              <Input
+                id="username"
+                autoComplete="username"
+                autoFocus
+                aria-invalid={errors.username ? true : undefined}
+                aria-describedby={errors.username ? 'username-error' : undefined}
+                {...register('username')}
+              />
+              {errors.username && (
+                <p id="username-error" role="alert" className="text-xs text-red-600">
+                  {errors.username.message}
+                </p>
+              )}
             </div>
 
             <div className="space-y-1.5">
               <Label htmlFor="password">密碼</Label>
-              <PasswordInput id="password" autoComplete="current-password" {...register('password')} />
-              {errors.password && <p className="text-xs text-red-600">{errors.password.message}</p>}
+              <PasswordInput
+                id="password"
+                autoComplete="current-password"
+                aria-invalid={errors.password ? true : undefined}
+                aria-describedby={errors.password ? 'password-error' : undefined}
+                {...register('password')}
+              />
+              {errors.password && (
+                <p id="password-error" role="alert" className="text-xs text-red-600">
+                  {errors.password.message}
+                </p>
+              )}
             </div>
 
             {error && (

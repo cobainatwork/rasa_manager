@@ -17,7 +17,7 @@ export function EmptyState({ icon: Icon, title, description, action, className }
         <div className="relative mb-6">
           <div className="absolute inset-0 bg-brand-500/10 rounded-full blur-2xl" aria-hidden />
           <Icon
-            className="relative w-20 h-20 text-text-muted/40"
+            className="relative w-20 h-20 text-text-muted/70"
             strokeWidth={1}
           />
         </div>

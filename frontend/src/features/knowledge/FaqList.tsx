@@ -178,11 +178,13 @@ export function FaqList({ agentId, selectedFaqId, onSelectFaq, onNewFaq, canAdd 
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>取消</AlertDialogCancel>
-                  <AlertDialogAction
-                    className="bg-red-600 hover:bg-red-700"
-                    onClick={() => bulkAction('刪除', (id) => api.deleteFaq(agentId, id))}
-                  >
-                    確認刪除
+                  <AlertDialogAction asChild>
+                    <Button
+                      variant="destructive"
+                      onClick={() => bulkAction('刪除', (id) => api.deleteFaq(agentId, id))}
+                    >
+                      確認刪除
+                    </Button>
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
