@@ -27,9 +27,9 @@ export function LoginPage() {
     <div className="min-h-screen flex bg-canvas">
       {/* 左側品牌區（< 1024px 隱藏） */}
       <aside className="hidden lg:flex flex-col justify-center w-3/5 bg-text-primary text-white px-20 py-20">
-        <h1 className="text-5xl font-bold tracking-tight leading-tight">
+        <p className="text-5xl font-bold tracking-tight leading-tight">
           Rasa 知識庫<br />管理平台
-        </h1>
+        </p>
         <p className="mt-6 text-base text-white/60">
           FAQ 管理、版本歷史、一鍵同步至 Rasa。
         </p>
@@ -43,7 +43,7 @@ export function LoginPage() {
             <span className="text-xl font-semibold">Rasa KB</span>
           </div>
 
-          <h2 className="text-2xl font-bold mb-2">歡迎回來</h2>
+          <h1 className="text-2xl font-bold mb-2">歡迎回來</h1>
           <p className="text-sm text-text-secondary mb-8">請輸入您的帳號與密碼</p>
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
