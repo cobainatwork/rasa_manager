@@ -30,20 +30,36 @@ export const handlers = [
   http.post('/api/v1/agents/:id/categories', () => ok(makeCategory({ name: '新分類' }))),
   http.patch('/api/v1/agents/:id/categories/:cid', () => ok(makeCategory({ name: '更新後' }))),
   http.delete('/api/v1/agents/:id/categories/:cid', () => HttpResponse.json({ success: true })),
+  http.post('/api/v1/agents/:id/categories/:cid/sync', () => ok({ task_id: 't1', sync_log_id: 's1' })),
+  http.post('/api/v1/agents/:id/categories/:cid/import', () => ok({
+    imported: 0, skipped: 0, errors: [], new_categories: [],
+  })),
+  http.get('/api/v1/agents/:id/categories/:cid/export', () => new Response(new Blob(), {
+    headers: { 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
+  })),
 
   // FAQs
   http.get('/api/v1/agents/:id/faqs', () => ok({ items: [], total: 0, page: 1, per_page: 20 })),
+  // 注意：/faqs/ids 必須先於 /faqs/:faqId 註冊，否則會被 :faqId='ids' 貪婪攔截
+  http.get('/api/v1/agents/:id/faqs/ids', () => ok([])),
   http.get('/api/v1/agents/:id/faqs/:faqId', ({ params }) =>
     ok(makeFaq({ id: String(params.faqId), agent_id: String(params.id) })),
   ),
   http.post('/api/v1/agents/:id/faqs', () => ok(makeFaq({ id: 'new-faq' }))),
   http.patch('/api/v1/agents/:id/faqs/:faqId', () => ok(makeFaq({ id: 'a-faq', version: 2 }))),
   http.delete('/api/v1/agents/:id/faqs/:faqId', () => HttpResponse.json({ success: true })),
-  http.post('/api/v1/agents/:id/faqs/:faqId/submit', () => ok(makeFaq({ status: 'pending' }))),
-  http.post('/api/v1/agents/:id/faqs/:faqId/approve', () => ok(makeFaq({ status: 'approved' }))),
-  http.post('/api/v1/agents/:id/faqs/:faqId/reject', () => ok(makeFaq({ status: 'rejected' }))),
-  http.post('/api/v1/agents/:id/faqs/:faqId/unapprove', () => ok(makeFaq({ status: 'draft' }))),
-  http.get('/api/v1/agents/:id/faqs/:faqId/history', () => ok([])),
+  // FAQ 編輯鎖三動詞
+  http.post('/api/v1/agents/:id/faqs/:faqId/lock', () => HttpResponse.json({ success: true })),
+  http.put('/api/v1/agents/:id/faqs/:faqId/lock', () => HttpResponse.json({ success: true })),
+  http.delete('/api/v1/agents/:id/faqs/:faqId/lock', () => HttpResponse.json({ success: true })),
+  // FAQ 狀態轉移統一走 PATCH /status，body { status: 'pending'|'approved'|... }
+  // 之前 submit/approve/reject/unapprove 4 個假 endpoint 與 backend 完全不一致，
+  // 測試形同虛設（real frontend 走 PATCH /status，這些假 mock 永不被命中）。
+  http.patch('/api/v1/agents/:id/faqs/:faqId/status', async ({ request }) => {
+    const body = (await request.json()) as { status?: string }
+    return ok(makeFaq({ status: (body?.status as 'draft' | 'pending' | 'approved' | 'rejected' | 'synced') ?? 'draft' }))
+  }),
+  http.get('/api/v1/agents/:id/faqs/:faqId/histories', () => ok([])),
   http.post('/api/v1/agents/:id/faqs/:faqId/rollback', () => ok(makeFaq({ version: 3 }))),
 
   // Audit logs
@@ -74,7 +90,7 @@ export const handlers = [
   http.post('/api/v1/users', () => ok(makeUser({ id: 'u-new', username: 'new', is_superadmin: false, created_at: '2026-01-01T00:00:00Z' }))),
   http.patch('/api/v1/users/:userId', () => ok(makeUser({ is_superadmin: false, is_active: false, created_at: '2026-01-01T00:00:00Z' }))),
   http.delete('/api/v1/users/:userId', () => HttpResponse.json({ success: true })),
-  http.post('/api/v1/users/:userId/reset-password', () => HttpResponse.json({ success: true })),
-  http.put('/api/v1/users/:userId/agents/:agentId/role', () => HttpResponse.json({ success: true })),
-  http.delete('/api/v1/users/:userId/agents/:agentId/role', () => HttpResponse.json({ success: true })),
+  http.patch('/api/v1/users/:userId/reset-password', () => HttpResponse.json({ success: true })),
+  http.post('/api/v1/agents/:agentId/roles', () => HttpResponse.json({ success: true })),
+  http.delete('/api/v1/agents/:agentId/roles/:userId', () => HttpResponse.json({ success: true })),
 ]
