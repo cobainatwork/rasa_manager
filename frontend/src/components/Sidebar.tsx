@@ -38,7 +38,7 @@ export function Sidebar() {
           className={({ isActive }) => cn(
             'flex items-center gap-2.5 px-3 py-1.5 rounded-md text-[13px] transition-colors duration-fast cursor-pointer select-none',
             isActive
-              ? 'bg-brand-500/15 text-brand-600 font-medium'
+              ? 'bg-canvas text-text-primary font-medium shadow-[inset_3px_0_0_theme(colors.brand.500)]'
               : 'text-text-secondary hover:bg-black/5 hover:text-text-primary',
           )}
         >

@@ -26,19 +26,13 @@ export function LoginPage() {
   return (
     <div className="min-h-screen flex bg-canvas">
       {/* 左側品牌區（< 1024px 隱藏） */}
-      <aside className="hidden lg:flex flex-col justify-center w-3/5 bg-gradient-to-br from-brand-500 to-brand-700 text-white p-16">
-        <div className="max-w-md">
-          <div className="flex items-center gap-3 mb-8">
-            <div className="w-12 h-12 rounded-lg bg-white/20 backdrop-blur flex items-center justify-center font-bold text-2xl">R</div>
-            <h1 className="text-3xl font-bold">Rasa 知識庫管理平台</h1>
-          </div>
-          <p className="text-lg text-white/90 mb-12">集中管理多 Agent 的 FAQ 與分類，一鍵同步至 Rasa。</p>
-          <ul className="space-y-3 text-white">
-            <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 rounded-full bg-white/80" />多 Agent 隔離管理</li>
-            <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 rounded-full bg-white/80" />FAQ 版本歷史與比對</li>
-            <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 rounded-full bg-white/80" />一鍵同步至 Rasa REST</li>
-          </ul>
-        </div>
+      <aside className="hidden lg:flex flex-col justify-center w-3/5 bg-text-primary text-white px-20 py-20">
+        <h1 className="text-5xl font-bold tracking-tight leading-tight">
+          Rasa 知識庫<br />管理平台
+        </h1>
+        <p className="mt-6 text-base text-white/60">
+          FAQ 管理、版本歷史、一鍵同步至 Rasa。
+        </p>
       </aside>
 
       {/* 右側登入表單 */}
