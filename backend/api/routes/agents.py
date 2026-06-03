@@ -36,6 +36,8 @@ def _agent_to_dict(agent: Agent) -> dict:  # type: ignore[type-arg]
         "txt_output_path": agent.txt_output_path,
         "rasa_rest_url": agent.rasa_rest_url,
         "ingest_script_path": agent.ingest_script_path,
+        "embedding_provider": agent.embedding_provider,
+        "embedding_model": agent.embedding_model,
         "created_at": agent.created_at.isoformat() if agent.created_at else None,
     }
 
@@ -77,6 +79,8 @@ def create_agent(
         txt_output_path=body.txt_output_path,
         rasa_rest_url=body.rasa_rest_url,
         ingest_script_path=body.ingest_script_path,
+        embedding_provider=body.embedding_provider,
+        embedding_model=body.embedding_model,
     )
     db.add(agent)
     db.commit()
@@ -115,6 +119,11 @@ def update_agent(
         agent.rasa_rest_url = body.rasa_rest_url
     if "ingest_script_path" in body.model_fields_set:
         agent.ingest_script_path = body.ingest_script_path
+    # embedding_provider / embedding_model 為 NOT NULL，None 視為「不更新」
+    if body.embedding_provider is not None:
+        agent.embedding_provider = body.embedding_provider
+    if body.embedding_model is not None:
+        agent.embedding_model = body.embedding_model
     db.commit()
     db.refresh(agent)
     return {"success": True, "data": _agent_to_dict(agent), "message": "更新成功"}

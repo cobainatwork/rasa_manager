@@ -34,6 +34,11 @@ const schema = z.object({
       { message: 'Webhook URL 必須以 http:// 或 https:// 開頭' }
     ),
   ingest_script_path: z.string().nullable(),
+  embedding_provider: z.enum(['openai', 'local']),
+  embedding_model: z
+    .string()
+    .min(1, 'Embedding model 名稱必填')
+    .max(100),
 })
 type FormData = z.infer<typeof schema>
 
@@ -65,6 +70,8 @@ export function AgentSettingsPage() {
             txt_output_path: found.txt_output_path,
             rasa_rest_url: found.rasa_rest_url ?? '',
             ingest_script_path: found.ingest_script_path ?? '',
+            embedding_provider: found.embedding_provider,
+            embedding_model: found.embedding_model,
           })
         }
       })
@@ -159,6 +166,38 @@ export function AgentSettingsPage() {
         test={{ run: handleTestConnection, busy: testingConn }}
         validate={{ run: handleValidateScript, busy: validatingScript }}
       />
+
+      <Card className="p-6 mb-6">
+        <h2 className="font-semibold mb-1">Embedding 設定</h2>
+        <p className="text-xs text-text-muted mb-4">
+          切換 provider 或 model 後，下次同步請先用「清空重建」（避免 dim mismatch）。
+        </p>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label>Provider</Label>
+            <select
+              {...register('embedding_provider')}
+              className="flex h-9 w-full rounded-md border border-black/[0.12] bg-[#F2F2F7] px-3 py-1 text-sm transition-colors focus:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+            >
+              <option value="openai">OpenAI（雲端）</option>
+              <option value="local">Local（地端 OpenAI-compatible）</option>
+            </select>
+            {errors.embedding_provider && (
+              <p className="text-xs text-destructive">{errors.embedding_provider.message}</p>
+            )}
+          </div>
+          <div className="space-y-1.5">
+            <Label>Model 名稱</Label>
+            <Input
+              {...register('embedding_model')}
+              placeholder="text-embedding-3-small / bge-m3-q8_0"
+            />
+            {errors.embedding_model && (
+              <p className="text-xs text-destructive">{errors.embedding_model.message}</p>
+            )}
+          </div>
+        </div>
+      </Card>
 
       <DangerZone agentName={agent.name} onDelete={handleDelete} />
     </form>

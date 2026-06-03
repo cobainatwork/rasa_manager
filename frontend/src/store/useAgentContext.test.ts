@@ -9,6 +9,8 @@ const FAKE_AGENT: Agent = {
   txt_output_path: '/opt/test',
   rasa_rest_url: null,
   ingest_script_path: null,
+  embedding_provider: 'openai',
+  embedding_model: 'text-embedding-3-small',
   created_at: null,
 }
 

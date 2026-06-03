@@ -56,8 +56,30 @@ load_dotenv()
 # -------------------------
 # 常數
 # -------------------------
-EMBED_MODEL = "text-embedding-3-small"
 BATCH_SIZE = 200
+DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
+
+
+def make_openai_client(
+    provider: str, base_url: str | None, api_key: str | None
+) -> OpenAI:
+    """根據 provider 決定 OpenAI client 連線目標。
+
+    - openai：用 OpenAI 官方端點 + OPENAI_API_KEY
+    - local ：用使用者指定的 base_url + api_key（OpenAI-compatible 介面）
+    """
+    p = (provider or "openai").lower()
+    if p == "local":
+        if not base_url:
+            raise RuntimeError(
+                "provider=local 但未提供 --base-url / LOCAL_EMBEDDING_BASE_URL"
+            )
+        # 多數地端 server（LM Studio / Ollama / TEI）不檢查 api_key，但 OpenAI SDK
+        # 要求非空字串，因此預設 'any' 作為 placeholder。
+        return OpenAI(base_url=base_url, api_key=api_key or "any")
+    if p != "openai":
+        raise RuntimeError(f"未支援的 embedding provider：{provider!r}（限 openai|local）")
+    return OpenAI()  # 走 OPENAI_API_KEY env
 
 
 # -------------------------
@@ -165,27 +187,32 @@ def parse_kb(path: str | Path) -> list[dict]:
 # -------------------------
 # Embedding
 # -------------------------
-def embed(client: OpenAI, texts: list[str]) -> list[list[float]]:
-    resp = client.embeddings.create(model=EMBED_MODEL, input=texts)
+def embed(client: OpenAI, model: str, texts: list[str]) -> list[list[float]]:
+    resp = client.embeddings.create(model=model, input=texts)
     return [d.embedding for d in resp.data]
 
 
-def get_embedding_dim(client: OpenAI) -> int:
-    return len(embed(client, ["dimension check"])[0])
+def get_embedding_dim(client: OpenAI, model: str) -> int:
+    return len(embed(client, model, ["dimension check"])[0])
 
 
 # -------------------------
 # 建立 / 清空 / 檢查 collection
 # -------------------------
 def init_collection(
-    qdrant: QdrantClient, openai_client: OpenAI, collection_name: str, *, clear: bool = False
+    qdrant: QdrantClient,
+    openai_client: OpenAI,
+    collection_name: str,
+    *,
+    model: str,
+    clear: bool = False,
 ) -> None:
     """
     建立或驗證 Qdrant collection。
     clear=True 時先刪除現有 collection 再重建（確保已刪除的 FAQ 向量不殘留），
     兩個操作共用同一次 get_collections() 呼叫。
     """
-    dim = get_embedding_dim(openai_client)
+    dim = get_embedding_dim(openai_client, model)
     existing = {c.name for c in qdrant.get_collections().collections}
 
     if collection_name in existing:
@@ -249,10 +276,11 @@ def upload(
     collection_name: str,
     doc_id: str,
     source: str,
+    model: str,
 ) -> None:
     for i in tqdm(range(0, len(records), BATCH_SIZE)):
         batch = records[i : i + BATCH_SIZE]
-        vectors = embed(openai_client, [r["text"] for r in batch])
+        vectors = embed(openai_client, model, [r["text"] for r in batch])
 
         points = []
         for r, v in zip(batch, vectors):
@@ -320,6 +348,30 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="delete_category_paths",
         help="逗號分隔的 category_path 清單，同步前精準刪除對應向量（分類同步用）",
     )
+    # ── Embedding provider config（per-agent 從 backend 傳入；env 為 fallback） ──
+    parser.add_argument(
+        "--provider",
+        default=os.environ.get("EMBEDDING_PROVIDER", "openai"),
+        choices=["openai", "local"],
+        help="embedding provider（openai 雲端 / local 地端 OpenAI-compatible）",
+    )
+    parser.add_argument(
+        "--model",
+        default=os.environ.get("EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL),
+        help="embedding model 名稱（e.g. text-embedding-3-small / bge-m3-q8_0）",
+    )
+    parser.add_argument(
+        "--base-url",
+        default=os.environ.get("LOCAL_EMBEDDING_BASE_URL"),
+        dest="base_url",
+        help="provider=local 時的 OpenAI-compatible base URL",
+    )
+    parser.add_argument(
+        "--api-key",
+        default=os.environ.get("LOCAL_EMBEDDING_API_KEY"),
+        dest="api_key",
+        help="provider=local 時的 API key（多數地端 server 不檢查，仍需非空）",
+    )
     return parser
 
 
@@ -335,8 +387,9 @@ def main(argv: list[str] | None = None) -> int:
     if not source_path.exists():
         raise RuntimeError(f"來源檔不存在：{source_path}")
 
-    openai_client = OpenAI()
+    openai_client = make_openai_client(args.provider, args.base_url, args.api_key)
     qdrant = QdrantClient(url=args.qdrant_url)
+    print(f"Embedding provider={args.provider} model={args.model}")
 
     records = parse_kb(source_path)
     print(f"載入 {len(records)} 筆 Q&A（來源：{source_path}）")
@@ -355,18 +408,18 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.clear:
         # 全局同步：刪整個 collection 再重建
-        init_collection(qdrant, openai_client, args.collection, clear=True)
+        init_collection(qdrant, openai_client, args.collection, model=args.model, clear=True)
     elif explicit_paths:
         # 分類同步（Celery task 明確傳入）：確保 collection 存在 + 精準刪除
-        init_collection(qdrant, openai_client, args.collection, clear=False)
+        init_collection(qdrant, openai_client, args.collection, model=args.model, clear=False)
         delete_by_category_paths(qdrant, args.collection, explicit_paths)
     elif unique_paths_from_records:
         # 從 records 自動偵測（手動執行新格式 txt 時使用）
-        init_collection(qdrant, openai_client, args.collection, clear=False)
+        init_collection(qdrant, openai_client, args.collection, model=args.model, clear=False)
         delete_by_category_paths(qdrant, args.collection, unique_paths_from_records)
     else:
         # 無 --clear 也無 category_path：確保 collection 存在即可
-        init_collection(qdrant, openai_client, args.collection, clear=False)
+        init_collection(qdrant, openai_client, args.collection, model=args.model, clear=False)
 
     if records:
         upload(
@@ -376,6 +429,7 @@ def main(argv: list[str] | None = None) -> int:
             collection_name=args.collection,
             doc_id=args.doc_id,
             source=str(source_path),
+            model=args.model,
         )
         print(f"完成向量化並寫入 Qdrant collection={args.collection}（Upsert / 可重跑）")
     else:

@@ -10,6 +10,8 @@ interface FormData {
   txt_output_path: string
   rasa_rest_url: string | null
   ingest_script_path: string | null
+  embedding_provider: 'openai' | 'local'
+  embedding_model: string
 }
 
 interface ActionState {

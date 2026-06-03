@@ -62,6 +62,13 @@ class Agent(Base):
     txt_output_path = Column(Text, nullable=False)
     rasa_rest_url = Column(String(255), nullable=True)
     ingest_script_path = Column(Text, nullable=True)
+    # Embedding provider 設定（per-agent，可獨立選 OpenAI 雲端或地端 OpenAI-compatible）
+    embedding_provider = Column(
+        String(20), nullable=False, server_default="openai"
+    )
+    embedding_model = Column(
+        String(100), nullable=False, server_default="text-embedding-3-small"
+    )
     created_at = Column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

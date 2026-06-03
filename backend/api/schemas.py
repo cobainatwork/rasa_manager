@@ -64,12 +64,22 @@ def _validate_qdrant_collection(v: str) -> str:
     return v
 
 
+_EMBEDDING_PROVIDER_PATTERN = "^(openai|local)$"
+
+
 class AgentCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     qdrant_collection: str = Field(..., min_length=1, max_length=255)
     txt_output_path: str = Field(..., min_length=1, max_length=255)
     rasa_rest_url: Optional[str] = Field(None, max_length=255)
     ingest_script_path: Optional[str] = Field(None, max_length=255)
+    # 既有 agent 預設 OpenAI 雲端，建立新 agent 時也以此為預設。
+    embedding_provider: str = Field(
+        "openai", pattern=_EMBEDDING_PROVIDER_PATTERN, max_length=20
+    )
+    embedding_model: str = Field(
+        "text-embedding-3-small", min_length=1, max_length=100
+    )
 
     @field_validator("rasa_rest_url", mode="before")
     @classmethod
@@ -88,6 +98,10 @@ class AgentUpdate(BaseModel):
     txt_output_path: Optional[str] = Field(None, min_length=1, max_length=255)
     rasa_rest_url: Optional[str] = Field(None, max_length=255)
     ingest_script_path: Optional[str] = Field(None, max_length=255)
+    embedding_provider: Optional[str] = Field(
+        None, pattern=_EMBEDDING_PROVIDER_PATTERN, max_length=20
+    )
+    embedding_model: Optional[str] = Field(None, min_length=1, max_length=100)
 
     @field_validator("rasa_rest_url", mode="before")
     @classmethod

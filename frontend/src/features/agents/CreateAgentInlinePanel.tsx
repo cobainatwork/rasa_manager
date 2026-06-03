@@ -57,6 +57,9 @@ export function CreateAgentInlinePanel({ onCreated, onCancel }: Props) {
         txt_output_path: data.txt_output_path,
         rasa_rest_url: data.rasa_rest_url || null,
         ingest_script_path: data.ingest_script_path || null,
+        // Embedding 預設 OpenAI 雲端；建立後可在「Agent 設定」頁切換 provider/model
+        embedding_provider: 'openai',
+        embedding_model: 'text-embedding-3-small',
       })
       toast.success('Agent 建立成功')
       onCreated()

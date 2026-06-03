@@ -19,6 +19,8 @@ export interface User {
   created_at: string
 }
 
+export type EmbeddingProvider = 'openai' | 'local'
+
 export interface Agent {
   id: string
   name: string
@@ -26,6 +28,8 @@ export interface Agent {
   txt_output_path: string
   rasa_rest_url: string | null
   ingest_script_path: string | null
+  embedding_provider: EmbeddingProvider
+  embedding_model: string
   created_at: string | null
 }
 

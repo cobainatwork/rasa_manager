@@ -33,6 +33,24 @@ RETRY_BACKOFF_BASE_SEC = TASK_RETRY_DELAY_SEC  # B1 手動 countdown 基數，�
 INGEST_SUBPROCESS_TIMEOUT_SEC = 280
 INGEST_KILL_GRACE_SEC = 5             # SIGKILL 後等待子程序回收的寬限
 
+
+def _embedding_cli_args(agent_provider: str, agent_model: str) -> list[str]:
+    """根據 agent.embedding_provider 從 env 取對應憑證，組成 ingest_kb.py CLI args。
+
+    - openai：不附 --base-url / --api-key，由 OpenAI SDK 自行讀 OPENAI_API_KEY env
+    - local ：從 LOCAL_EMBEDDING_BASE_URL / LOCAL_EMBEDDING_API_KEY env 注入
+    """
+    args = ["--provider", agent_provider, "--model", agent_model]
+    if agent_provider.lower() == "local":
+        base_url = os.environ.get("LOCAL_EMBEDDING_BASE_URL")
+        if not base_url:
+            raise RuntimeError(
+                "Agent embedding_provider=local 但 LOCAL_EMBEDDING_BASE_URL 未設定"
+            )
+        api_key = os.environ.get("LOCAL_EMBEDDING_API_KEY", "any")
+        args.extend(["--base-url", base_url, "--api-key", api_key])
+    return args
+
 # 寫 sync_log.stderr 的長度上限（避免 DB 欄位爆量）
 STDERR_MAX_CHARS = 1000
 
@@ -169,6 +187,9 @@ def run_ingestion_sync(self, agent_id: str, sync_log_id: str) -> None:  # type: 
                 "--collection", collection_name,
                 "--doc-id", f"{collection_name}_v1",
                 "--clear",  # 同步前清空 collection，確保已刪除 FAQ 的舊向量不殘留
+                *_embedding_cli_args(
+                    str(agent.embedding_provider), str(agent.embedding_model)
+                ),
             ]
             # 使用 Popen + start_new_session=True，逾時時可透過 killpg 一併回收孫進程
             popen_kwargs: dict = {
@@ -389,6 +410,9 @@ def run_category_sync(self, agent_id: str, category_id: str, sync_log_id: str) -
                 "--doc-id", f"{collection_name}_v1",
                 "--delete-category-paths", ",".join(subtree_paths),
                 # 不帶 --clear：精準刪除指定 category_path 的向量
+                *_embedding_cli_args(
+                    str(agent.embedding_provider), str(agent.embedding_model)
+                ),
             ]
             popen_kwargs: dict = {
                 "stdout": subprocess.PIPE,
