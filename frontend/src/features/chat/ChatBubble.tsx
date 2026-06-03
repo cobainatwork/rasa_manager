@@ -13,18 +13,28 @@ export function ChatBubble({ message }: { message: ChatMessage }) {
   }
 
   return (
-    <div className={cn('flex flex-col group', isUser ? 'items-start' : 'items-end')}>
-      <div className={cn('flex w-full', isUser ? 'justify-start' : 'justify-end')}>
-        <div className={cn(
-          'max-w-[70%] px-4 py-2 rounded-2xl text-sm',
-          isUser ? 'bg-brand-500 text-white' : 'bg-subtle text-text-primary'
-        )}>
-          <p className="whitespace-pre-wrap">{message.text}</p>
-        </div>
+    <div className={cn('flex flex-col group', isUser ? 'items-end' : 'items-start')}>
+      <div className={cn('flex w-full', isUser ? 'justify-end' : 'justify-start')}>
         {!isUser && (
-          <Button variant="ghost" size="icon" onClick={copy} className="opacity-0 group-hover:opacity-100 ml-1 self-end" aria-label="複製">
+          <div className={cn(
+            'max-w-[70%] px-4 py-2 rounded-2xl text-sm',
+            'bg-subtle text-text-primary'
+          )}>
+            <p className="whitespace-pre-wrap">{message.text}</p>
+          </div>
+        )}
+        {!isUser && (
+          <Button variant="ghost" size="icon" onClick={copy} className="md:opacity-0 md:group-hover:opacity-100 ml-1 self-end" aria-label="複製">
             <Copy className="w-3.5 h-3.5" strokeWidth={1.5} />
           </Button>
+        )}
+        {isUser && (
+          <div className={cn(
+            'max-w-[70%] px-4 py-2 rounded-2xl text-sm',
+            'bg-brand-500 text-white'
+          )}>
+            <p className="whitespace-pre-wrap">{message.text}</p>
+          </div>
         )}
       </div>
       {message.responseMs !== undefined && (

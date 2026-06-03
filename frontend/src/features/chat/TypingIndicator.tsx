@@ -13,7 +13,7 @@ function Dot({ delay }: DotProps) {
 
 export function TypingIndicator() {
   return (
-    <div className="flex justify-end">
+    <div className="flex justify-start">
       <div className="bg-subtle rounded-2xl px-4 py-3 flex items-center gap-1">
         <Dot delay={0} /><Dot delay={0.15} /><Dot delay={0.3} />
       </div>
