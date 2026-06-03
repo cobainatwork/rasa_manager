@@ -49,8 +49,14 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
-  /* 焦點環統一規格 */
-  *:focus-visible {
+  /* 焦點環統一規格 — 限定真正可互動元素，避免污染 div/span 與 Radix 內部結構 */
+  button:focus-visible,
+  [role="button"]:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  [tabindex]:not([tabindex="-1"]):focus-visible {
     @apply outline-none ring-2 ring-brand-500 ring-offset-2 ring-offset-canvas;
   }
 
