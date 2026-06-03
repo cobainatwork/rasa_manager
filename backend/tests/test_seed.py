@@ -91,11 +91,30 @@ class TestRunSeed:
             run_seed()
         assert exc_info.value.code == 1
 
-    def test_weak_password_exits(self) -> None:
+    def test_weak_password_when_users_empty_exits(self) -> None:
+        """弱密碼 + 首次建立（user_count=0）→ INSERT 前 validate 失敗，應 exit(1)。"""
+        db = MagicMock()
+        db.execute.return_value.scalar.return_value = 0
         with (
             patch.dict(os.environ, {"SEED_ADMIN_USERNAME": "admin", "SEED_ADMIN_PASSWORD": "weakpwd"}),
+            patch("api.seed.SessionLocal", return_value=db),
             pytest.raises(SystemExit) as exc_info,
         ):
             from api.seed import run_seed
             run_seed()
         assert exc_info.value.code == 1
+        db.commit.assert_not_called()
+
+    def test_weak_password_when_users_exist_skips(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """弱密碼但 users 已有資料 → idempotent skip 在 validate 之前，不應 exit。"""
+        db = MagicMock()
+        db.execute.return_value.scalar.return_value = 1
+        with (
+            patch.dict(os.environ, {"SEED_ADMIN_USERNAME": "admin", "SEED_ADMIN_PASSWORD": "weakpwd"}),
+            patch("api.seed.SessionLocal", return_value=db),
+        ):
+            from api.seed import run_seed
+            run_seed()  # 不應 raise SystemExit
+        db.commit.assert_not_called()
+        out = capsys.readouterr().out
+        assert "跳過 seed" in out
