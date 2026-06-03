@@ -68,7 +68,6 @@ export const handlers = [
 
   // Chat test
   http.post('/api/v1/agents/:id/chat/test', () => ok([{ text: '測試回覆' }])),
-  http.post('/api/v1/agents/:id/chat/reset', () => HttpResponse.json({ success: true })),
 
   // Users
   http.get('/api/v1/users', () => ok([makeUser()])),
