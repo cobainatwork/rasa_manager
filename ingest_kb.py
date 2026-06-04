@@ -205,6 +205,30 @@ def get_embedding_dim(client: OpenAI, model: str) -> int:
 # -------------------------
 # 建立 / 清空 / 檢查 collection
 # -------------------------
+_PAYLOAD_INDEX_FIELDS: tuple[str, ...] = (
+    "metadata.category_path",
+    "metadata.source",
+)
+
+
+def _ensure_payload_indexes(qdrant: QdrantClient, collection_name: str) -> None:
+    """為常用 filter 欄位建 payload index（idempotent，可重複呼叫）。
+
+    對應 delete_by_category_paths 與未來按來源篩選的查詢。
+    Qdrant 對已存在的 index 通常回 200；保險用 try/except 包住，
+    避免某些 client 版本對 idempotent 重建 raise 導致 init 中斷。
+    """
+    for field_name in _PAYLOAD_INDEX_FIELDS:
+        try:
+            qdrant.create_payload_index(
+                collection_name=collection_name,
+                field_name=field_name,
+                field_schema="keyword",
+            )
+        except Exception as exc:
+            print(f"[warn] payload index for {field_name} not created: {exc}")
+
+
 def init_collection(
     qdrant: QdrantClient,
     openai_client: OpenAI,
@@ -217,6 +241,7 @@ def init_collection(
     建立或驗證 Qdrant collection。
     clear=True 時先刪除現有 collection 再重建（確保已刪除的 FAQ 向量不殘留），
     兩個操作共用同一次 get_collections() 呼叫。
+    新建與既有 collection 一律 ensure payload index（idempotent）。
     """
     dim = get_embedding_dim(openai_client, model)
     existing = {c.name for c in qdrant.get_collections().collections}
@@ -231,12 +256,14 @@ def init_collection(
                 raise RuntimeError(
                     f"Embedding dim mismatch: collection={existing_dim}, model={dim}"
                 )
+            _ensure_payload_indexes(qdrant, collection_name)
             return
 
     qdrant.create_collection(
         collection_name=collection_name,
         vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
     )
+    _ensure_payload_indexes(qdrant, collection_name)
 
 
 # -------------------------
