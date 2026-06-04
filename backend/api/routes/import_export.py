@@ -5,9 +5,10 @@ Excel 批次匯入 / 匯出路由。
   - 僅接受 .xlsx，上限 10 MB / 5000 行
   - 必填欄：question、answer、category_path（/ 分隔）
   - 選填欄：tags（逗號分隔字串）
-  - 一律建立為 draft 狀態
+  - Superadmin 匯入時直接建立為 approved（與單筆建立行為一致）；其他使用者建立為 draft
   - category_path 不存在時自動建立節點
-  - 相同 agent_id + question 已存在 → 跳過
+  - mode=append（預設）：相同 agent_id + question 已存在 → 跳過
+  - mode=replace：先刪除該 agent 所有 FAQ 再匯入（全量取代）
   - 操作結束後關閉 workbook（openpyxl read_only 模式）
 
 匯出規格（§4.3）：
@@ -137,6 +138,7 @@ def _resolve_category_path(
 def import_faqs(
     agent_id: uuid.UUID,
     file: UploadFile = File(...),
+    mode: Literal["append", "replace"] = Query("append", description="append=跳過重複；replace=先清空再匯入"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
@@ -185,13 +187,27 @@ def import_faqs(
     cp_idx: Optional[int] = header.index("category_path") if "category_path" in header else None
     tags_idx: Optional[int] = header.index("tags") if "tags" in header else None
 
-    # ── 預載已存在的 question（避免重複）──────────────────────────────────────
-    existing_questions: set[str] = {
-        str(q)
-        for (q,) in db.query(KnowledgeItem.question)
-        .filter(KnowledgeItem.agent_id == agent_id)
-        .all()
-    }
+    # ── replace 模式：先刪除該 agent 所有 FAQ ────────────────────────────────
+    if mode == "replace":
+        db.query(KnowledgeItem).filter(KnowledgeItem.agent_id == agent_id).delete(
+            synchronize_session="fetch"
+        )
+        db.flush()
+
+    # ── 預載已存在的 question（避免重複；replace 模式剛清空，故為空集合）───────
+    existing_questions: set[str] = (
+        set()
+        if mode == "replace"
+        else {
+            str(q)
+            for (q,) in db.query(KnowledgeItem.question)
+            .filter(KnowledgeItem.agent_id == agent_id)
+            .all()
+        }
+    )
+
+    # Superadmin 匯入直接核准（與 create_faq 行為一致），其他使用者建立為 draft
+    initial_status = "approved" if current_user.is_superadmin else "draft"
 
     success = 0
     skipped = 0
@@ -256,7 +272,7 @@ def import_faqs(
                     question=question,
                     answer=answer,
                     tags=tags_list,
-                    status="draft",
+                    status=initial_status,
                     version=1,
                     created_by=current_user.id,
                 )
@@ -565,6 +581,9 @@ def import_category_faqs(
             .all()
         }
 
+    # Superadmin 匯入直接核准（與 create_faq 行為一致），其他使用者建立為 draft
+    initial_status = "approved" if current_user.is_superadmin else "draft"
+
     success = 0
     skipped = 0
     errors: list[dict[str, Any]] = []
@@ -608,7 +627,7 @@ def import_category_faqs(
                     question=question,
                     answer=answer,
                     tags=tags_list,
-                    status="draft",
+                    status=initial_status,
                     version=1,
                     created_by=current_user.id,
                 )

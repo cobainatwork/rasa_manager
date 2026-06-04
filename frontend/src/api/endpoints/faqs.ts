@@ -81,3 +81,25 @@ export async function getHistory(agentId: string, faqId: string): Promise<FaqHis
 export async function rollback(agentId: string, faqId: string, version: number): Promise<Faq> {
   return unwrap(apiClient.post(`/api/v1/agents/${agentId}/faqs/${faqId}/rollback`, { version }))
 }
+
+export interface ImportResult {
+  imported: number
+  skipped: number
+  errors: { row: number; reason: string }[]
+  new_categories: string[]
+}
+
+export async function importFaqs(
+  agentId: string,
+  file: File,
+  mode: 'append' | 'replace' = 'append',
+): Promise<ImportResult> {
+  const form = new FormData()
+  form.append('file', file)
+  const resp = await apiClient.post(
+    `/api/v1/agents/${agentId}/faqs/import?mode=${mode}`,
+    form,
+    { headers: { 'Content-Type': 'multipart/form-data' } },
+  )
+  return resp.data?.data as ImportResult
+}

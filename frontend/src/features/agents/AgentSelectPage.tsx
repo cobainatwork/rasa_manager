@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { EmptyState } from '@/components/EmptyState'
+import { AppLogo } from '@/components/AppLogo'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useAgentContext } from '@/store/useAgentContext'
 import { ROUTE_PATHS } from '@/routes/paths'
@@ -35,15 +36,12 @@ export function AgentSelectPage() {
 
   return (
     <div className="min-h-screen bg-canvas">
-      <header className="bg-surface border-b border-border-default px-8 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded bg-brand-500 flex items-center justify-center font-bold text-white">R</div>
-          <span className="font-semibold">Rasa KB</span>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="text-sm text-text-secondary">{username}</span>
-          {isSuper && <Button variant="outline" size="sm" onClick={() => navigate(ROUTE_PATHS.adminUsers)}>使用者管理</Button>}
-          <Button variant="ghost" size="sm" onClick={handleLogout}>登出</Button>
+      <header className="h-11 bg-canvas/80 backdrop-blur-xl border-b border-black/[0.08] flex items-center px-6 justify-between sticky top-0 z-sticky shrink-0">
+        <AppLogo />
+        <div className="flex items-center gap-2">
+          <span className="text-[13px] text-text-secondary">{username}</span>
+          {isSuper && <Button variant="outline" size="sm" className="h-7 text-[13px]" onClick={() => navigate(ROUTE_PATHS.adminUsers)}>使用者管理</Button>}
+          <Button variant="ghost" size="sm" className="h-7 text-[13px]" onClick={handleLogout}>登出</Button>
         </div>
       </header>
 

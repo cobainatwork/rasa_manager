@@ -41,12 +41,6 @@ def run_seed() -> None:
         sys.exit(1)
 
     try:
-        _validate_password(password)
-    except ValueError as exc:
-        print(f"[seed] ERROR: {exc}", file=sys.stderr)
-        sys.exit(1)
-
-    try:
         db = SessionLocal()
     except Exception as exc:
         print(f"[seed] ERROR: 無法連線資料庫：{exc}", file=sys.stderr)
@@ -57,6 +51,12 @@ def run_seed() -> None:
         if count and count > 0:
             print(f"[seed] users 表已有 {count} 筆資料，跳過 seed。", flush=True)
             return
+
+        try:
+            _validate_password(password)
+        except ValueError as exc:
+            print(f"[seed] ERROR: {exc}", file=sys.stderr)
+            sys.exit(1)
 
         password_hash = _pwd_context.hash(password)
         user_id = uuid.uuid4()

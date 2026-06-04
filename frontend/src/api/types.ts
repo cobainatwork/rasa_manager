@@ -19,12 +19,17 @@ export interface User {
   created_at: string
 }
 
+export type EmbeddingProvider = 'openai' | 'local'
+
 export interface Agent {
   id: string
   name: string
+  qdrant_collection: string
   txt_output_path: string
   rasa_rest_url: string | null
   ingest_script_path: string | null
+  embedding_provider: EmbeddingProvider
+  embedding_model: string
   created_at: string | null
 }
 
@@ -101,6 +106,9 @@ export interface SyncLog {
   finished_at: string | null
   duration_sec: number | null
   created_at: string | null
+  // 同步當下凍結的 embedding 快照（migration 006 之前的紀錄為 null）
+  embedding_provider?: string | null
+  embedding_model?: string | null
 }
 
 export interface AuditLogEntry {
@@ -140,6 +148,9 @@ export interface SyncLogHistoryItem {
   output_file: string | null
   stdout: string | null
   stderr: string | null
+  // 同步當下凍結的 embedding 快照（migration 006 之前的紀錄為 null）
+  embedding_provider?: string | null
+  embedding_model?: string | null
 }
 
 export interface TestConnectionResult {

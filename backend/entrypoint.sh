@@ -8,4 +8,4 @@ echo "Running seed..."
 python -m api.seed || echo "[seed] non-fatal failure, continuing"
 
 echo "Starting uvicorn..."
-exec uvicorn main:app --host 0.0.0.0 --port 8000
+exec uvicorn main:app --host "${APP_HOST:-0.0.0.0}" --port "${APP_PORT:-8050}"

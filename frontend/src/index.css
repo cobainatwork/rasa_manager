@@ -7,26 +7,26 @@
 
 @layer base {
   :root {
-    /* shadcn HSL tokens（必要） */
-    --background: 210 40% 98%;
-    --foreground: 222 47% 11%;
+    /* macOS-inspired design tokens */
+    --background: 240 2% 96%;          /* #F2F2F7 macOS system background */
+    --foreground: 240 2% 11%;          /* #1C1C1E primary label */
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --card-foreground: 240 2% 11%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
-    --primary: 217 91% 60%;
+    --popover-foreground: 240 2% 11%;
+    --primary: 211 100% 50%;           /* #007AFF Apple system blue */
     --primary-foreground: 0 0% 100%;
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 222 47% 11%;
-    --muted: 210 40% 96%;
-    --muted-foreground: 215 16% 47%;
-    --accent: 210 40% 96%;
-    --accent-foreground: 222 47% 11%;
-    --destructive: 0 84% 60%;
+    --secondary: 240 3% 91%;
+    --secondary-foreground: 240 2% 11%;
+    --muted: 240 3% 91%;
+    --muted-foreground: 240 1% 39%;    /* #636366 secondary label */
+    --accent: 211 100% 95%;
+    --accent-foreground: 211 100% 35%;
+    --destructive: 3 100% 59%;         /* #FF3B30 Apple red */
     --destructive-foreground: 0 0% 100%;
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
-    --ring: 217 91% 60%;
+    --border: 240 3% 83%;              /* #D1D1D6 macOS separator */
+    --input: 240 3% 83%;
+    --ring: 211 100% 50%;
     --radius: 0.5rem;
   }
 
@@ -37,11 +37,26 @@
 
   body {
     @apply bg-canvas text-text-primary font-sans antialiased;
-    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    /* Inter 字符變體：cv02/03/04（小寫 a/g/l 替代字形）、cv11（單層 a）
+       palt：CJK 比例間距（縮緊中文標點佔寬，整體更精緻）
+       kern：英數對距 */
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11', 'palt', 'kern';
+    /* 中文排版微調：字距 0.01em（避免過擠）、行距 1.65（zh-TW body text 甜蜜點） */
+    letter-spacing: 0.01em;
+    line-height: 1.65;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
-  /* 焦點環統一規格 */
-  *:focus-visible {
+  /* 焦點環統一規格 — 限定真正可互動元素，避免污染 div/span 與 Radix 內部結構 */
+  button:focus-visible,
+  [role="button"]:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  [tabindex]:not([tabindex="-1"]):focus-visible {
     @apply outline-none ring-2 ring-brand-500 ring-offset-2 ring-offset-canvas;
   }
 
@@ -64,4 +79,49 @@
     scrollbar-width: thin;
     scrollbar-color: theme('colors.border-strong') transparent;
   }
+}
+
+/* Form 錯誤 shake 動畫 — 已同步在 tailwind.config keyframes/animation 註冊（animate-shake-x）。
+   保留純 CSS 定義作為 fallback，並支援 `animate-[shake-x_...]` 內聯語法。 */
+@keyframes shake-x {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-4px); }
+  40%, 80% { transform: translateX(4px); }
+}
+
+/* 全域 macOS 風 scrollbar（限定在 html，避免 `*` 通配套用影響所有元素的 layout / 效能）
+   ─ WebKit/Chromium：限定 html 與一般可捲動容器，不影響 Radix ScrollArea 等自訂捲軸區
+   ─ Firefox：限定 html 套用 scrollbar-width / scrollbar-color
+   避免廠商預設 16px 灰條的廉價感（特別在 Windows 上） */
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+html::-webkit-scrollbar-track,
+body::-webkit-scrollbar-track {
+  background: transparent;
+}
+html::-webkit-scrollbar-thumb,
+body::-webkit-scrollbar-thumb {
+  background: rgba(15, 23, 42, 0.15);
+  border-radius: 8px;
+  background-clip: padding-box;
+  border: 2px solid transparent;
+  transition: background-color 200ms ease-out;
+}
+html::-webkit-scrollbar-thumb:hover,
+body::-webkit-scrollbar-thumb:hover {
+  background: rgba(15, 23, 42, 0.3);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+html::-webkit-scrollbar-corner,
+body::-webkit-scrollbar-corner {
+  background: transparent;
+}
+/* Firefox（無法自定 thumb radius / border，僅控制粗細與顏色） */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(15, 23, 42, 0.2) transparent;
 }

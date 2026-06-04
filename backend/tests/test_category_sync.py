@@ -3,8 +3,11 @@
 """
 from __future__ import annotations
 
+import os
+import sys
 import uuid
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, mock_open, patch
+
 from tests.conftest import AGENT_ID, build_agent_access_query_se
 
 
@@ -90,7 +93,6 @@ class TestParsKbWithCategoryBlocks:
         return str(p)
 
     def test_single_faq_with_category(self, tmp_path) -> None:
-        import sys, os
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
         from ingest_kb import parse_kb  # noqa: PLC0415
         content = "[Category]\n帳號/密碼重置\n\n[Question]\n如何重設密碼？\n\n[Answer]\n點擊忘記密碼。"
@@ -125,10 +127,8 @@ class TestParsKbWithCategoryBlocks:
 
 class TestDeleteByCategoryPaths:
     def test_calls_qdrant_delete_with_filter(self) -> None:
-        import sys, os
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
         from ingest_kb import delete_by_category_paths  # noqa: PLC0415
-        from unittest.mock import MagicMock
 
         qdrant = MagicMock()
         col = MagicMock()
@@ -143,7 +143,6 @@ class TestDeleteByCategoryPaths:
 
     def test_skips_if_collection_not_exist(self) -> None:
         from ingest_kb import delete_by_category_paths  # noqa: PLC0415
-        from unittest.mock import MagicMock
 
         qdrant = MagicMock()
         qdrant.get_collections.return_value.collections = []
@@ -154,7 +153,6 @@ class TestDeleteByCategoryPaths:
 
     def test_skips_if_category_paths_empty(self) -> None:
         from ingest_kb import delete_by_category_paths  # noqa: PLC0415
-        from unittest.mock import MagicMock
 
         qdrant = MagicMock()
 
@@ -165,9 +163,6 @@ class TestDeleteByCategoryPaths:
 
 
 # ── run_category_sync task ────────────────────────────────────────────────────
-
-import os
-from unittest.mock import mock_open
 
 CATEGORY_ID = uuid.UUID("00000000-0000-0000-0000-000000000030")
 CAT_SYNC_LOG_ID = uuid.UUID("00000000-0000-0000-0000-000000000051")

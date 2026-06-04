@@ -270,6 +270,44 @@ class TestUpdateFaq:
         assert resp.status_code == 200
         assert faq.status == "draft"
 
+    def test_no_content_change_does_not_downgrade_approved(
+        self, client_superadmin: TestClient, mock_db: MagicMock
+    ) -> None:
+        """PATCH 傳入與現有值完全相同的內容 → 不應降級、不應變更版本。"""
+        faq = _make_faq(status="approved", version=2)
+        mock_db.query.side_effect = _superadmin_then_faq_se(faq)
+        original_version = faq.version
+        resp = client_superadmin.patch(
+            f"/api/v1/agents/{AGENT_ID}/faqs/{FAQ_ID}",
+            # 傳入與 _make_faq 預設值相同的內容（question / answer / tags 均未變動）
+            json={"question": "測試問題", "answer": "測試答案", "tags": ["tag1"]},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["success"] is True
+        # 狀態不得降級
+        assert faq.status == "approved", (
+            f"無實際變更時不應降級，期望 approved，實際 {faq.status}"
+        )
+        # 版本不得遞增
+        assert faq.version == original_version, (
+            f"無實際變更時版本不應遞增，期望 {original_version}，實際 {faq.version}"
+        )
+
+    def test_same_tags_patch_does_not_downgrade(
+        self, client_superadmin: TestClient, mock_db: MagicMock
+    ) -> None:
+        """PATCH 只傳 tags 且值與現有完全相同 → 不應觸發降級（原 Bug：無條件降級）。"""
+        faq = _make_faq(status="approved")
+        mock_db.query.side_effect = _superadmin_then_faq_se(faq)
+        resp = client_superadmin.patch(
+            f"/api/v1/agents/{AGENT_ID}/faqs/{FAQ_ID}",
+            json={"tags": ["tag1"]},   # 與 _make_faq 預設 tags 相同
+        )
+        assert resp.status_code == 200
+        assert faq.status == "approved", (
+            f"相同 tags 不應觸發降級，期望 approved，實際 {faq.status}"
+        )
+
 
 # ── delete_faq ────────────────────────────────────────────────────────────────
 

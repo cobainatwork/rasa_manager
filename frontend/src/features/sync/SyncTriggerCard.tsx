@@ -1,16 +1,13 @@
 import { RefreshCw } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { SYNC_STATUS_LABEL } from './syncStatus'
 import type { SyncLog } from '@/api/types'
 
 interface Props {
   triggering: boolean
   activeLog: SyncLog | null
   onTrigger: () => void
-}
-
-const STATUS_LABEL: Record<SyncLog['status'], string> = {
-  pending: '等待中', running: '執行中', completed: '完成', failed: '失敗',
 }
 
 export function SyncTriggerCard({ triggering, activeLog, onTrigger }: Props) {
@@ -24,12 +21,12 @@ export function SyncTriggerCard({ triggering, activeLog, onTrigger }: Props) {
       </p>
       <Button onClick={onTrigger} disabled={triggering || !!inProgress}>
         <RefreshCw className={`w-4 h-4 mr-1 ${triggering ? 'animate-spin' : ''}`} strokeWidth={1.5} />
-        {triggering ? '觸發中...' : inProgress ? `${STATUS_LABEL[activeLog!.status]}...` : '立即觸發同步'}
+        {triggering ? '觸發中...' : inProgress ? `${SYNC_STATUS_LABEL[activeLog!.status]}...` : '立即觸發同步'}
       </Button>
 
       {inProgress && (
-        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded animate-pulse text-sm text-blue-900">
-          任務 {activeLog!.id.slice(0, 8)}... 進行中（{STATUS_LABEL[activeLog!.status]}）
+        <div className="mt-4 p-3 bg-brand-500/[0.08] border border-brand-500/[0.20] rounded-lg text-sm text-brand-700">
+          任務 {activeLog!.id.slice(0, 8)}... 進行中（{SYNC_STATUS_LABEL[activeLog!.status]}）
         </div>
       )}
     </Card>

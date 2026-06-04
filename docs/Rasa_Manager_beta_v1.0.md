@@ -1,303 +1,243 @@
-# Rasa Manager Beta v1.0 — 完整專案說明文件
+﻿# Rasa Manager Beta v1.0 ??摰撠?隤芣??辣
 
-> **文件版本**：Rasa_Manager_beta_v1.0
-> **最後更新**：2026-05-03
-> **目標讀者**：接手本專案的工程師，可依本文件直接進行環境建置與功能開發
-> **部署環境**：Linux（Ubuntu 22.04 LTS / Debian 12 推薦）；Windows 作為本機開發輔助環境
-
----
-
-## 目錄
-
-1. [專案概覽](#1-專案概覽)
-2. [系統架構](#2-系統架構)
-3. [功能列表](#3-功能列表)
-4. [後端架構詳解](#4-後端架構詳解)
-5. [前端架構詳解](#5-前端架構詳解)
-6. [資料庫設計](#6-資料庫設計)
-7. [Qdrant 向量庫整合](#7-qdrant-向量庫整合)
-8. [環境建置——Linux 部署（正式環境）](#8-環境建置linux-部署正式環境)
-9. [環境建置——Windows 本機開發](#9-環境建置windows-本機開發)
-10. [實施計劃書](#10-實施計劃書)
-11. [設計陷阱與已知坑](#11-設計陷阱與已知坑)
-12. [API 快速參考](#12-api-快速參考)
+> **?辣?**嚗asa_Manager_beta_v1.0
+> **?敺??*嚗?026-05-03
+> **?格?霈??*嚗?撠??極蝔葦嚗靘?辣?湔?脰??啣?撱箇蔭???賡???> **?函蔡?啣?**嚗inux嚗buntu 22.04 LTS / Debian 12 ?刻嚗?Windows 雿?祆??頛?啣?
 
 ---
 
-## 1. 專案概覽
+## ?桅?
 
-**Rasa Manager** 是一套多 Agent Rasa Enterprise Search（FAQ 模式）的知識庫管理平台。
+1. [撠?璁汗](#1-撠?璁汗)
+2. [蝟餌絞?嗆?](#2-蝟餌絞?嗆?)
+3. [??”](#3-??”)
+4. [敺垢?嗆?閰唾圾](#4-敺垢?嗆?閰唾圾)
+5. [?垢?嗆?閰唾圾](#5-?垢?嗆?閰唾圾)
+6. [鞈?摨怨身閮(#6-鞈?摨怨身閮?
+7. [Qdrant ??摨急?(#7-qdrant-??摨急??
+8. [?啣?撱箇蔭?inux ?函蔡嚗迤撘憓?](#8-?啣?撱箇蔭linux-?函蔡甇???啣?)
+9. [?啣?撱箇蔭?indows ?祆??](#9-?啣?撱箇蔭windows-?祆??)
+10. [撖行閮??窟(#10-撖行閮???
+11. [閮剛??琿?歇?亙?](#11-閮剛??琿?歇?亙?)
+12. [API 敹恍??(#12-api-敹恍???
 
-### 1.1 核心用途
+---
 
-| 面向 | 說明 |
+## 1. 撠?璁汗
+
+**Rasa Manager** ?臭?憟? Agent Rasa Enterprise Search嚗AQ 璅∪?嚗??亥?摨怎恣?像?啜?
+### 1.1 ?詨??券?
+| ?Ｗ? | 隤芣? |
 |------|------|
-| 知識管理 | 以分類樹組織 FAQ，支援編輯、審核、版本回溯 |
-| 多代理隔離 | 每個 Rasa Agent 的資料完全隔離，統一以 `agent_id` 分區 |
-| 向量同步 | 審核通過的 FAQ 透過 Celery 非同步推送至 Qdrant |
-| 權限管理 | Superadmin 全域控制；各 Agent 內分 `reviewer` / `editor` 二角色 |
+| ?亥?蝞∠? | 隞亙?憿邦蝯? FAQ嚗?渡楊頛胯祟?詻??砍?皞?|
+| 憭誨????| 瘥?Rasa Agent ?????券??ｇ?蝯曹?隞?`agent_id` ?? |
+| ???郊 | 撖拇????FAQ ?? Celery ??甇交? Qdrant |
+| 甈?蝞∠? | Superadmin ?典??批嚗? Agent ?批? `reviewer` / `editor` 鈭???|
 
-### 1.2 技術棧一覽
-
-| 層 | 技術 |
+### 1.2 ?銵ㄖ銝閬?
+| 撅?| ?銵?|
 |----|------|
-| 後端 API | Python 3.11、FastAPI 0.136、SQLAlchemy 2.0（同步） |
-| 資料庫 | PostgreSQL 15 |
-| 非同步任務 | Celery 5.6 + Redis 7（Broker） |
-| 向量資料庫 | Qdrant（外部服務，獨立部署） |
-| 前端 | React 18 + Vite + TypeScript 5 + Tailwind CSS 3 |
-| UI 元件 | shadcn/ui（Radix UI 原語 + Tailwind） |
-| 容器化 | Docker Compose（5 個服務） |
-| 反向代理 | Nginx（含於 frontend 容器） |
+| 敺垢 API | Python 3.11?astAPI 0.136?QLAlchemy 2.0嚗?甇伐? |
+| 鞈?摨?| PostgreSQL 15 |
+| ??甇乩遙??| Celery 5.6 + Redis 7嚗roker嚗?|
+| ??鞈?摨?| Qdrant嚗??冽????函??函蔡嚗?|
+| ?垢 | React 18 + Vite + TypeScript 5 + Tailwind CSS 3 |
+| UI ?辣 | shadcn/ui嚗adix UI ?? + Tailwind嚗?|
+| 摰孵??| Docker Compose嚗? ???? |
+| ??隞?? | Nginx嚗??frontend 摰孵嚗?|
 
 ---
 
-## 2. 系統架構
+## 2. 蝟餌絞?嗆?
 
-### 2.1 Docker Compose 五服務架構
-
+### 2.1 Docker Compose 鈭??瑽?
 ```
-┌─────────────────────────────────────────────────────────┐
-│  Docker Compose 網路                                     │
-│                                                          │
-│  ┌──────────┐       ┌────────────────┐                  │
-│  │ frontend │──80──▶│ backend:8000   │                  │
-│  │ :5173    │       │ FastAPI        │                  │
-│  │ (nginx)  │       │ + uvicorn      │                  │
-│  └──────────┘       └───────┬────────┘                  │
-│                             │                           │
-│               ┌─────────────┼─────────────┐            │
-│               ▼             ▼             ▼            │
-│           ┌───────┐   ┌─────────┐  ┌──────────────┐   │
-│           │  db   │   │  redis  │  │celery_worker │   │
-│           │ PG 15 │   │ Redis 7 │  │              │   │
-│           └───────┘   └─────────┘  └──────────────┘   │
-│                                                          │
-└─────────────────────────────────────────────────────────┘
-            ▼                           ▼
-       Rasa Server                   Qdrant
-      (外部服務)                    (外部服務)
+?????????????????????????????????????????????????????????????? Docker Compose 蝬脰楝                                     ????                                                         ???? ?????????????      ???????????????????                 ???? ??frontend ???80???嗯? backend:8050   ??                 ???? ??:5173    ??      ??FastAPI        ??                 ???? ??(nginx)  ??      ??+ uvicorn      ??                 ???? ?????????????      ?????????砂??????????                 ????                            ??                          ????              ???????????????潑???????????????           ????              ??            ??            ??           ????          ??????????  ???????????? ?????????????????  ????          ?? db   ??  ?? redis  ?? ?elery_worker ??  ????          ??PG 15 ??  ??Redis 7 ?? ??             ??  ????          ??????????  ???????????? ?????????????????  ????                                                         ??????????????????????????????????????????????????????????????            ??                          ??       Rasa Server                   Qdrant
+      (憭??)                    (憭??)
 ```
 
-**網路隔離設計：**
+**蝬脰楝?閮剛?嚗?*
 
-- `app` 網路：`backend`、`celery_worker`、`frontend` 互通（前端到後端、後端到 Celery）
-- `data` 網路（`internal: true`）：`db`、`redis`、`backend`、`celery_worker` 使用；外部無法直連 DB / Redis
+- `app` 蝬脰楝嚗backend`?celery_worker`?frontend` 鈭??垢?啣?蝡胯?蝡臬 Celery嚗?- `data` 蝬脰楝嚗internal: true`嚗?`db`?redis`?backend`?celery_worker` 雿輻嚗??函瘜??DB / Redis
 
-### 2.2 請求流程
-
-```
-使用者瀏覽器
-    │
-    ▼
-frontend:8080 (nginx)
-    ├── /         → React SPA (本地 dist/)
-    └── /api/ ──▶ backend:8000 (FastAPI)
-                      │
-                      ├── 查詢 → PostgreSQL
-                      ├── 快取 → Redis
-                      └── 推任務 → Redis Broker → celery_worker
-                                                      │
-                                          執行 ingest_kb.py
-                                                      │
-                                              寫入 Qdrant
-```
-
-### 2.3 非同步同步任務流程
+### 2.2 隢?瘚?
 
 ```
-POST /sync 或 /categories/{id}/sync
-    │
-    ▼
-API 建立 SyncLog (status=pending)
-    │
-    ▼
-推入 Redis Broker → Celery Task 執行
-    │
-    ├── 從 DB 查詢 approved/synced FAQ
-    ├── 寫出 .txt（[Question]/[Answer] 格式）
-    ├── 執行 ingest_kb.py（帶 --delete-category-paths 或 --clear）
-    └── 更新 SyncLog (status=completed/failed)
-            │
-            ▼
-前端輪詢 GET /sync/tasks/{id} 取得狀態
+雿輻?汗??    ??    ??frontend:8080 (nginx)
+    ??? /         ??React SPA (?砍 dist/)
+    ??? /api/ ????backend:8050 (FastAPI)
+                      ??                      ??? ?亥岷 ??PostgreSQL
+                      ??? 敹怠? ??Redis
+                      ??? ?其遙????Redis Broker ??celery_worker
+                                                      ??                                          ?瑁? ingest_kb.py
+                                                      ??                                              撖怠 Qdrant
 ```
+
+### 2.3 ??甇亙?甇乩遙??蝔?
+```
+POST /sync ??/categories/{id}/sync
+    ??    ??API 撱箇? SyncLog (status=pending)
+    ??    ???典 Redis Broker ??Celery Task ?瑁?
+    ??    ??? 敺?DB ?亥岷 approved/synced FAQ
+    ??? 撖怠 .txt嚗Question]/[Answer] ?澆?嚗?    ??? ?瑁? ingest_kb.py嚗葆 --delete-category-paths ??--clear嚗?    ??? ?湔 SyncLog (status=completed/failed)
+            ??            ???垢頛芾岷 GET /sync/tasks/{id} ?????```
 
 ---
 
-## 3. 功能列表
+## 3. ??”
 
-### 3.1 身分驗證與授權
-
-| 功能 | 說明 |
+### 3.1 頨怠?撽???甈?
+| ? | 隤芣? |
 |------|------|
-| JWT 登入 | HttpOnly Cookie 儲存（Access 15 分鐘 / Refresh 7 天） |
-| Refresh Token Rotation | 換發時撤銷舊 Token（Redis jti 黑名單） |
-| 防爆破鎖定 | 同 IP + 帳號 5 次失敗 → 鎖定 15 分鐘（Redis 計數器） |
-| 多層 RBAC | `is_superadmin` 全域 + 各 Agent 內 `reviewer` / `editor` |
-| 自動 Token 刷新 | 前端 401 interceptor 自動換發，pending queue 防競態 |
+| JWT ?餃 | HttpOnly Cookie ?脣?嚗ccess 15 ?? / Refresh 7 憭抬? |
+| Refresh Token Rotation | ???瑁? Token嚗edis jti 暺??殷? |
+| ?脩??湧?摰?| ??IP + 撣唾? 5 甈∪仃?????? 15 ??嚗edis 閮?剁? |
+| 憭惜 RBAC | `is_superadmin` ?典? + ??Agent ??`reviewer` / `editor` |
+| ?芸? Token ?瑟 | ?垢 401 interceptor ?芸??嚗ending queue ?脩奎??|
 
-### 3.2 知識庫管理（FAQ）
-
-| 功能 | 說明 |
+### 3.2 ?亥?摨怎恣??FAQ嚗?
+| ? | 隤芣? |
 |------|------|
-| FAQ CRUD | 建立、讀取、更新、刪除；支援 Question / Answer / Tags / Category |
-| 狀態工作流 | `draft → pending → approved → synced`；含 `rejected` 退回 |
-| Superadmin 直接核准 | Superadmin 建立的 FAQ 直接進入 `approved` 狀態 |
-| 自動降級 | `approved` / `synced` FAQ 被編輯後自動降回 `draft` |
-| 編輯鎖 | Lazy Expire 10 分鐘；取鎖、心跳延長、釋放；防 TOCTOU |
-| 版本歷史 | 每次狀態轉移自動建立不可變歷史快照 |
-| 版本回溯 | Rollback 至任意歷史版本（自動降回 `draft`） |
-| 批次操作 | 批次送審、批次核准、批次刪除（含確認對話框） |
-| 全選分頁 | 全選本頁 / 部分選取（indeterminate checkbox） |
-| 多維篩選 | 依 status、category、關鍵字（防抖 300ms）篩選 + 分頁 |
+| FAQ CRUD | 撱箇?????啜?歹??舀 Question / Answer / Tags / Category |
+| ??極雿? | `draft ??pending ??approved ??synced`嚗 `rejected` ???|
+| Superadmin ?湔?詨? | Superadmin 撱箇???FAQ ?湔?脣 `approved` ???|
+| ?芸??? | `approved` / `synced` FAQ 鋡怎楊頛臬??芸??? `draft` |
+| 蝺刻摩??| Lazy Expire 10 ??嚗???頝喳辣?瑯??橘???TOCTOU |
+| ?甇瑕 | 瘥活???蝘餉?遣蝡??航?甇瑕敹怎 |
+| ??滲 | Rollback ?喃遙?風?脩??穿??芸??? `draft`嚗?|
+| ?寞活?? | ?寞活?祟?甈⊥?甈∪?歹??怎Ⅱ隤?閰望?嚗?|
+| ?券?? | ?券?祇? / ?典??詨?嚗ndeterminate checkbox嚗?|
+| 憭雁蝭拚 | 靘?status?ategory???萄?嚗??300ms嚗祟??+ ?? |
 
-### 3.3 分類管理
+### 3.3 ??蝞∠?
 
-| 功能 | 說明 |
+| ? | 隤芣? |
 |------|------|
-| 分類樹 | Adjacency List 自參照；最多兩層（root + children） |
-| 新增 / 重新命名 / 刪除 | 含重新命名自動聚焦；有 FAQ 時拒絕刪除 |
-| 匯入 FAQ（分類層） | append（保留現有）/ replace（先刪全部）兩種模式 |
-| 匯出 FAQ（分類層） | 下載指定分類（含子孫）的 .xlsx |
-| 分類獨立同步 | 觸發分類子樹精準向量替換，不影響其他分類資料 |
+| ??璅?| Adjacency List ?芸??改??憭撅歹?root + children嚗?|
+| ?啣? / ??賢? / ?芷 | ?恍??啣????佗???FAQ ??蝯??|
+| ?臬 FAQ嚗?憿惜嚗?| append嚗????/ replace嚗??芸?剁??拍車璅∪? |
+| ?臬 FAQ嚗?憿惜嚗?| 銝?????嚗摮重嚗? .xlsx |
+| ???函??郊 | 閫貊??摮邦蝎暹????踵?嚗?敶梢?嗡???鞈? |
 
-### 3.4 向量庫同步
-
-| 功能 | 說明 |
+### 3.4 ??摨怠?甇?
+| ? | 隤芣? |
 |------|------|
-| 全量同步 | 匯出全部 `approved`/`synced` FAQ → 清空並重建向量庫 |
-| 分類精準同步 | 依 `category_path` metadata 精準刪除再寫入，範圍最小化 |
-| 同步歷史 | 記錄每次同步的狀態、耗時、stdout/stderr |
-| 任務輪詢 | 前端輪詢 task 狀態，顯示 running / completed / failed |
+| ?券??郊 | ?臬?券 `approved`/`synced` FAQ ??皜征銝阡?撱箏??澈 |
+| ??蝎暹??郊 | 靘?`category_path` metadata 蝎暹??芷?神?伐?蝭??撠? |
+| ?郊甇瑕 | 閮?瘥活?郊?????tdout/stderr |
+| 隞餃?頛芾岷 | ?垢頛芾岷 task ???憿舐內 running / completed / failed |
 
-### 3.5 Excel 匯入匯出
+### 3.5 Excel ?臬?臬
 
-| 功能 | 說明 |
+| ? | 隤芣? |
 |------|------|
-| 全域匯入 | 拖放 .xlsx；自動依 `category_path` 欄建立分類樹；重複 Q 跳過 |
-| 全域匯出 | 下載所有 FAQ 為 .xlsx（StreamingResponse，無記憶體壓力） |
-| 分類匯入 | 對特定分類進行 append 或 replace 匯入 |
-| 分類匯出 | 下載指定分類（含子孫）FAQ |
-| 匯入結果回饋 | 成功筆數、跳過筆數、失敗列號 toast 通知 |
+| ?典??臬 | ? .xlsx嚗?? `category_path` 甈遣蝡?憿邦嚗?銴?Q 頝喲? |
+| ?典??臬 | 銝????FAQ ??.xlsx嚗treamingResponse嚗閮擃??? |
+| ???臬 | 撠摰?憿脰? append ??replace ?臬 |
+| ???臬 | 銝?????嚗摮重嚗AQ |
+| ?臬蝯??? | ??蝑?歲???詻仃????toast ? |
 
-### 3.6 其他功能
+### 3.6 ?嗡??
 
-| 功能 | 說明 |
+| ? | 隤芣? |
 |------|------|
-| 儀表板 | FAQ 狀態統計 KPI、待辦事項、近期活動 |
-| 稽核日誌 | 所有狀態轉移與重要操作記錄，支援多維篩選 |
-| 測試對話 | 呼叫 Rasa REST Webhook，驗證向量化結果 |
-| 使用者管理 | 新增帳號、重設密碼、指派 Agent 角色（Superadmin 限定） |
-| Agent 設定 | 設定 `txt_output_path`、`rasa_rest_url`、`ingest_script_path` |
-| 健康檢查 | `GET /api/v1/health` 回傳 DB + Redis 狀態（503 on error） |
+| ?銵冽 | FAQ ??絞閮?KPI??颲虫????暑??|
+| 蝔賣?亥? | ?????蝘餉?????閮?嚗?游?蝬剔祟??|
+| 皜祈岫撠店 | ?澆 Rasa REST Webhook嚗?霅???蝯? |
+| 雿輻?恣??| ?啣?撣唾???閮剖?蝣潦?瘣?Agent 閫嚗uperadmin ??嚗?|
+| Agent 閮剖? | 閮剖? `txt_output_path`?rasa_rest_url`?ingest_script_path` |
+| ?亙熒瑼Ｘ | `GET /api/v1/health` ? DB + Redis ???503 on error嚗?|
 
 ---
 
-## 4. 後端架構詳解
+## 4. 敺垢?嗆?閰唾圾
 
-### 4.1 專案目錄結構
+### 4.1 撠??桅?蝯?
 
 ```
 backend/
-├── main.py                     # FastAPI 入口，路由掛載，CORS，健康檢查
-├── tasks.py                    # Celery app 定義 + run_ingestion_sync + run_category_sync
-├── entrypoint.sh               # 啟動序列：alembic migrate → seed → uvicorn
-├── requirements.txt
-├── Dockerfile
-├── api/
-│   ├── database/
-│   │   ├── session.py          # SQLAlchemy engine、SessionLocal、get_db
-│   │   └── models.py           # 8 個 ORM 模型
-│   ├── routes/
-│   │   ├── auth.py             # /auth/* (login, logout, refresh, me)
-│   │   ├── users.py            # /users/* (Superadmin 限定)
-│   │   ├── agents.py           # /agents/* (CRUD + roles + stats + admin)
-│   │   ├── categories.py       # /agents/{id}/categories/*
-│   │   ├── faqs.py             # /agents/{id}/faqs/*
-│   │   ├── import_export.py    # /faqs/import + /faqs/export + /categories/{id}/import|export
-│   │   ├── sync.py             # /sync + /categories/{id}/sync + /sync/history
-│   │   ├── audit.py            # /audit-logs
-│   │   └── chat.py             # /chat/test
-│   ├── schemas.py              # 全部 Pydantic v2 schema（單檔）
-│   ├── dependencies.py         # 依賴注入：get_db、get_current_user、require_superadmin 等
-│   ├── security/
-│   │   ├── jwt.py              # create_access_token、create_refresh_token、verify_token
-│   │   └── password.py         # hash_password、verify_password（bcrypt cost=12）
-│   ├── utils/
-│   │   └── category_path.py    # build_category_path、collect_category_subtree
-│   └── seed.py                 # Superadmin 初始建立（幂等）
-└── alembic/
-    ├── env.py                  # 從 DATABASE_URL 讀取連線
-    ├── versions/
-    │   ├── 001_initial.py      # 8 張表 + 13 個索引
-    │   ├── 002_hardening.py    # constraint 補強
-    │   └── 003_fix_history_fk.py  # history FK 修正
-    └── alembic.ini
+??? main.py                     # FastAPI ?亙嚗楝?望?頛?CORS嚗摨瑟炎????? tasks.py                    # Celery app 摰儔 + run_ingestion_sync + run_category_sync
+??? entrypoint.sh               # ??摨?嚗lembic migrate ??seed ??uvicorn
+??? requirements.txt
+??? Dockerfile
+??? api/
+??  ??? database/
+??  ??  ??? session.py          # SQLAlchemy engine?essionLocal?et_db
+??  ??  ??? models.py           # 8 ??ORM 璅∪?
+??  ??? routes/
+??  ??  ??? auth.py             # /auth/* (login, logout, refresh, me)
+??  ??  ??? users.py            # /users/* (Superadmin ??)
+??  ??  ??? agents.py           # /agents/* (CRUD + roles + stats + admin)
+??  ??  ??? categories.py       # /agents/{id}/categories/*
+??  ??  ??? faqs.py             # /agents/{id}/faqs/*
+??  ??  ??? import_export.py    # /faqs/import + /faqs/export + /categories/{id}/import|export
+??  ??  ??? sync.py             # /sync + /categories/{id}/sync + /sync/history
+??  ??  ??? audit.py            # /audit-logs
+??  ??  ??? chat.py             # /chat/test
+??  ??? schemas.py              # ?券 Pydantic v2 schema嚗瑼?
+??  ??? dependencies.py         # 靘陷瘜典嚗et_db?et_current_user?equire_superadmin 蝑???  ??? security/
+??  ??  ??? jwt.py              # create_access_token?reate_refresh_token?erify_token
+??  ??  ??? password.py         # hash_password?erify_password嚗crypt cost=12嚗???  ??? utils/
+??  ??  ??? category_path.py    # build_category_path?ollect_category_subtree
+??  ??? seed.py                 # Superadmin ??撱箇?嚗?蝑?
+??? alembic/
+    ??? env.py                  # 敺?DATABASE_URL 霈???
+    ??? versions/
+    ??  ??? 001_initial.py      # 8 撘菔” + 13 ?揣撘?    ??  ??? 002_hardening.py    # constraint 鋆撥
+    ??  ??? 003_fix_history_fk.py  # history FK 靽格迤
+    ??? alembic.ini
 ```
 
-### 4.2 核心設計模式
+### 4.2 ?詨?閮剛?璅∪?
 
-#### 認證流程
+#### 隤?瘚?
 
 ```
 POST /auth/login
-  → 驗證帳密（bcrypt）
-  → 檢查 Redis login_attempts:{ip}:{username}（≥5 → 429）
-  → 建立 Access Token（15 分鐘，HS256）+ Refresh Token（7 天）
-  → 寫入 HttpOnly Cookie（SameSite=Strict）
-  → 清除 Redis 失敗計數器
-
+  ??撽?撣喳?嚗crypt嚗?  ??瑼Ｘ Redis login_attempts:{ip}:{username}嚗5 ??429嚗?  ??撱箇? Access Token嚗?5 ??嚗S256嚗? Refresh Token嚗? 憭抬?
+  ??撖怠 HttpOnly Cookie嚗ameSite=Strict嚗?  ??皜 Redis 憭望?閮??
 POST /auth/refresh
-  → 讀取 HttpOnly Cookie 的 Refresh Token
-  → 驗證 Token 簽名與有效期
-  → 檢查 Redis revoked_refresh:{jti} 黑名單
-  → 舊 jti 加入黑名單（Rotation）
-  → 發出新 Access + Refresh Token 對
-
+  ??霈??HttpOnly Cookie ??Refresh Token
+  ??撽? Token 蝪賢?????
+  ??瑼Ｘ Redis revoked_refresh:{jti} 暺???  ????jti ?暺??殷?Rotation嚗?  ???澆??Access + Refresh Token 撠?
 POST /auth/logout
-  → jti 加入 Redis 黑名單（TTL = 剩餘有效期）
-  → 清除 Cookie
+  ??jti ? Redis 暺??殷?TTL = ?拚?????
+  ??皜 Cookie
 ```
 
-#### 角色依賴注入（dependencies.py）
-
+#### 閫靘陷瘜典嚗ependencies.py嚗?
 ```python
-# 層層嵌套設計
+# 撅文惜撋?閮剛?
 get_db()                     # Session
-get_current_user(db, token)  # 驗 JWT，查 DB 取 User
-require_agent_access(user, agent_id, db)  # 驗使用者是否有此 Agent 的 role
+get_current_user(db, token)  # 撽?JWT嚗 DB ??User
+require_agent_access(user, agent_id, db)  # 撽蝙?刻?行?甇?Agent ??role
 require_editor(role)         # role in (editor, reviewer) + superadmin
 require_reviewer(role)       # role == reviewer + superadmin
 require_superadmin(user)     # user.is_superadmin
 ```
 
-#### 編輯鎖機制（Lazy Expire）
-
+#### 蝺刻摩???塚?Lazy Expire嚗?
 ```
 GET /faqs/{id}
-  → 若 locked_at < now - 10min，同 transaction 清除鎖欄位
-  → 回傳 locked_by_username（可為 null）
-
+  ????locked_at < now - 10min嚗? transaction 皜??雿?  ??? locked_by_username嚗??null嚗?
 POST /faqs/{id}/lock
-  → with_for_update() 鎖定 row
-  → 若已被他人鎖定且未逾時 → 409
-  → 寫入 locked_by + locked_at
+  ??with_for_update() ?? row
+  ???亙歇鋡思?鈭粹?摰??芷暹? ??409
+  ??撖怠 locked_by + locked_at
 
-PUT /faqs/{id}/lock (心跳)
-  → 更新 locked_at = now（延長 10 分鐘）
-```
+PUT /faqs/{id}/lock (敹歲)
+  ???湔 locked_at = now嚗辣??10 ??嚗?```
 
-### 4.3 Celery 任務設定
+### 4.3 Celery 隞餃?閮剖?
 
 ```python
-# tasks.py 關鍵設定
+# tasks.py ?閮剖?
 celery_app = Celery(
     broker=REDIS_URL,
-    task_ignore_result=True,   # 狀態寫 sync_logs，不用 Celery backend
+    task_ignore_result=True,   # ??神 sync_logs嚗???Celery backend
 )
 
-# 全量同步任務
+# ?券??郊隞餃?
 @celery_app.task(
     bind=True,
     max_retries=3,
@@ -306,7 +246,7 @@ celery_app = Celery(
 )
 def run_ingestion_sync(self, sync_log_id, agent_id): ...
 
-# 分類精準同步任務
+# ??蝎暹??郊隞餃?
 @celery_app.task(
     bind=True,
     max_retries=3,
@@ -316,13 +256,13 @@ def run_ingestion_sync(self, sync_log_id, agent_id): ...
 def run_category_sync(self, sync_log_id, agent_id, category_id): ...
 ```
 
-**Subprocess 安全執行（禁止 shell=True）：**
+**Subprocess 摰?瑁?嚗?甇?shell=True嚗?**
 
 ```python
 cmd = [sys.executable, script_path, "--source", txt_path, ...]
 proc = subprocess.Popen(
     cmd,
-    start_new_session=True,   # 建立新 process group 以便 SIGKILL 孫進程
+    start_new_session=True,   # 撱箇???process group 隞乩噶 SIGKILL 摮恍脩?
     stdout=subprocess.PIPE,
     stderr=subprocess.PIPE,
 )
@@ -334,267 +274,221 @@ except subprocess.TimeoutExpired:
 
 ---
 
-## 5. 前端架構詳解
+## 5. ?垢?嗆?閰唾圾
 
-### 5.1 專案目錄結構
+### 5.1 撠??桅?蝯?
 
 ```
 frontend/
-├── src/
-│   ├── main.tsx                # React 入口，QueryClientProvider（若需）
-│   ├── App.tsx                 # 路由設定（react-router-dom v6）
-│   ├── components/
-│   │   ├── AppShell.tsx        # 主殼層：sidebar + header + outlet
-│   │   ├── EmptyState.tsx
-│   │   ├── ProtectedRoute.tsx  # 需登入
-│   │   ├── AdminRoute.tsx      # 需 Superadmin
-│   │   └── ui/                 # shadcn/ui 元件（button, input, checkbox...)
-│   ├── features/
-│   │   ├── auth/               # 登入頁、PasswordInput
-│   │   ├── agents/             # Agent 選擇頁、設定頁
-│   │   ├── dashboard/          # KPI、待辦、活動
-│   │   ├── knowledge/          # 分類樹 + FAQ 列表 + FAQ 詳情
-│   │   ├── sync/               # 同步觸發 + 歷史
-│   │   ├── import-export/      # 拖放上傳 + 匯出
-│   │   ├── audit/              # 稽核日誌
-│   │   ├── chat/               # 測試對話
-│   │   └── users/              # 使用者管理
-│   ├── api/
-│   │   ├── client.ts           # Axios instance、interceptors
-│   │   ├── request.ts          # unwrap 工具（解包 {success, data}）
-│   │   └── endpoints/
-│   │       ├── auth.ts
-│   │       ├── agents.ts
-│   │       ├── categories.ts
-│   │       ├── faqs.ts
-│   │       ├── sync.ts
-│   │       ├── audit.ts
-│   │       └── users.ts
-│   ├── store/
-│   │   ├── useAuthStore.ts     # Zustand：user、login、logout、fetchMe
-│   │   ├── useAgentContext.ts  # Zustand + persist：currentAgent
-│   │   └── useUiPreferences.ts # Zustand + persist：sidebar、panel width
-│   ├── hooks/
-│   │   └── useDebounce.ts      # 300ms 防抖
-│   └── lib/
-│       └── utils.ts            # cn()（clsx + tailwind-merge）
-├── tailwind.config.ts          # 品牌色票 + shadcn HSL 色票
-├── vite.config.ts              # proxy /api → localhost:8000
-├── nginx.conf                  # 生產反向代理設定
-└── Dockerfile                  # 多階段 build（node:20 → nginx-unprivileged:alpine）
-```
+??? src/
+??  ??? main.tsx                # React ?亙嚗ueryClientProvider嚗?嚗???  ??? App.tsx                 # 頝舐閮剖?嚗eact-router-dom v6嚗???  ??? components/
+??  ??  ??? AppShell.tsx        # 銝餅挺撅歹?sidebar + header + outlet
+??  ??  ??? EmptyState.tsx
+??  ??  ??? ProtectedRoute.tsx  # ??餃
+??  ??  ??? AdminRoute.tsx      # ? Superadmin
+??  ??  ??? ui/                 # shadcn/ui ?辣嚗utton, input, checkbox...)
+??  ??? features/
+??  ??  ??? auth/               # ?餃?asswordInput
+??  ??  ??? agents/             # Agent ?豢??身摰?
+??  ??  ??? dashboard/          # KPI??颲艾暑????  ??  ??? knowledge/          # ??璅?+ FAQ ?” + FAQ 閰單?
+??  ??  ??? sync/               # ?郊閫貊 + 甇瑕
+??  ??  ??? import-export/      # ?銝 + ?臬
+??  ??  ??? audit/              # 蝔賣?亥?
+??  ??  ??? chat/               # 皜祈岫撠店
+??  ??  ??? users/              # 雿輻?恣????  ??? api/
+??  ??  ??? client.ts           # Axios instance?nterceptors
+??  ??  ??? request.ts          # unwrap 撌亙嚗圾??{success, data}嚗???  ??  ??? endpoints/
+??  ??      ??? auth.ts
+??  ??      ??? agents.ts
+??  ??      ??? categories.ts
+??  ??      ??? faqs.ts
+??  ??      ??? sync.ts
+??  ??      ??? audit.ts
+??  ??      ??? users.ts
+??  ??? store/
+??  ??  ??? useAuthStore.ts     # Zustand嚗ser?ogin?ogout?etchMe
+??  ??  ??? useAgentContext.ts  # Zustand + persist嚗urrentAgent
+??  ??  ??? useUiPreferences.ts # Zustand + persist嚗idebar?anel width
+??  ??? hooks/
+??  ??  ??? useDebounce.ts      # 300ms ?脫?
+??  ??? lib/
+??      ??? utils.ts            # cn()嚗lsx + tailwind-merge嚗???? tailwind.config.ts          # ???脩巨 + shadcn HSL ?脩巨
+??? vite.config.ts              # proxy /api ??localhost:8050
+??? nginx.conf                  # ???隞??閮剖?
+??? Dockerfile                  # 憭?畾?build嚗ode:20 ??nginx-unprivileged:alpine嚗?```
 
-### 5.2 前端路由
+### 5.2 ?垢頝舐
 
-| 路徑 | 元件 | 權限 |
+| 頝臬? | ?辣 | 甈? |
 |------|------|------|
-| `/login` | `LoginPage` | 公開 |
-| `/agents` | `AgentSelectPage` | 需登入 |
-| `/admin/users` | `UserManagementPage` | 需 Superadmin |
-| `/agents/:id/dashboard` | `DashboardPage` | 需登入 + 該 Agent 角色 |
-| `/agents/:id/knowledge` | `KnowledgePage` | 需登入 + 該 Agent 角色 |
-| `/agents/:id/sync` | `SyncPage` | 需登入 + 該 Agent 角色 |
-| `/agents/:id/import-export` | `ImportExportPage` | 需登入 + 該 Agent 角色 |
-| `/agents/:id/test-chat` | `TestChatPage` | 需登入 + 該 Agent 角色 |
-| `/agents/:id/audit` | `AuditPage` | 需登入 + 該 Agent 角色 |
-| `/agents/:id/settings` | `AgentSettingsPage` | 需 Superadmin |
+| `/login` | `LoginPage` | ?祇? |
+| `/agents` | `AgentSelectPage` | ??餃 |
+| `/admin/users` | `UserManagementPage` | ? Superadmin |
+| `/agents/:id/dashboard` | `DashboardPage` | ??餃 + 閰?Agent 閫 |
+| `/agents/:id/knowledge` | `KnowledgePage` | ??餃 + 閰?Agent 閫 |
+| `/agents/:id/sync` | `SyncPage` | ??餃 + 閰?Agent 閫 |
+| `/agents/:id/import-export` | `ImportExportPage` | ??餃 + 閰?Agent 閫 |
+| `/agents/:id/test-chat` | `TestChatPage` | ??餃 + 閰?Agent 閫 |
+| `/agents/:id/audit` | `AuditPage` | ??餃 + 閰?Agent 閫 |
+| `/agents/:id/settings` | `AgentSettingsPage` | ? Superadmin |
 
-### 5.3 狀態管理架構
-
+### 5.3 ??恣?瑽?
 ```
-┌──────────────────────────────────────────┐
-│           Zustand Stores                  │
-│                                          │
-│  useAuthStore          useAgentContext   │
-│  ├── user              ├── currentAgent  │
-│  ├── isLoading         └── (persist)     │
-│  ├── login()                             │
-│  ├── logout()          useUiPreferences  │
-│  └── fetchMe()         ├── sidebarOpen  │
-│                         └── panelWidth  │
-└──────────────────────────────────────────┘
-
-各 Feature Hook（Local React State + useEffect + API calls）
-  useCategoryTree    useFaqList      useFaqDetail
+???????????????????????????????????????????????          Zustand Stores                  ????                                         ???? useAuthStore          useAgentContext   ???? ??? user              ??? currentAgent  ???? ??? isLoading         ??? (persist)     ???? ??? login()                             ???? ??? logout()          useUiPreferences  ???? ??? fetchMe()         ??? sidebarOpen  ????                        ??? panelWidth  ???????????????????????????????????????????????
+??Feature Hook嚗ocal React State + useEffect + API calls嚗?  useCategoryTree    useFaqList      useFaqDetail
   useFaqFilter       useSyncTrigger  useSyncHistory
   useAuditLog        useChat         useUserManagement
 ```
 
-### 5.4 API 層 401 自動刷新
+### 5.4 API 撅?401 ?芸??瑟
 
 ```typescript
-// client.ts 核心邏輯
+// client.ts ?詨??摩
 let refreshPromise: Promise<void> | null = null
 
 axiosInstance.interceptors.response.use(null, async (error) => {
   if (error.response?.status !== 401) throw error
-  if (isAuthEndpoint(error.config.url)) throw error  // /login, /refresh 不重試
-
+  if (isAuthEndpoint(error.config.url)) throw error  // /login, /refresh 銝?閰?
   if (!refreshPromise) {
     refreshPromise = authApi.refresh().finally(() => (refreshPromise = null))
   }
 
-  await refreshPromise           // 多個並發請求共用同一個 refresh
-  return axiosInstance(error.config)  // 重送原始請求
-})
+  await refreshPromise           // 憭蒂?潸?瘙?典?銝??refresh
+  return axiosInstance(error.config)  // ??憪?瘙?})
 ```
 
-### 5.5 KnowledgePage 高度鏈（react-resizable-panels）
-
-**關鍵限制**：react-resizable-panels v4 的 `className` prop 套用在 inner wrapper 元素，`[&>div]:h-full` 這種父選擇器無效，必須直接設定。
-
+### 5.5 KnowledgePage 擃漲??react-resizable-panels嚗?
+**??**嚗eact-resizable-panels v4 ??`className` prop 憟??inner wrapper ??嚗[&>div]:h-full` ?車?園??⊥?嚗???亥身摰?
 ```tsx
-// KnowledgePage.tsx 正確寫法
+// KnowledgePage.tsx 甇?Ⅱ撖急?
 <ResizablePanelGroup direction="horizontal" className="h-full">
   <ResizablePanel className="h-full !overflow-hidden">
-    {/* 內容元件需自帶 h-full */}
+    {/* ?批捆?辣??芸葆 h-full */}
   </ResizablePanel>
 </ResizablePanelGroup>
 
-// AppShell.tsx 需建立完整高度繼承鏈
-<div className="h-screen overflow-hidden flex flex-col">
+// AppShell.tsx ?撱箇?摰擃漲蝜潭??<div className="h-screen overflow-hidden flex flex-col">
   <header />
   <main className="flex-1 overflow-hidden">
-    <Outlet />  {/* 子頁面 h-full 才有效 */}
+    <Outlet />  {/* 摮???h-full ????*/}
   </main>
 </div>
 ```
 
 ---
 
-## 6. 資料庫設計
-
-### 6.1 資料表關係圖（ERD 文字版）
+## 6. 鞈?摨怨身閮?
+### 6.1 鞈?銵券?靽?嚗RD ????
 
 ```
-users ──┬── user_agent_roles ── agents ──┬── categories (自參照)
-        │                                │
-        ├── knowledge_items (locked_by)  ├── knowledge_items
-        │                                │
-        ├── knowledge_item_histories     ├── audit_logs
-        │   (saved_by)                   │
-        └── audit_logs (performed_by)   └── sync_logs (triggered_by)
+users ???砂?? user_agent_roles ?? agents ???砂?? categories (?芸???
+        ??                               ??        ??? knowledge_items (locked_by)  ??? knowledge_items
+        ??                               ??        ??? knowledge_item_histories     ??? audit_logs
+        ??  (saved_by)                   ??        ??? audit_logs (performed_by)   ??? sync_logs (triggered_by)
 ```
 
-### 6.2 資料表說明
-
-| 資料表 | 主鍵 | 說明 |
+### 6.2 鞈?銵刻牧??
+| 鞈?銵?| 銝駁 | 隤芣? |
 |--------|------|------|
-| `users` | UUID | `is_superadmin`、`is_active` 旗標；`username` 全域唯一 |
-| `agents` | UUID | `txt_output_path`（UUID 子目錄）、`ingest_script_path`（相對 ./scripts/）；`name` 唯一 |
-| `user_agent_roles` | (user_id, agent_id) | `role` ENUM（reviewer / editor）；Composite PK |
-| `categories` | UUID | `parent_id` 自參照；含 uq_cat_agent_parent_name 防同層重名 |
-| `knowledge_items` | UUID | `status` ENUM（draft/pending/approved/rejected/synced）；`locked_by` + `locked_at` 編輯鎖 |
-| `knowledge_item_histories` | UUID | Immutable；`item_id ON DELETE SET NULL`（刪主條目後保留歷史） |
-| `audit_logs` | UUID | `diff` JSONB（`{before: {...}, after: {...}}`）；`item_id ON DELETE SET NULL` |
-| `sync_logs` | UUID | `status` ENUM（pending/running/completed/failed）；含 stdout/stderr 欄位 |
+| `users` | UUID | `is_superadmin`?is_active` ??嚗username` ?典??臭? |
+| `agents` | UUID | `txt_output_path`嚗UID 摮???ingest_script_path`嚗撠?./scripts/嚗?`name` ?臭? |
+| `user_agent_roles` | (user_id, agent_id) | `role` ENUM嚗eviewer / editor嚗?Composite PK |
+| `categories` | UUID | `parent_id` ?芸??改???uq_cat_agent_parent_name ?脣?撅日???|
+| `knowledge_items` | UUID | `status` ENUM嚗raft/pending/approved/rejected/synced嚗?`locked_by` + `locked_at` 蝺刻摩??|
+| `knowledge_item_histories` | UUID | Immutable嚗item_id ON DELETE SET NULL`嚗銝餅??桀?靽?甇瑕嚗?|
+| `audit_logs` | UUID | `diff` JSONB嚗{before: {...}, after: {...}}`嚗?`item_id ON DELETE SET NULL` |
+| `sync_logs` | UUID | `status` ENUM嚗ending/running/completed/failed嚗???stdout/stderr 甈? |
 
-### 6.3 索引清單（13 個）
+### 6.3 蝝Ｗ?皜嚗?3 ??
 
-| 索引名 | 資料表 | 欄位 | 說明 |
+| 蝝Ｗ???| 鞈?銵?| 甈? | 隤芣? |
 |--------|--------|------|------|
-| `idx_ki_agent_id` | knowledge_items | agent_id | 主要過濾條件 |
-| `idx_ki_status` | knowledge_items | status | 狀態篩選 |
-| `idx_ki_category_id` | knowledge_items | category_id | 分類篩選 |
-| `idx_ki_locked_by` | knowledge_items | locked_by | Partial（IS NOT NULL） |
+| `idx_ki_agent_id` | knowledge_items | agent_id | 銝餉??蕪璇辣 |
+| `idx_ki_status` | knowledge_items | status | ??祟??|
+| `idx_ki_category_id` | knowledge_items | category_id | ??蝭拚 |
+| `idx_ki_locked_by` | knowledge_items | locked_by | Partial嚗S NOT NULL嚗?|
 | `idx_cat_agent_id` | categories | agent_id | - |
-| `idx_cat_parent_id` | categories | parent_id | 分類樹查詢 |
+| `idx_cat_parent_id` | categories | parent_id | ??璅寞閰?|
 | `idx_al_agent_id` | audit_logs | agent_id | - |
 | `idx_al_item_id` | audit_logs | item_id | - |
-| `idx_al_created_at` | audit_logs | created_at DESC | 最新優先排序 |
+| `idx_al_created_at` | audit_logs | created_at DESC | ??啣??摨?|
 | `idx_sl_agent_id` | sync_logs | agent_id | - |
-| `idx_sl_started_at` | sync_logs | started_at DESC | 最新優先排序 |
+| `idx_sl_started_at` | sync_logs | started_at DESC | ??啣??摨?|
 | `idx_uar_user_id` | user_agent_roles | user_id | - |
 | `idx_uar_agent_id` | user_agent_roles | agent_id | - |
 
-### 6.4 FAQ 狀態機
+### 6.4 FAQ ???
 
 ```
-                  ┌──────────────────────────────┐
-                  │         (Superadmin 直接核准)  │
-                  ▼                              │
-  建立 ──▶ draft ──▶ pending ──▶ approved ──▶ synced
-                      │             │
-                      ▼             ▼
-                  rejected ◀──── rejected
-                  (可重新提交)
+                  ?????????????????????????????????                  ??        (Superadmin ?湔?詨?)  ??                  ??                             ??  撱箇? ????draft ????pending ????approved ????synced
+                      ??            ??                      ??            ??                  rejected ????? rejected
+                  (?舫??唳?鈭?
 
-狀態轉移規則：
-  Editor   可做：draft → pending（submit）
-  Reviewer 可做：pending → approved（approve）、pending → rejected（reject）
-                approved → rejected（unapprove）
-  Superadmin 可做：任意轉移（含直接 draft → approved）
-  編輯 approved/synced 時：自動降回 draft
-  sync 完成時：approved → synced（Celery 任務執行）
-```
+???蝘餉???
+  Editor   ?臬?嚗raft ??pending嚗ubmit嚗?  Reviewer ?臬?嚗ending ??approved嚗pprove嚗ending ??rejected嚗eject嚗?                approved ??rejected嚗napprove嚗?  Superadmin ?臬?嚗遙??蝘鳴??怎??draft ??approved嚗?  蝺刻摩 approved/synced ???芸??? draft
+  sync 摰???approved ??synced嚗elery 隞餃??瑁?嚗?```
 
 ---
 
-## 7. Qdrant 向量庫整合
+## 7. Qdrant ??摨急??
+### 7.1 ?湧?閮剛?
 
-### 7.1 整體設計
+Qdrant ??*憭??**嚗?蝝 Docker Compose?ingest_kb.py` ?單鞎痊???Qdrant ??嚗 Celery Worker ?典捆?典?瑁???
+### 7.2 ??撖怠?澆?
 
-Qdrant 為**外部服務**，不納入 Docker Compose。`ingest_kb.py` 腳本負責所有 Qdrant 操作，由 Celery Worker 在容器內執行。
-
-### 7.2 向量寫入格式
-
-每個 FAQ 以以下格式寫入 Qdrant：
-
+瘥?FAQ 隞乩誑銝撘神??Qdrant嚗?
 ```json
 {
   "id": "uuid5(NAMESPACE_DNS, '{source}|{question}')",
-  "vector": "[text-embedding-3-small 向量]",
+  "vector": "[text-embedding-3-small ??]",
   "payload": {
     "doc_id": "knowledgebase_v1",
     "question": "...",
     "answer": "...",
-    "category_path": "根分類/子分類",
+    "category_path": "?孵?憿?摮?憿?,
     "agent_id": "...",
     "status": "approved"
   }
 }
 ```
 
-**向量 ID 以 `uuid5` 計算**，相同問題重跑為 Upsert，不重複寫入。
+**?? ID 隞?`uuid5` 閮?**嚗??憿?頝 Upsert嚗???撖怠??
+### 7.3 ?芷蝑
 
-### 7.3 刪除策略
-
-| 場景 | 參數 | 刪除範圍 |
+| ?湔 | ? | ?芷蝭? |
 |------|------|---------|
-| 全量同步 | `--clear` | 清空整個 collection |
-| 分類精準同步 | `--delete-category-paths 根分類/子分類` | 只刪 `category_path` 相符的向量 |
-| 自動偵測 | 無 `--clear`，有 `[Category]` 區塊 | 同分類精準同步 |
+| ?券??郊 | `--clear` | 皜征?游?collection |
+| ??蝎暹??郊 | `--delete-category-paths ?孵?憿?摮?憿 | ?芸 `category_path` ?貊泵????|
+| ?芸??菜葫 | ??`--clear`嚗? `[Category]` ?憛?| ??憿移皞?甇?|
 
-### 7.4 .txt 格式規範
+### 7.4 .txt ?澆?閬?
 
-**全量同步 .txt 格式（一個 FAQ）：**
+**?券??郊 .txt ?澆?嚗???FAQ嚗?**
 
 ```
 [Question]
-問題文字
+????
 
 [Answer]
-回答文字
+????
 
 ```
 
-**分類同步 .txt 格式（含 Category 標頭）：**
+**???郊 .txt ?澆?嚗 Category 璅嚗?**
 
 ```
 [Category]
-根分類/子分類
-
+?孵?憿?摮?憿?
 [Question]
-問題文字
+????
 
 [Answer]
-回答文字
+????
 
 ```
 
-**保留字元轉換**：若 Question/Answer 內容包含 `[Question]`、`[Answer]`、`[Category]`，自動改寫為全形 `【Question】`、`【Answer】`、`【Category】`，防止解析衝突。
-
-### 7.5 ingest_kb.py CLI 參數
+**靽?摮?頧?**嚗 Question/Answer ?批捆? `[Question]`?[Answer]`?[Category]`嚗?撖怎?典耦 `?uestion???nswer???ategory?嚗甇Ｚ圾??蝒?
+### 7.5 ingest_kb.py CLI ?
 
 ```bash
 python ingest_kb.py \
@@ -602,110 +496,95 @@ python ingest_kb.py \
   --qdrant-url http://qdrant-host:6333 \
   --collection rasa_demo \
   --doc-id knowledgebase_v1 \
-  [--clear]                               # 全量同步用
-  [--delete-category-paths "路徑1,路徑2"]  # 分類同步用
-```
+  [--clear]                               # ?券??郊??  [--delete-category-paths "頝臬?1,頝臬?2"]  # ???郊??```
 
 ---
 
-## 8. 環境建置——Linux 部署（正式環境）
+## 8. ?啣?撱箇蔭?inux ?函蔡嚗迤撘憓?
 
-> 本節以 **Ubuntu 22.04 LTS** 為範例，Debian 12 同理。
-
-### 8.1 前置需求
-
+> ?祉?隞?**Ubuntu 22.04 LTS** ?箇?靘?Debian 12 ????
+### 8.1 ?蔭?瘙?
 ```bash
-# Docker Engine 安裝（官方安裝法）
-curl -fsSL https://get.docker.com | sh
+# Docker Engine 摰?嚗??孵?鋆?嚗?curl -fsSL https://get.docker.com | sh
 sudo usermod -aG docker $USER
 newgrp docker
 
-# Docker Compose Plugin（已含於新版 Docker Engine）
-docker compose version  # 確認版本 >= 2.20
+# Docker Compose Plugin嚗歇?急?啁? Docker Engine嚗?docker compose version  # 蝣箄?? >= 2.20
 
 # Git
 sudo apt install -y git
 ```
 
-### 8.2 取得原始碼
-
+### 8.2 ????蝣?
 ```bash
 git clone <your-repo-url> /opt/rasa-manager
 cd /opt/rasa-manager
 ```
 
-### 8.3 設定環境變數
+### 8.3 閮剖??啣?霈
 
 ```bash
 cp .env.example .env
-nano .env  # 填入以下必填欄位
+nano .env  # 憛怠隞乩?敹‵甈?
 ```
 
-**必填環境變數說明：**
+**敹‵?啣?霈隤芣?嚗?*
 
 ```dotenv
-# 資料庫
-POSTGRES_USER=rasa_admin
-POSTGRES_PASSWORD=<強密碼，至少 20 字元>
+# 鞈?摨?POSTGRES_USER=rasa_admin
+POSTGRES_PASSWORD=<撘瑕?蝣潘??喳? 20 摮?>
 POSTGRES_DB=rasa_knowledge
-DATABASE_URL=postgresql+psycopg2://rasa_admin:<密碼>@db:5432/rasa_knowledge
+DATABASE_URL=postgresql+psycopg2://rasa_admin:<撖Ⅳ>@db:5432/rasa_knowledge
 
-# JWT 密鑰（必須 64 字元以上，使用以下指令生成）
+# JWT 撖嚗???64 摮?隞乩?嚗蝙?其誑銝?隞斤???
 # openssl rand -hex 64
-JWT_SECRET=<64 字元以上隨機字串>
+JWT_SECRET=<64 摮?隞乩??冽?摮葡>
 JWT_ACCESS_MINUTES=15
 JWT_REFRESH_DAYS=7
 
 # Redis
-REDIS_PASSWORD=<強密碼>
-REDIS_URL=redis://:<密碼>@redis:6379/0
+REDIS_PASSWORD=<撘瑕?蝣?
+REDIS_URL=redis://:<撖Ⅳ>@redis:6379/0
 
-# 路徑映射（Linux 部署）
-PROJECT_ROOT=/opt/rasa-manager
-TXT_OUTPUT_HOST_PATH=/opt/rasa-docs      # .txt 輸出目錄（主機）
-TXT_OUTPUT_CONTAINER_PATH=/opt/rasa-docs # 容器內映射路徑（保持一致）
+# 頝臬???嚗inux ?函蔡嚗?PROJECT_ROOT=/opt/rasa-manager
+TXT_OUTPUT_HOST_PATH=/opt/rasa-docs      # .txt 頛詨?桅?嚗蜓璈?
+TXT_OUTPUT_CONTAINER_PATH=/opt/rasa-docs # 摰孵?扳?撠楝敺?靽?銝?湛?
 
-# 向量庫
-QDRANT_URL=http://<qdrant-server-ip>:6333
+# ??摨?QDRANT_URL=http://<qdrant-server-ip>:6333
 OPENAI_API_KEY=sk-...
 
-# CORS（生產環境填正式域名）
-CORS_ORIGIN=https://your-domain.com
+# CORS嚗??Ｙ憓‵甇????嚗?CORS_ORIGIN=https://your-domain.com
 
-# 初始 Superadmin
+# ?? Superadmin
 SEED_ADMIN_USERNAME=admin
-SEED_ADMIN_PASSWORD=<需含大寫+小寫+數字，至少 8 字元>
+SEED_ADMIN_PASSWORD=<??怠之撖?撠神+?詨?嚗撠?8 摮?>
 
-# 日誌
+# ?亥?
 LOG_LEVEL=INFO
 ```
 
-### 8.4 建立必要目錄
+### 8.4 撱箇?敹??桅?
 
 ```bash
-# .txt 輸出目錄（需與 TXT_OUTPUT_HOST_PATH 一致）
+# .txt 頛詨?桅?嚗???TXT_OUTPUT_HOST_PATH 銝?湛?
 sudo mkdir -p /opt/rasa-docs
 sudo chown $USER:$USER /opt/rasa-docs
 
-# ingest scripts 目錄（掛載至 celery_worker）
-mkdir -p /opt/rasa-manager/scripts
-# 將 ingest_kb.py 放入此目錄
-cp ingest_kb.py /opt/rasa-manager/scripts/
+# ingest scripts ?桅?嚗?頛 celery_worker嚗?mkdir -p /opt/rasa-manager/scripts
+# 撠?ingest_kb.py ?曉甇斤??cp ingest_kb.py /opt/rasa-manager/scripts/
 ```
 
-### 8.5 啟動服務
+### 8.5 ????
 
 ```bash
 cd /opt/rasa-manager
 
-# 首次建置並啟動（含 migration + seed）
-docker compose up --build -d
+# 擐活撱箇蔭銝血?????migration + seed嚗?docker compose up --build -d
 
-# 確認所有服務健康
-docker compose ps
+# 蝣箄?????摨?docker compose ps
 ```
 
-**預期輸出（所有服務 Status 為 healthy）：**
+**??頛詨嚗?????Status ??healthy嚗?**
 
 ```
 NAME                       STATUS
@@ -716,44 +595,39 @@ rasa_rag-celery_worker-1   running
 rasa_rag-frontend-1        healthy
 ```
 
-**容器啟動順序（depends_on）：**
+**摰孵????嚗epends_on嚗?**
 
 ```
-db & redis（healthy）→ backend（healthy）→ celery_worker & frontend
+db & redis嚗ealthy嚗? backend嚗ealthy嚗? celery_worker & frontend
 ```
 
-後端啟動時自動執行：
-1. `alembic upgrade head`（建立/更新 schema）
-2. `python -m api.seed`（建立 Superadmin，幂等）
-3. `uvicorn main:app --host 0.0.0.0 --port 8000`
+敺垢????銵?
+1. `alembic upgrade head`嚗遣蝡??湔 schema嚗?2. `python -m api.seed`嚗遣蝡?Superadmin嚗?蝑?
+3. `uvicorn main:app --host 0.0.0.0 --port 8050`
 
-### 8.6 驗收檢查
+### 8.6 撽瑼Ｘ
 
 ```bash
-# 健康檢查
-curl http://localhost:8000/api/v1/health
-# 預期：{"status":"ok","db":"ok","redis":"ok"}
+# ?亙熒瑼Ｘ
+curl http://localhost:8050/api/v1/health
+# ??嚗"status":"ok","db":"ok","redis":"ok"}
 
-# 前端存取（本機瀏覽器）
+# ?垢摮?嚗璈汗?剁?
 curl http://localhost:5173
 
-# 確認資料表已建立
+# 蝣箄?鞈?銵典歇撱箇?
 docker compose exec db psql -U rasa_admin -d rasa_knowledge -c "\dt"
-# 應看到 8 張資料表
+# ????8 撘菔??”
 
-# 確認索引
+# 蝣箄?蝝Ｗ?
 docker compose exec db psql -U rasa_admin -d rasa_knowledge -c "\di"
-# 應看到 13 個自訂索引
-
-# Superadmin seed 幂等性驗證
-docker compose exec backend python -m api.seed
-# 應顯示：[seed] users 表已有 1 筆資料，跳過 seed
+# ????13 ?閮揣撘?
+# Superadmin seed 撟??折?霅?docker compose exec backend python -m api.seed
+# ?＊蝷綽?[seed] users 銵典歇??1 蝑???頝喲? seed
 ```
 
-### 8.7 Nginx 反向代理（可選，對外暴露）
-
-若需在 Linux 主機前加一層 Nginx 做 SSL termination：
-
+### 8.7 Nginx ??隞??嚗?賂?撠??湧嚗?
+?仿???Linux 銝餅???銝撅?Nginx ??SSL termination嚗?
 ```nginx
 # /etc/nginx/sites-available/rasa-manager
 server {
@@ -773,276 +647,242 @@ server {
 }
 ```
 
-更新 `.env` 中的 `CORS_ORIGIN=https://your-domain.com`，重啟 backend 服務：
-
+?湔 `.env` 銝剔? `CORS_ORIGIN=https://your-domain.com`嚗???backend ??嚗?
 ```bash
 docker compose restart backend
 ```
 
-### 8.8 日常運維指令
+### 8.8 ?亙虜?雁?誘
 
 ```bash
-# 查看所有服務日誌
-docker compose logs -f
+# ?亦?????隤?docker compose logs -f
 
-# 查看特定服務日誌
+# ?亦??孵????亥?
 docker compose logs -f backend
 docker compose logs -f celery_worker
 
-# 重啟單一服務
+# ???桐???
 docker compose restart backend
 
-# 更新程式碼並重新部署
+# ?湔蝔?蝣潔蒂??函蔡
 git pull
 docker compose up --build -d
 
-# 停止並清除 volumes（危險！會清除 DB 資料）
-docker compose down -v
+# ?迫銝行???volumes嚗?迎?????DB 鞈?嚗?docker compose down -v
 
-# 備份 PostgreSQL
+# ?遢 PostgreSQL
 docker compose exec db pg_dump -U rasa_admin rasa_knowledge > backup_$(date +%Y%m%d).sql
 ```
 
 ---
 
-## 9. 環境建置——Windows 本機開發
+## 9. ?啣?撱箇蔭?indows ?祆??
 
-> Windows 主要用於本機開發與測試，不建議作為生產環境。
-
-### 9.1 前置需求
-
-| 工具 | 版本 | 說明 |
+> Windows 銝餉??冽?祆???葫閰佗?銝遣霅唬??箇??Ｙ憓?
+### 9.1 ?蔭?瘙?
+| 撌亙 | ? | 隤芣? |
 |------|------|------|
-| Docker Desktop | 4.x | 啟用 WSL2 Backend |
-| Node.js | 20 LTS | 前端開發 |
-| Python | 3.11 | 後端開發（選用，可直接用容器） |
-| Git | latest | 版控 |
+| Docker Desktop | 4.x | ? WSL2 Backend |
+| Node.js | 20 LTS | ?垢? |
+| Python | 3.11 | 敺垢?嚗?剁??舐?亦摰孵嚗?|
+| Git | latest | ? |
 
-### 9.2 路徑注意事項（Windows 特有）
-
-`.env` 中路徑需使用 Windows 格式：
-
+### 9.2 頝臬?瘜冽?鈭?嚗indows ?寞?嚗?
+`.env` 銝剛楝敺?雿輻 Windows ?澆?嚗?
 ```dotenv
 PROJECT_ROOT=.
-TXT_OUTPUT_HOST_PATH=D:/rasa-docs   # 注意：正斜線，含磁碟機代號
-TXT_OUTPUT_CONTAINER_PATH=/opt/rasa-docs
+TXT_OUTPUT_HOST_PATH=D:/rasa-docs   # 瘜冽?嚗迤??嚗蝤?璈誨??TXT_OUTPUT_CONTAINER_PATH=/opt/rasa-docs
 ```
 
-Docker Desktop 會自動將 `D:/rasa-docs` 映射至容器的 `/opt/rasa-docs`。
-
-### 9.3 前端開發
+Docker Desktop ??? `D:/rasa-docs` ???喳捆?函? `/opt/rasa-docs`??
+### 9.3 ?垢?
 
 ```powershell
 cd D:\mini_test\frontend
 npm install
-npm run dev      # http://localhost:5173（proxy /api → localhost:8000）
-npm run lint
+npm run dev      # http://localhost:5173嚗roxy /api ??localhost:8050嚗?npm run lint
 npx tsc --noEmit
 ```
 
-### 9.4 後端開發（搭配 Docker 資料庫）
+### 9.4 敺垢?嚗??Docker 鞈?摨恬?
 
 ```powershell
-# 只啟動 DB 與 Redis（不需完整 compose）
-docker compose up db redis -d
+# ?芸???DB ??Redis嚗??摰 compose嚗?docker compose up db redis -d
 
-# 本機安裝依賴
+# ?祆?摰?靘陷
 cd D:\mini_test\backend
 pip install -r requirements.txt
 
-# 跑 migration
+# 頝?migration
 $env:DATABASE_URL="postgresql+psycopg2://rasa_admin:pass@localhost:5432/rasa_knowledge"
 alembic upgrade head
 
-# 啟動後端
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+# ??敺垢
+uvicorn main:app --host 0.0.0.0 --port 8050 --reload
 ```
 
-### 9.5 完整 Docker 模式（Windows）
-
+### 9.5 摰 Docker 璅∪?嚗indows嚗?
 ```powershell
 cd D:\mini_test
 docker compose up --build -d
 ```
 
-**注意**：`entrypoint.sh` 需以 LF 換行儲存，不可為 CRLF。確認方式：
+**瘜冽?**嚗entrypoint.sh` ?隞?LF ???脣?嚗??舐 CRLF?Ⅱ隤撘?
 
 ```powershell
-# 確認換行符
-(Get-Content -Raw .\backend\entrypoint.sh) -match "`r" && "CRLF（需修正）" || "LF（正確）"
+# 蝣箄???蝚?(Get-Content -Raw .\backend\entrypoint.sh) -match "`r" && "CRLF嚗?靽格迤嚗? || "LF嚗迤蝣綽?"
 ```
 
-若為 CRLF，在 `.gitattributes` 加入：
-
+?亦 CRLF嚗 `.gitattributes` ?嚗?
 ```
 backend/entrypoint.sh text eol=lf
 ```
 
 ---
 
-## 10. 實施計劃書
+## 10. 撖行閮???
+> 隞乩??箏???潮?畾蛛?瘥?畾萄???舫??嗥?頛詨??
+### 蝚砌??挾嚗蝷身?賢遣蝵殷?撌脣???
 
-> 以下為六個開發階段，每階段均包含可驗收的輸出。
+**?格?**嚗ocker Compose 鈭????嚗摨瑟炎?仿?
 
-### 第一階段：基礎設施建置（已完成）
-
-**目標**：Docker Compose 五服務可啟動，健康檢查通過
-
-| 工作項目 | 說明 |
+| 撌乩?? | 隤芣? |
 |---------|------|
-| docker-compose.yml | 定義 5 服務、2 網路、volumes |
-| .env.example | 完整環境變數範本 |
-| backend/Dockerfile | python:3.11-slim，tini PID 1 |
-| frontend/Dockerfile | node:20 多階段 build → nginx-unprivileged |
-| nginx.conf | SPA fallback + /api/ 反代 |
-| entrypoint.sh | migrate → seed → uvicorn 序列 |
+| docker-compose.yml | 摰儔 5 ???? 蝬脰楝?olumes |
+| .env.example | 摰?啣?霈蝭 |
+| backend/Dockerfile | python:3.11-slim嚗ini PID 1 |
+| frontend/Dockerfile | node:20 憭?畾?build ??nginx-unprivileged |
+| nginx.conf | SPA fallback + /api/ ?誨 |
+| entrypoint.sh | migrate ??seed ??uvicorn 摨? |
 
-**驗收**：`docker compose ps` 全部 healthy，`GET /api/v1/health` 回 200
+**撽**嚗docker compose ps` ?券 healthy嚗GET /api/v1/health` ??200
 
 ---
 
-### 第二階段：資料庫模型與 Migration（已完成）
+### 蝚砌??挾嚗??澈璅∪???Migration嚗歇摰?嚗?
+**?格?**嚗? 撘菔??” + 13 蝝Ｗ? + Superadmin seed
 
-**目標**：8 張資料表 + 13 索引 + Superadmin seed
-
-| 工作項目 | 說明 |
+| 撌乩?? | 隤芣? |
 |---------|------|
-| models.py | 8 個 ORM 模型（含 ENUM、關聯、索引） |
-| 001_initial.py | 初始 migration |
-| 002_hardening.py | constraint 補強 |
-| 003_fix_history_fk.py | history FK 修正 |
-| seed.py | 幂等建立 Superadmin |
+| models.py | 8 ??ORM 璅∪?嚗 ENUM???胯揣撘? |
+| 001_initial.py | ?? migration |
+| 002_hardening.py | constraint 鋆撥 |
+| 003_fix_history_fk.py | history FK 靽格迤 |
+| seed.py | 撟?撱箇? Superadmin |
 
-**驗收**：`\dt` 顯示 8 張表、`\di` 顯示 13 個自訂索引
-
+**撽**嚗\dt` 憿舐內 8 撘菔”?\di` 憿舐內 13 ?閮揣撘?
 ---
 
-### 第三階段：後端 API 開發（已完成）
+### 蝚砌??挾嚗?蝡?API ?嚗歇摰?嚗?
+**?格?**嚗??API 蝡舫?撖虫?摰?嚗ytest ??
 
-**目標**：全部 API 端點實作完成，pytest 通過
-
-| 工作項目 | 端點數 |
+| 撌乩?? | 蝡舫???|
 |---------|--------|
-| auth 模組 | 4 個端點 |
-| users 模組 | 4 個端點 |
-| agents 模組 | 9 個端點 |
-| categories 模組 | 4 個端點 |
-| faqs 模組 | 11 個端點 |
-| import_export 模組 | 4 個端點 |
-| sync 模組 | 4 個端點 |
-| audit 模組 | 1 個端點 |
-| chat 模組 | 1 個端點 |
+| auth 璅∠? | 4 ?垢暺?|
+| users 璅∠? | 4 ?垢暺?|
+| agents 璅∠? | 9 ?垢暺?|
+| categories 璅∠? | 4 ?垢暺?|
+| faqs 璅∠? | 11 ?垢暺?|
+| import_export 璅∠? | 4 ?垢暺?|
+| sync 璅∠? | 4 ?垢暺?|
+| audit 璅∠? | 1 ?垢暺?|
+| chat 璅∠? | 1 ?垢暺?|
 
-**基線**：293 個 pytest 通過
+**?箇?**嚗?93 ??pytest ??
 
 ---
 
-### 第四階段：前端基礎框架（已完成）
+### 蝚砍??挾嚗?蝡臬蝷??塚?撌脣???
 
-**目標**：路由、認證、狀態管理、AppShell、API 層完成
-
-| 工作項目 | 說明 |
+**?格?**嚗楝?晞?霅??恣?ppShell?PI 撅文???
+| 撌乩?? | 隤芣? |
 |---------|------|
-| 路由設定 | react-router-dom v6，ProtectedRoute + AdminRoute |
-| Zustand stores | useAuthStore、useAgentContext、useUiPreferences |
-| API 客戶端 | Axios instance + 401 refresh interceptor（pending queue） |
-| AppShell | h-screen 高度繼承鏈、ResizablePanel 正確套用 |
-| tailwind.config.ts | 品牌色 + shadcn HSL 色票 |
+| 頝舐閮剖? | react-router-dom v6嚗rotectedRoute + AdminRoute |
+| Zustand stores | useAuthStore?seAgentContext?seUiPreferences |
+| API 摰Ｘ蝡?| Axios instance + 401 refresh interceptor嚗ending queue嚗?|
+| AppShell | h-screen 擃漲蝜潭?esizablePanel 甇?Ⅱ憟 |
+| tailwind.config.ts | ????+ shadcn HSL ?脩巨 |
 
 ---
 
-### 第五階段：前端功能模組（已完成）
+### 蝚砌??挾嚗?蝡臬??賣芋蝯?撌脣???
 
-**目標**：全部 Feature 頁面完成，與後端 API 整合
+**?格?**嚗??Feature ?摰?嚗?敺垢 API ?游?
 
-| Feature | 關鍵挑戰 |
+| Feature | ?? |
 |---------|---------|
-| knowledge | ResizablePanel 高度鏈、Checkbox indeterminate、分類選單 z-index |
-| sync | 任務輪詢、分類精準同步入口 |
-| import-export | react-dropzone、StreamingResponse 下載 |
-| audit | 多維篩選、稽核項目展開 |
-| chat | Rasa REST Webhook 串接 |
-| users | 多 Agent 角色管理 |
+| knowledge | ResizablePanel 擃漲?heckbox indeterminate??憿??z-index |
+| sync | 隞餃?頛芾岷??憿移皞?甇亙??|
+| import-export | react-dropzone?treamingResponse 銝? |
+| audit | 憭雁蝭拚?里?賊??桀???|
+| chat | Rasa REST Webhook 銝脫 |
+| users | 憭?Agent 閫蝞∠? |
 
 ---
 
-### 第六階段：向量庫整合（已完成）
+### 蝚砍?挾嚗??澈?游?嚗歇摰?嚗?
+**?格?**嚗ngest_kb.py 撖虫?摰?嚗??甇亥???蝎暹??郊???
 
-**目標**：ingest_kb.py 實作完成，全量同步與分類精準同步均可運作
-
-| 工作項目 | 說明 |
+| 撌乩?? | 隤芣? |
 |---------|------|
-| ingest_kb.py | `--clear`、`--delete-category-paths`、upsert 策略 |
-| run_ingestion_sync Celery task | 全量同步 |
-| run_category_sync Celery task | 分類精準同步 |
-| category_path.py | `build_category_path`、`collect_category_subtree` |
+| ingest_kb.py | `--clear`?--delete-category-paths`?psert 蝑 |
+| run_ingestion_sync Celery task | ?券??郊 |
+| run_category_sync Celery task | ??蝎暹??郊 |
+| category_path.py | `build_category_path`?collect_category_subtree` |
 
 ---
 
-### 後續待開發功能（Backlog）
-
-| 優先級 | 功能 |
+### 敺?敺??澆??踝?Backlog嚗?
+| ?芸?蝝?| ? |
 |--------|------|
-| 高 | 前端 FAQ 搜尋結果高亮 |
-| 高 | 同步進度 WebSocket 推送（取代輪詢） |
-| 中 | 分類多選批次移動 FAQ |
-| 中 | Excel 匯出加入更多欄位（tags、status、histories） |
-| 低 | 深色模式完整支援 |
-| 低 | Playwright E2E 測試補齊 |
+| 擃?| ?垢 FAQ ??蝯?擃漁 |
+| 擃?| ?郊?脣漲 WebSocket ?券??誨頛芾岷嚗?|
+| 銝?| ??憭?寞活蝘餃? FAQ |
+| 銝?| Excel ?臬??游?甈?嚗ags?tatus?istories嚗?|
+| 雿?| 瘛梯璅∪?摰?舀 |
+| 雿?| Playwright E2E 皜祈岫鋆? |
 
 ---
 
-## 11. 設計陷阱與已知坑
+## 11. 閮剛??琿?歇?亙?
 
-> 以下是開發過程中遭遇的真實問題，接手人員務必閱讀。
+> 隞乩??舫??潮?蝔葉?剝???撖血?憿??交?鈭箏???梯???
+### ??1嚗eact-resizable-panels className 憟撅斤?
 
-### 坑 1：react-resizable-panels className 套用層級
-
-**問題**：在 `ResizablePanel` 加 `[&>div]:h-full` 無效，高度不繼承。
-
-**根因**：`className` prop 被套在 inner wrapper 元素本身，`[&>div]` 選到的是 inner wrapper 的子元素，不是意圖元素。
-
-**正確做法**：
-
+**??**嚗 `ResizablePanel` ??`[&>div]:h-full` ?⊥?嚗?摨虫?蝜潭??
+**?孵?**嚗className` prop 鋡怠???inner wrapper ???祈澈嚗[&>div]` ?詨? inner wrapper ????嚗??舀???蝝?
+**甇?Ⅱ??**嚗?
 ```tsx
-// 錯誤
+// ?航炊
 <ResizablePanel className="[&>div]:h-full">
 
-// 正確：直接在 inner wrapper 套 h-full + !overflow-hidden
+// 甇?Ⅱ嚗?亙 inner wrapper 憟?h-full + !overflow-hidden
 <ResizablePanel className="h-full !overflow-hidden">
 ```
 
-AppShell 也必須建立完整高度鏈：`h-screen → flex-1 overflow-hidden → Outlet`，中間任何一層若缺少 `overflow-hidden`，高度就會穿透到頁面外，出現雙捲軸。
-
+AppShell 銋??遣蝡??湧?摨阡?嚗h-screen ??flex-1 overflow-hidden ??Outlet`嚗葉?遙雿?撅方蝻箏? `overflow-hidden`嚗?摨血停?忽??憭??箇?頠詻?
 ---
 
-### 坑 2：shadcn/ui 色票未定義導致透明背景
+### ??2嚗hadcn/ui ?脩巨?芸?蝢拙??湧??
 
-**問題**：Dropdown Menu、Popover、Command 元件背景透明，下方內容透出。
-
-**根因**：shadcn/ui 元件使用 `bg-popover`、`bg-muted`、`bg-accent` 等 token，需在 `tailwind.config.ts` 透過 CSS 變數定義，否則 Tailwind 不認識這些 class，輸出為空（等同透明）。
-
-**正確做法**：在 `tailwind.config.ts` 加入：
-
+**??**嚗ropdown Menu?opover?ommand ?辣???嚗??孵摰寥??
+**?孵?**嚗hadcn/ui ?辣雿輻 `bg-popover`?bg-muted`?bg-accent` 蝑?token嚗???`tailwind.config.ts` ?? CSS 霈摰儔嚗??Tailwind 銝?霅? class嚗撓?箇蝛綽?蝑???嚗?
+**甇?Ⅱ??**嚗 `tailwind.config.ts` ?嚗?
 ```typescript
 colors: {
   popover: { DEFAULT: 'hsl(var(--popover))', foreground: 'hsl(var(--popover-foreground))' },
   muted:   { DEFAULT: 'hsl(var(--muted))',   foreground: 'hsl(var(--muted-foreground))' },
   accent:  { DEFAULT: 'hsl(var(--accent))',  foreground: 'hsl(var(--accent-foreground))' },
-  // ... 其他 shadcn 色票
+  // ... ?嗡? shadcn ?脩巨
 }
 ```
 
 ---
 
-### 坑 3：Radix UI Checkbox indeterminate 視覺狀態
-
-**問題**：`checked='indeterminate'` 時外框顏色有變，但內部圖示仍顯示勾勾（Check），視覺無法區分「全選」與「部分選取」。
-
-**根因**：原始 `checkbox.tsx` 只用 `<Check />`，未針對 indeterminate 狀態切換圖示；且缺少 `data-[state=indeterminate]:bg-primary` class。
-
-**正確做法**：
-
+### ??3嚗adix UI Checkbox indeterminate 閬死???
+**??**嚗checked='indeterminate'` ??獢??脫?霈?雿?典?蝷箔?憿舐內?曉嚗heck嚗?閬死?⊥????詻?????
+**?孵?**嚗?憪?`checkbox.tsx` ?芰 `<Check />`嚗?? indeterminate ?????蝷綽?銝撩撠?`data-[state=indeterminate]:bg-primary` class??
+**甇?Ⅱ??**嚗?
 ```tsx
 // checkbox.tsx
 <CheckboxPrimitive.Indicator>
@@ -1051,20 +891,16 @@ colors: {
     : <Check className="h-4 w-4" />
   }
 </CheckboxPrimitive.Indicator>
-// className 加上：
-"data-[state=indeterminate]:bg-primary data-[state=indeterminate]:text-primary-foreground"
+// className ??嚗?"data-[state=indeterminate]:bg-primary data-[state=indeterminate]:text-primary-foreground"
 ```
 
 ---
 
-### 坑 4：全選 Checkbox 與個別行 Checkbox 互相干擾
+### ??4嚗??Checkbox ?銵?Checkbox 鈭撟脫
 
-**問題**：勾選個別行時，頂部全選 Checkbox 也跟著被選起；或反之。
-
-**根因**：`pageIds` 與 `pageCheckedCount` 每次 render 都重算，但 `data` 物件參考在每次 API 回傳後都是新物件，導致不必要的重算引發非預期狀態更新。
-
-**正確做法**：
-
+**??**嚗?詨銵?嚗??典??Checkbox 銋??◤?貉絲嚗?????
+**?孵?**嚗pageIds` ??`pageCheckedCount` 瘥活 render ?賡?蝞?雿?`data` ?拐辣?瘥活 API ?敺?舀?拐辣嚗??港?敹???蝞??潮??????啜?
+**甇?Ⅱ??**嚗?
 ```typescript
 // FaqList.tsx
 const pageIds = useMemo(() => data?.items.map((f) => f.id) ?? [], [data])
@@ -1076,59 +912,46 @@ const pageCheckedCount = useMemo(
 
 ---
 
-### 坑 5：Blob URL 競態（下載失效）
+### ??5嚗lob URL 蝡嗆?嚗?頛仃??
 
-**問題**：匯出下載偶爾失敗，瀏覽器提示 URL 無效。
-
-**根因**：`URL.revokeObjectURL(url)` 在 `a.click()` 之後**同步**執行，瀏覽器尚未完成非同步下載即撤銷 Blob URL。
-
-**正確做法**：
-
+**??**嚗?箔?頛?曉仃???汗?冽?蝷?URL ?⊥???
+**?孵?**嚗URL.revokeObjectURL(url)` ??`a.click()` 銋?**?郊**?瑁?嚗汗?典??芸????郊銝??單??Blob URL??
+**甇?Ⅱ??**嚗?
 ```typescript
 a.click()
-setTimeout(() => URL.revokeObjectURL(url), 100)  // 延遲 100ms
+setTimeout(() => URL.revokeObjectURL(url), 100)  // 撱園 100ms
 ```
 
 ---
 
-### 坑 6：Radix DropdownMenu submenu 動畫與原生檔案對話框衝突
+### ??6嚗adix DropdownMenu submenu ?????獢?閰望?銵?
 
-**問題**：點「匯入 FAQ」子選單項目後，系統檔案對話框無法開啟（Chromium）。
-
-**根因**：Radix submenu 關閉動畫尚未結束前，Chromium 攔截 user gesture，導致 `input[type=file].click()` 失效。
-
-**正確做法**：
-
+**??**嚗????FAQ???詨?敺?蝟餌絞瑼?撠店獢瘜???Chromium嚗?
+**?孵?**嚗adix submenu ???撠蝯???Chromium ? user gesture嚗???`input[type=file].click()` 憭望???
+**甇?Ⅱ??**嚗?
 ```typescript
 function triggerFileImport(mode: 'append' | 'replace') {
   pendingImportMode.current = mode
-  setTimeout(() => fileInputRef.current?.click(), 0)  // 讓動畫完成後再觸發
-}
+  setTimeout(() => fileInputRef.current?.click(), 0)  // 霈??怠????孛??}
 ```
 
 ---
 
-### 坑 7：Alembic ENUM 型態重複建立
+### ??7嚗lembic ENUM ????撱箇?
 
-**問題**：`alembic autogenerate` 有時在已有 ENUM 的情況下再次嘗試 `CREATE TYPE`，導致 migration 失敗。
-
-**正確做法**：
-
-1. Migration 頂端手動 `op.execute("CREATE TYPE ... AS ENUM (...)")`
-2. Column 定義使用 `create_type=False`：
-
+**??**嚗alembic autogenerate` ???典歇??ENUM ??瘜??活?岫 `CREATE TYPE`嚗???migration 憭望???
+**甇?Ⅱ??**嚗?
+1. Migration ?垢?? `op.execute("CREATE TYPE ... AS ENUM (...)")`
+2. Column 摰儔雿輻 `create_type=False`嚗?
 ```python
 sa.Column("role", sa.Enum("reviewer", "editor", name="user_agent_role", create_type=False))
 ```
 
 ---
 
-### 坑 8：entrypoint.sh CRLF 換行符（Windows 開發環境特有）
-
-**問題**：在 Windows 上編輯後的 `entrypoint.sh` 若儲存為 CRLF，Docker 容器（Linux）執行時報 `/bin/bash^M: bad interpreter`。
-
-**解法**：在 `.gitattributes` 強制 LF：
-
+### ??8嚗ntrypoint.sh CRLF ??蝚佗?Windows ??啣??寞?嚗?
+**??**嚗 Windows 銝楊頛臬???`entrypoint.sh` ?亙摮 CRLF嚗ocker 摰孵嚗inux嚗銵???`/bin/bash^M: bad interpreter`??
+**閫??**嚗 `.gitattributes` 撘瑕 LF嚗?
 ```
 backend/entrypoint.sh text eol=lf
 *.sh text eol=lf
@@ -1136,12 +959,10 @@ backend/entrypoint.sh text eol=lf
 
 ---
 
-### 坑 9：前端翻頁時 checked Set 殘留
+### ??9嚗?蝡舐蕃?? checked Set 畾?
 
-**問題**：在第 1 頁勾選幾筆後翻至第 2 頁，批次操作列仍顯示舊的勾選數。
-
-**正確做法**：
-
+**??**嚗蝚?1 ??詨嗾蝑?蝧餉蝚?2 ???寞活????憿舐內???暸?詻?
+**甇?Ⅱ??**嚗?
 ```typescript
 // FaqList.tsx
 useEffect(() => { setChecked(new Set()) }, [filters.page])
@@ -1149,137 +970,122 @@ useEffect(() => { setChecked(new Set()) }, [filters.page])
 
 ---
 
-### 坑 10：categories 同層重名衝突
+### ??10嚗ategories ?惜??銵?
 
-**問題**：快速雙擊「新增子分類」會建立兩個名稱碰撞的分類，後端回 409。
-
-**根因**：DB 層有 `uq_cat_agent_parent_name` unique constraint。
-
-**前端對策**：預設名稱加入毫秒 timestamp + 4 位亂數後綴，降低碰撞機率：
-
+**??**嚗翰???憓?????撱箇??拙?蝔梁１????嚗?蝡臬? 409??
+**?孵?**嚗B 撅斗? `uq_cat_agent_parent_name` unique constraint??
+**?垢撠?**嚗?閮剖?蝔勗??交神蝘?timestamp + 4 雿??詨?蝬湛???蝣唳?璈?嚗?
 ```typescript
 const suffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
-const name = `新分類_${suffix}`
+const name = `?啣?憿${suffix}`
 ```
 
-即使碰撞，後端 409 時前端 toast.error 顯示友善訊息。
+?喃蝙蝣唳?嚗?蝡?409 ??蝡?toast.error 憿舐內??閮??
+---
+
+### ??11嚗elery Worker 頝臬???嚗inux vs. Windows嚗?
+**??**嚗ingest_script_path` ?典捆?典?舐撠 `/opt/scripts/`嚗? Agent 閮剖??脣??楝敺???摰孵?扯楝敺??氬?
+**閬?**嚗?- `ingest_script_path` ?脣??詨?頝臬?嚗? `ingest_kb.py`嚗?- Worker ?典銵??潭??`/opt/scripts/ingest_kb.py`
+- 銝餅???`./scripts/` ?桅?隞?`:ro` bind mount ??`/opt/scripts/`
+
+**Linux ?函蔡**嚗scripts/` ?桅?雿 `PROJECT_ROOT/scripts/`嚗?蝣箔? `docker-compose.yml` ??volume ??甇?Ⅱ??
+---
+
+### ??12嚗updated_at` onupdate ??Alembic autogenerate ?暺?
+**??**嚗Column(DateTime, onupdate=func.now())` ??ORM 撅斤? Python 閫貊嚗lembic autogenerate ?菜葫銝嚗?????migration??
+**敶梢**嚗???湔 DB 閮?嚗??? ORM嚗?`updated_at` 銝??芸??湔??
+**閫??**嚗?1. migration 銝剜??? `server_onupdate=FetchedValue()` ??PostgreSQL trigger
+2. ???唬?敺? ORM嚗?祕雿撘?蝚血?甇方身閮?
 
 ---
 
-### 坑 11：Celery Worker 路徑映射（Linux vs. Windows）
+## 12. API 敹恍???
+### 12.1 隤?
 
-**問題**：`ingest_script_path` 在容器內是相對於 `/opt/scripts/`，但 Agent 設定儲存的路徑必須和容器內路徑一致。
+???隤??垢暺?Cookie 撌脰?葆 `access_token`嚗ttpOnly嚗汗?刻??撣塚?
 
-**規則**：
-- `ingest_script_path` 儲存相對路徑（如 `ingest_kb.py`）
-- Worker 在執行時拼接為 `/opt/scripts/ingest_kb.py`
-- 主機的 `./scripts/` 目錄以 `:ro` bind mount 至 `/opt/scripts/`
-
-**Linux 部署**：`scripts/` 目錄位於 `PROJECT_ROOT/scripts/`，需確保 `docker-compose.yml` 的 volume 映射正確。
-
----
-
-### 坑 12：`updated_at` onupdate 在 Alembic autogenerate 的盲點
-
-**問題**：`Column(DateTime, onupdate=func.now())` 是 ORM 層的 Python 觸發，Alembic autogenerate 偵測不到，不會自動產生 migration。
-
-**影響**：若手動更新 DB 記錄（非透過 ORM），`updated_at` 不會自動更新。
-
-**解法**：
-1. migration 中手動加 `server_onupdate=FetchedValue()` 或 PostgreSQL trigger
-2. 所有更新一律透過 ORM（目前實作方式，符合此設計）
-
----
-
-## 12. API 快速參考
-
-### 12.1 認證
-
-所有需認證的端點：Cookie 已自動帶 `access_token`（HttpOnly，瀏覽器自動附帶）
-
-### 12.2 端點速查表
-
+### 12.2 蝡舫??銵?
 **Auth**
 
-| Method | Path | 說明 |
+| Method | Path | 隤芣? |
 |--------|------|------|
-| POST | `/api/v1/auth/login` | 帳密登入 |
-| POST | `/api/v1/auth/logout` | 登出 |
-| POST | `/api/v1/auth/refresh` | 換發 Token |
-| GET | `/api/v1/auth/me` | 取得目前使用者 |
+| POST | `/api/v1/auth/login` | 撣喳??餃 |
+| POST | `/api/v1/auth/logout` | ?餃 |
+| POST | `/api/v1/auth/refresh` | ? Token |
+| GET | `/api/v1/auth/me` | ???桀?雿輻??|
 
 **Agents**
 
-| Method | Path | 說明 |
+| Method | Path | 隤芣? |
 |--------|------|------|
-| GET | `/api/v1/agents` | 列出可存取 Agent |
-| POST | `/api/v1/agents` | 建立 Agent（Superadmin） |
-| PATCH | `/api/v1/agents/{id}` | 更新 Agent（Superadmin） |
-| GET | `/api/v1/agents/{id}/stats` | FAQ 統計 |
-| POST | `/api/v1/agents/{id}/roles` | 指派角色（Superadmin） |
+| GET | `/api/v1/agents` | ??臬???Agent |
+| POST | `/api/v1/agents` | 撱箇? Agent嚗uperadmin嚗?|
+| PATCH | `/api/v1/agents/{id}` | ?湔 Agent嚗uperadmin嚗?|
+| GET | `/api/v1/agents/{id}/stats` | FAQ 蝯梯? |
+| POST | `/api/v1/agents/{id}/roles` | ?晷閫嚗uperadmin嚗?|
 
 **Categories**
 
-| Method | Path | 說明 |
+| Method | Path | 隤芣? |
 |--------|------|------|
-| GET | `/api/v1/agents/{id}/categories` | 取得分類樹（巢狀） |
-| POST | `/api/v1/agents/{id}/categories` | 建立分類 |
-| PATCH | `/api/v1/agents/{id}/categories/{cat_id}` | 更新分類 |
-| DELETE | `/api/v1/agents/{id}/categories/{cat_id}` | 刪除分類 |
-| GET | `/api/v1/agents/{id}/categories/{cat_id}/export` | 匯出分類 FAQ |
-| POST | `/api/v1/agents/{id}/categories/{cat_id}/import` | 匯入分類 FAQ |
-| POST | `/api/v1/agents/{id}/categories/{cat_id}/sync` | 觸發分類精準同步 |
+| GET | `/api/v1/agents/{id}/categories` | ????璅對?撌Ｙ?嚗?|
+| POST | `/api/v1/agents/{id}/categories` | 撱箇??? |
+| PATCH | `/api/v1/agents/{id}/categories/{cat_id}` | ?湔?? |
+| DELETE | `/api/v1/agents/{id}/categories/{cat_id}` | ?芷?? |
+| GET | `/api/v1/agents/{id}/categories/{cat_id}/export` | ?臬?? FAQ |
+| POST | `/api/v1/agents/{id}/categories/{cat_id}/import` | ?臬?? FAQ |
+| POST | `/api/v1/agents/{id}/categories/{cat_id}/sync` | 閫貊??蝎暹??郊 |
 
 **FAQs**
 
-| Method | Path | 說明 |
+| Method | Path | 隤芣? |
 |--------|------|------|
-| GET | `/api/v1/agents/{id}/faqs` | 列表（支援 page/status/category_id/q） |
-| POST | `/api/v1/agents/{id}/faqs` | 建立 FAQ |
-| GET | `/api/v1/agents/{id}/faqs/{faq_id}` | 取得單筆（含鎖狀態） |
-| PATCH | `/api/v1/agents/{id}/faqs/{faq_id}` | 更新內容 |
-| DELETE | `/api/v1/agents/{id}/faqs/{faq_id}` | 刪除 |
-| PATCH | `/api/v1/agents/{id}/faqs/{faq_id}/status` | 狀態轉移 |
-| POST | `/api/v1/agents/{id}/faqs/{faq_id}/lock` | 取得編輯鎖 |
-| PUT | `/api/v1/agents/{id}/faqs/{faq_id}/lock` | 心跳延長鎖 |
-| DELETE | `/api/v1/agents/{id}/faqs/{faq_id}/lock` | 釋放鎖 |
-| GET | `/api/v1/agents/{id}/faqs/{faq_id}/histories` | 版本歷史 |
-| POST | `/api/v1/agents/{id}/faqs/{faq_id}/rollback` | 版本回溯 |
+| GET | `/api/v1/agents/{id}/faqs` | ?”嚗??page/status/category_id/q嚗?|
+| POST | `/api/v1/agents/{id}/faqs` | 撱箇? FAQ |
+| GET | `/api/v1/agents/{id}/faqs/{faq_id}` | ???桃?嚗???? |
+| PATCH | `/api/v1/agents/{id}/faqs/{faq_id}` | ?湔?批捆 |
+| DELETE | `/api/v1/agents/{id}/faqs/{faq_id}` | ?芷 |
+| PATCH | `/api/v1/agents/{id}/faqs/{faq_id}/status` | ???蝘?|
+| POST | `/api/v1/agents/{id}/faqs/{faq_id}/lock` | ??蝺刻摩??|
+| PUT | `/api/v1/agents/{id}/faqs/{faq_id}/lock` | 敹歲撱園??|
+| DELETE | `/api/v1/agents/{id}/faqs/{faq_id}/lock` | ???|
+| GET | `/api/v1/agents/{id}/faqs/{faq_id}/histories` | ?甇瑕 |
+| POST | `/api/v1/agents/{id}/faqs/{faq_id}/rollback` | ??滲 |
 
 **Sync**
 
-| Method | Path | 說明 |
+| Method | Path | 隤芣? |
 |--------|------|------|
-| POST | `/api/v1/agents/{id}/sync` | 觸發全量同步 |
-| GET | `/api/v1/agents/{id}/sync/history` | 同步歷史 |
-| GET | `/api/v1/sync/tasks/{sync_log_id}` | 輪詢任務狀態 |
+| POST | `/api/v1/agents/{id}/sync` | 閫貊?券??郊 |
+| GET | `/api/v1/agents/{id}/sync/history` | ?郊甇瑕 |
+| GET | `/api/v1/sync/tasks/{sync_log_id}` | 頛芾岷隞餃????|
 
 **Import / Export**
 
-| Method | Path | 說明 |
+| Method | Path | 隤芣? |
 |--------|------|------|
-| POST | `/api/v1/agents/{id}/faqs/import` | 全域 Excel 匯入 |
-| GET | `/api/v1/agents/{id}/faqs/export` | 全域 Excel 匯出 |
+| POST | `/api/v1/agents/{id}/faqs/import` | ?典? Excel ?臬 |
+| GET | `/api/v1/agents/{id}/faqs/export` | ?典? Excel ?臬 |
 
 **Health**
 
-| Method | Path | 說明 |
+| Method | Path | 隤芣? |
 |--------|------|------|
-| GET | `/api/v1/health` | DB + Redis 健康狀態 |
+| GET | `/api/v1/health` | DB + Redis ?亙熒???|
 
-### 12.3 Pydantic Schema 速查
+### 12.3 Pydantic Schema ?
 
-**請求 Body（常用）**
+**隢? Body嚗虜?剁?**
 
 ```json
 // POST /auth/login
 { "username": "admin", "password": "Admin123" }
 
 // POST /agents
-{ "name": "銷售機器人", "txt_output_path": "/opt/rasa-docs/uuid-subdir" }
+{ "name": "?瑕璈鈭?, "txt_output_path": "/opt/rasa-docs/uuid-subdir" }
 
 // POST /faqs
-{ "question": "問題", "answer": "回答", "category_id": "uuid", "tags": [] }
+{ "question": "??", "answer": "??", "category_id": "uuid", "tags": [] }
 
 // PATCH /faqs/{id}/status
 { "status": "pending", "action_reason": null }
@@ -1288,66 +1094,65 @@ const name = `新分類_${suffix}`
 file: <xlsx file>
 ```
 
-**回應格式**
+**???澆?**
 
 ```json
-// 成功
+// ??
 { "success": true, "data": { ... } }
 
-// 分頁列表
+// ???”
 { "success": true, "data": { "items": [...], "total": 42, "page": 1, "per_page": 20 } }
 
-// 錯誤
-{ "detail": "錯誤訊息" }
+// ?航炊
+{ "detail": "?航炊閮" }
 ```
 
 ---
 
-## 附錄：專案檔案結構（頂層）
-
+## ??嚗?獢?獢?瑽??惜嚗?
 ```
-D:\mini_test\                    (或 /opt/rasa-manager/ on Linux)
-├── docker-compose.yml
-├── .env.example
-├── .env                         (本機，不入 git)
-├── .gitattributes               (強制 .sh LF 換行)
-├── comprehensive-system-design.md   (唯一權威規格書 v1.1)
-├── implementation_plan.md           (六階段實施計劃)
-├── ingest_kb.py                     (向量化腳本，部署時複製至 scripts/)
-├── docs/
-│   └── Rasa_Manager_beta_v1.0.md   (本文件)
-├── backend/
-│   ├── main.py
-│   ├── tasks.py
-│   ├── entrypoint.sh
-│   ├── requirements.txt
-│   ├── Dockerfile
-│   ├── api/
-│   │   ├── database/
-│   │   ├── routes/
-│   │   ├── schemas.py
-│   │   ├── dependencies.py
-│   │   ├── security/
-│   │   ├── utils/
-│   │   └── seed.py
-│   └── alembic/
-├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   ├── features/
-│   │   ├── api/
-│   │   ├── store/
-│   │   ├── hooks/
-│   │   └── lib/
-│   ├── tailwind.config.ts
-│   ├── vite.config.ts
-│   ├── nginx.conf
-│   ├── Dockerfile
-│   └── package.json
-└── scripts/
-    └── ingest_kb.py             (bind mount 至 celery_worker:/opt/scripts/)
+D:\mini_test\                    (??/opt/rasa-manager/ on Linux)
+??? docker-compose.yml
+??? .env.example
+??? .env                         (?祆?嚗???git)
+??? .gitattributes               (撘瑕 .sh LF ??)
+??? comprehensive-system-design.md   (?臭?甈?閬??v1.1)
+??? implementation_plan.md           (?剝?畾萄祕?質???
+??? ingest_kb.py                     (????穿??函蔡??鋆質 scripts/)
+??? docs/
+??  ??? Rasa_Manager_beta_v1.0.md   (?祆?隞?
+??? backend/
+??  ??? main.py
+??  ??? tasks.py
+??  ??? entrypoint.sh
+??  ??? requirements.txt
+??  ??? Dockerfile
+??  ??? api/
+??  ??  ??? database/
+??  ??  ??? routes/
+??  ??  ??? schemas.py
+??  ??  ??? dependencies.py
+??  ??  ??? security/
+??  ??  ??? utils/
+??  ??  ??? seed.py
+??  ??? alembic/
+??? frontend/
+??  ??? src/
+??  ??  ??? components/
+??  ??  ??? features/
+??  ??  ??? api/
+??  ??  ??? store/
+??  ??  ??? hooks/
+??  ??  ??? lib/
+??  ??? tailwind.config.ts
+??  ??? vite.config.ts
+??  ??? nginx.conf
+??  ??? Dockerfile
+??  ??? package.json
+??? scripts/
+    ??? ingest_kb.py             (bind mount ??celery_worker:/opt/scripts/)
 ```
 
 ---
 
-*本文件由 Claude 根據 Rasa Manager Beta v1.0 專案原始碼自動整理生成，版本鎖定於 2026-05-03。後續功能開發請同步更新本文件。*
+*?祆?隞嗥 Claude ?寞? Rasa Manager Beta v1.0 撠???蝣潸??????????2026-05-03??蝥??賡??潸??郊?湔?祆?隞嗚?

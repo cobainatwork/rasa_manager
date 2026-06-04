@@ -68,10 +68,10 @@
 | 服務 | 主機埠 | 容器埠 |
 |------|--------|--------|
 | frontend (nginx) | 5173 | 8080 |
-| backend (FastAPI) | 8000 | 8000 |
+| backend (FastAPI) | 8050 | 8050 |
 | db (PostgreSQL) | 內部 | 5432 |
 | redis | 內部 | 6379 |
-| celery_worker | 內部 | 8000（不對外） |
+| celery_worker | 內部 | 8050（不對外） |
 
 ## 專案結構
 
@@ -122,7 +122,7 @@ docker compose exec backend alembic revision --autogenerate -m "..."
 ```bash
 cd frontend
 npm install
-npm run dev          # 啟本機 vite dev server（proxy /api → :8000）
+npm run dev          # 啟本機 vite dev server（proxy /api → :8050）
 npm test             # vitest run（含 a11y smoke）
 npm run lint         # eslint
 npm run typecheck    # tsc --noEmit
@@ -247,7 +247,7 @@ QDRANT_URL=http://<qdrant-host>:6333
 ```bash
 docker compose up --build -d
 docker compose ps
-curl http://localhost:8000/api/v1/health     # 期望 {"status":"ok",...}
+curl http://localhost:8050/api/v1/health     # 期望 {"status":"ok",...}
 docker compose exec backend alembic current  # 期望 002 (head)
 ```
 

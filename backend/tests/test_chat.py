@@ -216,33 +216,65 @@ class TestChatEndpoint:
         resp = client_superadmin.post(CHAT_URL, json={})
         assert resp.status_code == 422
 
+    def test_body_sender_is_forwarded_to_rasa(
+        self, client_superadmin: TestClient, mock_db: MagicMock, _agent_mock
+    ) -> None:
+        """前端帶 sender 時，後端應原樣 forward 給 Rasa（per-session 隔離）。"""
+        mock_db.query.side_effect = _make_se(_agent_mock())
+        fake_response = MagicMock()
+        fake_response.json.return_value = []
+        fake_response.raise_for_status.return_value = None
+
+        with patch("httpx.Client") as mock_client_cls:
+            mock_client = MagicMock()
+            mock_client.__enter__ = MagicMock(return_value=mock_client)
+            mock_client.__exit__ = MagicMock(return_value=False)
+            mock_client.post.return_value = fake_response
+            mock_client_cls.return_value = mock_client
+
+            custom_sender = "session-abc-123-uuid"
+            resp = client_superadmin.post(
+                CHAT_URL,
+                json={"message": "你好", "sender": custom_sender},
+            )
+
+        assert resp.status_code == 200
+        sent_json = mock_client.post.call_args.kwargs["json"]
+        assert sent_json["sender"] == custom_sender
+        assert sent_json["message"] == "你好"
+
+    def test_missing_sender_falls_back_to_agent_user_format(
+        self, client_superadmin: TestClient, mock_db: MagicMock, _agent_mock
+    ) -> None:
+        """未帶 sender 時 fallback 到 {agent_id}_{user_id}（向後相容舊前端）。"""
+        mock_db.query.side_effect = _make_se(_agent_mock())
+        fake_response = MagicMock()
+        fake_response.json.return_value = []
+        fake_response.raise_for_status.return_value = None
+
+        with patch("httpx.Client") as mock_client_cls:
+            mock_client = MagicMock()
+            mock_client.__enter__ = MagicMock(return_value=mock_client)
+            mock_client.__exit__ = MagicMock(return_value=False)
+            mock_client.post.return_value = fake_response
+            mock_client_cls.return_value = mock_client
+
+            resp = client_superadmin.post(CHAT_URL, json={"message": "你好"})
+
+        assert resp.status_code == 200
+        sent_json = mock_client.post.call_args.kwargs["json"]
+        # fallback 格式：{agent_id}_{user_id}
+        assert sent_json["sender"].startswith(f"{AGENT_ID}_")
+        assert sent_json["message"] == "你好"
+
     def test_editor_can_access_chat(
         self, client_editor: TestClient, mock_db: MagicMock, _agent_mock
     ) -> None:
-        """Editor 有 agent access，可使用 chat 功能。"""
+        """Editor 有 agent access，可使用 chat 功能（無 rasa_url 才會 422）。"""
+        agent = _agent_mock(rasa_rest_url=None)
         counter = [0]
 
-        def se(*args: object) -> MagicMock:
-            q = MagicMock()
-            idx = counter[0]
-            counter[0] += 1
-            if idx == 0:
-                agent = MagicMock()
-                agent.id = AGENT_ID
-                q.filter.return_value.first.return_value = agent
-            elif idx == 1:
-                role = MagicMock()
-                role.role = "editor"
-                q.filter.return_value.first.return_value = role
-            return q
-
-        mock_db.query.side_effect = se
-
-        # agent 無 rasa_url → 422，但確認有進入路由（非 401/403）
-        agent = _agent_mock(rasa_rest_url=None)
-        counter[0] = 0
-
-        def se2(*args: object) -> MagicMock:
+        def query_se(*args: object) -> MagicMock:
             q = MagicMock()
             idx = counter[0]
             counter[0] += 1
@@ -254,9 +286,10 @@ class TestChatEndpoint:
                 q.filter.return_value.first.return_value = role
             return q
 
-        mock_db.query.side_effect = se2
+        mock_db.query.side_effect = query_se
         resp = client_editor.post(CHAT_URL, json=CHAT_PAYLOAD)
-        assert resp.status_code == 422  # 有 agent access，但 rasa_url 未設定
+        # agent access 通過（非 401/403），但 rasa_url 未設 → 422
+        assert resp.status_code == 422
 
 
 # ── Regression: B8 (response must not leak internal exception details) ──────

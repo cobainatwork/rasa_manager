@@ -19,7 +19,7 @@ export async function deleteUser(userId: string): Promise<void> {
 }
 
 export async function resetPassword(userId: string, newPassword: string): Promise<void> {
-  await apiClient.post(`/api/v1/users/${userId}/reset-password`, { new_password: newPassword })
+  await apiClient.patch(`/api/v1/users/${userId}/reset-password`, { new_password: newPassword })
 }
 
 export async function assignRole(
@@ -27,9 +27,9 @@ export async function assignRole(
   agentId: string,
   role: 'editor' | 'reviewer'
 ): Promise<void> {
-  await apiClient.put(`/api/v1/users/${userId}/agents/${agentId}/role`, { role })
+  await apiClient.post(`/api/v1/agents/${agentId}/roles`, { user_id: userId, role })
 }
 
 export async function removeRole(userId: string, agentId: string): Promise<void> {
-  await apiClient.delete(`/api/v1/users/${userId}/agents/${agentId}/role`)
+  await apiClient.delete(`/api/v1/agents/${agentId}/roles/${userId}`)
 }

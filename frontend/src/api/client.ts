@@ -2,7 +2,7 @@ import axios, { AxiosError, AxiosRequestConfig, AxiosResponse } from 'axios'
 
 // ── baseURL 來源（B2）────────────────────────────────────────────────────────
 // 由 VITE_API_BASE_URL 注入，預設為空字串：
-// - 開發環境走 vite.config.ts proxy（/api → http://localhost:8000）。
+// - 開發環境走 vite.config.ts proxy（/api → http://localhost:8050）。
 // - 正式環境若部署在不同 host，可設為完整 URL；endpoint 內仍以 /api/v1 為前綴。
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 

@@ -149,6 +149,7 @@ def agent_factory():
     def _factory(
         agent_id: uuid.UUID = AGENT_ID,
         name: str = "TestAgent",
+        qdrant_collection: str = "agent_test",
         txt_output_path: str = "/opt/rasa_docs/test",
         rasa_rest_url: str | None = "http://rasa:5005/webhooks/rest/webhook",
         ingest_script_path: str | None = "ingest.py",
@@ -157,6 +158,7 @@ def agent_factory():
         a = MagicMock()
         a.id = agent_id
         a.name = name
+        a.qdrant_collection = qdrant_collection
         a.txt_output_path = txt_output_path
         a.rasa_rest_url = rasa_rest_url
         a.ingest_script_path = ingest_script_path

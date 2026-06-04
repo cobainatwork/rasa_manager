@@ -3,10 +3,44 @@ import * as api from '@/api/endpoints/categories'
 import { extractErrorMessage } from '@/api/client'
 import { toast } from 'sonner'
 import type { CategoryNode } from '@/api/types'
+import { downloadBlob } from '@/lib/download'
+
+// ── 純函式 helpers ────────────────────────────────────────────────────────────
 
 function toastError(err: unknown) {
   toast.error(extractErrorMessage(err))
 }
+
+/** localStorage key 計算邏輯集中於此，避免散落多處 */
+function selectionKey(agentId: string) {
+  return `kb_selected_${agentId}`
+}
+
+/** 從 localStorage 讀取指定 agent 的上次選取分類 ID */
+function readSelection(agentId: string | undefined): string | null {
+  if (!agentId) return null
+  try { return localStorage.getItem(selectionKey(agentId)) } catch { return null }
+}
+
+/** 將選取的分類 ID 寫入 localStorage（id 為 null 時移除） */
+function writeSelection(agentId: string, id: string | null) {
+  try {
+    if (id) localStorage.setItem(selectionKey(agentId), id)
+    else localStorage.removeItem(selectionKey(agentId))
+  } catch { /* ignore */ }
+}
+
+/**
+ * 產生含毫秒時間戳 + 4 位亂數的暫用分類名稱。
+ * 目的：降低快速雙擊或同秒併發時碰撞 DB 唯一約束（uq_cat_agent_parent_name）的機率。
+ * 若仍碰撞，後端回 409，前端 toast.error 顯示友善訊息。
+ */
+function generateUniqueName() {
+  const suffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+  return `新分類_${suffix}`
+}
+
+// ── Hook ──────────────────────────────────────────────────────────────────────
 
 export interface UseCategoryTreeResult {
   tree: CategoryNode[]
@@ -31,34 +65,24 @@ export function useCategoryTree(
 ): UseCategoryTreeResult {
   const [tree, setTree] = useState<CategoryNode[]>([])
   const [loading, setLoading] = useState(true)
-  // 以 localStorage 記憶上次選取的分類，跨路由導覽後能自動還原
-  const [selectedId, setSelectedId] = useState<string | null>(() => {
-    if (!agentId) return null
-    try { return localStorage.getItem(`kb_selected_${agentId}`) ?? null } catch { return null }
-  })
+  const [selectedId, setSelectedId] = useState<string | null>(() => readSelection(agentId))
   const [pendingRenameId, setPendingRenameId] = useState<string | null>(null)
 
-  // 切換 agent 時，從 localStorage 還原新 agent 的 selectedId
+  // 切換 agent 時從 localStorage 還原新 agent 的選取狀態
   useEffect(() => {
-    if (!agentId) { setSelectedId(null); return }
-    try { setSelectedId(localStorage.getItem(`kb_selected_${agentId}`) ?? null) } catch { setSelectedId(null) }
+    setSelectedId(readSelection(agentId))
   }, [agentId])
 
-  // 包裝 select：同步更新 state 並寫入 localStorage
   function select(id: string | null) {
     setSelectedId(id)
-    if (!agentId) return
-    try {
-      if (id) localStorage.setItem(`kb_selected_${agentId}`, id)
-      else localStorage.removeItem(`kb_selected_${agentId}`)
-    } catch { /* ignore */ }
+    if (agentId) writeSelection(agentId, id)
   }
 
   const reload = useCallback(() => {
     if (!agentId) return
     setLoading(true)
     api.listCategories(agentId)
-      .then((nested) => setTree(nested))
+      .then(setTree)
       .catch(toastError)
       .finally(() => setLoading(false))
   }, [agentId])
@@ -75,13 +99,8 @@ export function useCategoryTree(
 
   async function addChild(parentId: string | null) {
     if (!agentId) return
-    // 同層唯一名稱限制（DB 唯一約束 uq_cat_agent_parent_name）：
-    // 以毫秒級 timestamp + 4 位亂數，降低快速雙擊或同秒併發碰撞的機率。
-    // 若仍碰撞，後端會回 409，前端 toast.error 顯示友善訊息。
-    const suffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
-    const name = `新分類_${suffix}`
     try {
-      const created = await api.createCategory(agentId, { name, parent_id: parentId })
+      const created = await api.createCategory(agentId, { name: generateUniqueName(), parent_id: parentId })
       setPendingRenameId(created.id)
       reload()
     } catch (err) { toastError(err) }
@@ -91,10 +110,7 @@ export function useCategoryTree(
     if (!agentId) return
     try {
       await api.deleteCategory(agentId, id)
-      if (selectedId === id) {
-        setSelectedId(null)
-        try { localStorage.removeItem(`kb_selected_${agentId}`) } catch { /* ignore */ }
-      }
+      if (selectedId === id) select(null)
       reload()
       onCategoryRemoved?.(id)
     } catch (err) { toastError(err) }
@@ -106,13 +122,7 @@ export function useCategoryTree(
     if (!agentId) return
     try {
       const { blob, filename } = await api.exportCategoryFaqs(agentId, id)
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = filename
-      a.click()
-      // 延遲 revoke：瀏覽器非同步處理下載，同步 revoke 會導致 URL 在下載前失效
-      setTimeout(() => URL.revokeObjectURL(url), 100)
+      downloadBlob(blob, filename)
     } catch (err) { toastError(err) }
   }
 

@@ -6,7 +6,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from api.database.models import Agent, Category, KnowledgeItem, User, UserAgentRole
@@ -32,9 +32,12 @@ def _agent_to_dict(agent: Agent) -> dict:  # type: ignore[type-arg]
     return {
         "id": str(agent.id),
         "name": agent.name,
+        "qdrant_collection": agent.qdrant_collection,
         "txt_output_path": agent.txt_output_path,
         "rasa_rest_url": agent.rasa_rest_url,
         "ingest_script_path": agent.ingest_script_path,
+        "embedding_provider": agent.embedding_provider,
+        "embedding_model": agent.embedding_model,
         "created_at": agent.created_at.isoformat() if agent.created_at else None,
     }
 
@@ -72,9 +75,12 @@ def create_agent(
     agent = Agent(
         id=uuid.uuid4(),
         name=body.name,
+        qdrant_collection=body.qdrant_collection,
         txt_output_path=body.txt_output_path,
         rasa_rest_url=body.rasa_rest_url,
         ingest_script_path=body.ingest_script_path,
+        embedding_provider=body.embedding_provider,
+        embedding_model=body.embedding_model,
     )
     db.add(agent)
     db.commit()
@@ -100,9 +106,11 @@ def update_agent(
     db: Session = Depends(get_db),
 ) -> dict:  # type: ignore[type-arg]
     agent = _get_agent_or_404(db, agent_id)
-    # name / txt_output_path 為必填欄位，null 代表「不更新」
+    # name / txt_output_path / qdrant_collection 為必填欄位，null 代表「不更新」
     if body.name is not None:
         agent.name = body.name
+    if body.qdrant_collection is not None:
+        agent.qdrant_collection = body.qdrant_collection
     if body.txt_output_path is not None:
         agent.txt_output_path = body.txt_output_path
     # rasa_rest_url / ingest_script_path 為可選欄位：
@@ -111,6 +119,11 @@ def update_agent(
         agent.rasa_rest_url = body.rasa_rest_url
     if "ingest_script_path" in body.model_fields_set:
         agent.ingest_script_path = body.ingest_script_path
+    # embedding_provider / embedding_model 為 NOT NULL，None 視為「不更新」
+    if body.embedding_provider is not None:
+        agent.embedding_provider = body.embedding_provider
+    if body.embedding_model is not None:
+        agent.embedding_model = body.embedding_model
     db.commit()
     db.refresh(agent)
     return {"success": True, "data": _agent_to_dict(agent), "message": "更新成功"}
@@ -148,8 +161,6 @@ def get_agent_stats(
     db: Session = Depends(get_db),
 ) -> dict:  # type: ignore[type-arg]
     require_agent_access(agent_id, current_user, db)
-
-    from sqlalchemy import case  # noqa: PLC0415
 
     row = db.query(
         func.count(KnowledgeItem.id).label("total"),

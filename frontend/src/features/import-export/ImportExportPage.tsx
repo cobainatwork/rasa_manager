@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { Download } from 'lucide-react'
+import { Download, AlertTriangle } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -9,6 +9,8 @@ import { ImportDropzone } from './ImportDropzone'
 import { ImportResult } from './ImportResult'
 import { useExport } from './useExport'
 import { apiClient, extractErrorMessage } from '@/api/client'
+
+type ImportMode = 'append' | 'replace'
 
 interface ImportResultData {
   imported: number
@@ -20,6 +22,7 @@ interface ImportResultData {
 export function ImportExportPage() {
   const { id } = useParams<{ id: string }>()
   const [file, setFile] = useState<File | null>(null)
+  const [mode, setMode] = useState<ImportMode>('append')
   const [importing, setImporting] = useState(false)
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState<string | null>(null)
@@ -36,9 +39,11 @@ export function ImportExportPage() {
     form.append('file', file)
     try {
       setProgress(50)
-      const resp = await apiClient.post(`/api/v1/agents/${id}/faqs/import`, form, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      })
+      const resp = await apiClient.post(
+        `/api/v1/agents/${id}/faqs/import?mode=${mode}`,
+        form,
+        { headers: { 'Content-Type': 'multipart/form-data' } },
+      )
       setProgress(100)
       setResult(resp.data?.data ?? null)
       setTimeout(() => setProgress(0), 1200)
@@ -58,11 +63,59 @@ export function ImportExportPage() {
         <Card className="p-6 space-y-4">
           <h2 className="text-lg font-semibold">匯入 FAQ</h2>
           <ImportDropzone onFileSelected={setFile} selectedFile={file} />
-          <p className="text-xs text-text-muted">必填欄位：question、answer。category_path 為選填（用 / 分隔多層），留空則歸入「未分類」。匯入後一律為 draft 狀態。</p>
+
+          {/* 匯入模式選擇 */}
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-text-secondary">匯入模式</p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setMode('append')}
+                className={[
+                  'flex-1 rounded-md border px-3 py-2 text-sm transition-colors cursor-pointer',
+                  mode === 'append'
+                    ? 'border-brand-500 bg-brand-50 text-brand-700 font-medium'
+                    : 'border-border text-text-secondary hover:border-brand-300',
+                ].join(' ')}
+              >
+                追加（跳過重複）
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode('replace')}
+                className={[
+                  'flex-1 rounded-md border px-3 py-2 text-sm transition-colors cursor-pointer',
+                  mode === 'replace'
+                    ? 'border-red-500 bg-red-50 text-red-700 font-medium'
+                    : 'border-border text-text-secondary hover:border-red-300',
+                ].join(' ')}
+              >
+                全量取代
+              </button>
+            </div>
+          </div>
+
+          {mode === 'replace' && (
+            <Alert variant="destructive" className="py-2">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription className="text-xs">
+                全量取代模式將先刪除此 Agent 下所有 FAQ，再匯入新資料，此操作不可復原。
+              </AlertDescription>
+            </Alert>
+          )}
+
+          <p className="text-xs text-text-muted">
+            必填欄位：question、answer。category_path 為選填（用 / 分隔多層），留空則歸入「未分類」。匯入後一律為 draft 狀態。
+          </p>
           {(importing || progress > 0) && <Progress value={progress} />}
           {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
-          <Button onClick={handleImport} disabled={!file || importing} className="w-full">
-            {importing ? '匯入中...' : '開始匯入'}
+          <Button
+            onClick={handleImport}
+            disabled={!file || importing}
+            className="w-full"
+            variant={mode === 'replace' ? 'destructive' : 'default'}
+          >
+            {importing ? '匯入中...' : mode === 'replace' ? '清空並匯入' : '開始匯入'}
           </Button>
         </Card>
 

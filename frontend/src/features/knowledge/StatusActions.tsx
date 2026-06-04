@@ -21,23 +21,26 @@ interface Props {
 export function StatusActions({ agentId, faq, onChanged, onDeleted }: Props) {
   const isSuper = useAuthStore((s) => s.user?.is_superadmin ?? false)
   const [rejectReason, setRejectReason] = useState('')
+  const [busy, setBusy] = useState(false)
 
   async function call(fn: () => Promise<unknown>, success: string, onSuccess?: () => void) {
+    setBusy(true)
     try { await fn(); toast.success(success); (onSuccess ?? onChanged)() }
     catch (err) { toast.error(extractErrorMessage(err)) }
+    finally { setBusy(false) }
   }
 
   return (
     <div className="flex flex-wrap gap-2 pt-3 border-t border-border-default">
       {(faq.status === 'draft' || faq.status === 'rejected') && (
-        <Button onClick={() => call(() => api.submit(agentId, faq.id), '已送審')}>送審</Button>
+        <Button disabled={busy} onClick={() => call(() => api.submit(agentId, faq.id), '已送審')}>送審</Button>
       )}
       {faq.status === 'pending' && (
         <>
-          <Button onClick={() => call(() => api.approve(agentId, faq.id), '已核准')}>核准</Button>
+          <Button disabled={busy} onClick={() => call(() => api.approve(agentId, faq.id), '已核准')}>核准</Button>
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button variant="outline">退回</Button>
+              <Button variant="outline" disabled={busy}>退回</Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
@@ -62,12 +65,12 @@ export function StatusActions({ agentId, faq, onChanged, onDeleted }: Props) {
         </>
       )}
       {faq.status === 'approved' && isSuper && (
-        <Button variant="outline" onClick={() => call(() => api.unapprove(agentId, faq.id), '已取消核准')}>取消核准</Button>
+        <Button variant="outline" disabled={busy} onClick={() => call(() => api.unapprove(agentId, faq.id), '已取消核准')}>取消核准</Button>
       )}
 
       <AlertDialog>
         <AlertDialogTrigger asChild>
-          <Button variant="destructive" className="ml-auto">刪除</Button>
+          <Button variant="destructive" disabled={busy} className="ml-auto">刪除</Button>
         </AlertDialogTrigger>
         <AlertDialogContent>
           <AlertDialogHeader>

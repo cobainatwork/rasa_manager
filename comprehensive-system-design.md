@@ -1,29 +1,25 @@
-# Rasa RAG 系統知識庫管理平台：系統架構與詳細規格書
+﻿# Rasa RAG 蝟餌絞?亥?摨怎恣?像?堆?蝟餌絞?嗆??底蝝啗??潭
 
-> **文件版本**：v1.2
-> **更新日期**：2026-05-03
-> **系統定位**：專門針對多代理 Rasa Enterprise Search (Extractive/FAQ 模式) 設計的知識庫 (Knowledge Base) 前後端分離管理與同步系統。
-
+> **?辣?**嚗1.2
+> **?湔?交?**嚗?026-05-03
+> **蝟餌絞摰?**嚗????憭誨??Rasa Enterprise Search (Extractive/FAQ 璅∪?) 閮剛??霅澈 (Knowledge Base) ??蝡臬??Ｙ恣???郊蝟餌絞??
 > [!IMPORTANT]
-> **文件定位聲明（v1.2 起）**
+> **?辣摰??脫?嚗1.2 韏瘀?**
 >
-> 本規格書為**架構設計決策文件**，記錄系統核心原則（JWT、RBAC、DB Schema、Celery、Docker Compose）。
->
-> §8「前端規格」描述的是設計期目標，部分細節於實作時調整（路由合併、元件架構重構）。**實際實作細節（含前端架構、目錄結構、已知設計陷阱）以 `docs/Rasa_Manager_beta_v1.0.md` 為準**。
->
-> | 文件 | 定位 |
+> ?祈??潭??*?嗆?閮剛?瘙箇??辣**嚗??頂蝯望敹???JWT?BAC?B Schema?elery?ocker Compose嚗?>
+> 禮8??蝡航??潦?餈啁??航身閮??格?嚗?敦蝭?澆祕雿?隤踵嚗楝?勗?雿萸?隞嗆瑽?瑽???*撖阡?撖虫?蝝啁?嚗?垢?嗆????瑽歇?亥身閮?梧?隞?`docs/Rasa_Manager_beta_v1.0.md` ?箸?**??>
+> | ?辣 | 摰? |
 > |------|------|
-> | 本文（`comprehensive-system-design.md`） | 架構設計原則、DB Schema、API 規格、安全設計 |
-> | `docs/Rasa_Manager_beta_v1.0.md` | 實際實作參考、前端架構、部署指南、設計陷阱 |
-> | `implementation_plan.md` | 六階段開發歷程（全部完成） |
+> | ?祆?嚗comprehensive-system-design.md`嚗?| ?嗆?閮剛????B Schema?PI 閬???刻身閮?|
+> | `docs/Rasa_Manager_beta_v1.0.md` | 撖阡?撖虫???蝡舀瑽蝵脫??身閮??|
+> | `implementation_plan.md` | ?剝?畾菟??潭風蝔??券摰?嚗?|
 
 ---
 
-## 1. 系統架構 (System Architecture)
+## 1. 蝟餌絞?嗆? (System Architecture)
 
-本系統採 **微服務與非同步解耦** 架構設計，確保前台操作不被阻塞，且 Ingestion Script（寫入向量庫）的負載可以被隔離。
-
-### 1.1 容器與服務佈局 (Container Diagram)
+?祉頂蝯望 **敺格?????甇亥圾??* ?嗆?閮剛?嚗Ⅱ靽??唳?雿?鋡恍憛?銝?Ingestion Script嚗神?亙??澈嚗?鞎??臭誑鋡恍??Ｕ?
+### 1.1 摰孵????撅 (Container Diagram)
 
 ```mermaid
 graph TD
@@ -35,7 +31,7 @@ graph TD
         API[Backend API\nFastAPI / Python 3.11]
         DB[(Primary DB\nPostgreSQL 15)]
         Redis[(Message Broker\nRedis 7)]
-        Worker[Celery Worker\nAsync Task Engine\n(含 Python 執行環境)]
+        Worker[Celery Worker\nAsync Task Engine\n(??Python ?瑁??啣?)]
     end
 
     subgraph "External Services"
@@ -49,36 +45,29 @@ graph TD
     Redis -- Consume Task --> Worker
     Worker -- Extract Approved Data --> DB
     Worker -- 1. Write .txt to shared volume --> Worker
-    Worker -- 2. Execute Ingestion Script (容器內) --> Worker
+    Worker -- 2. Execute Ingestion Script (摰孵?? --> Worker
     Worker -- 3. Script connects to Qdrant --> Qdrant
     API -- Forward Msg (Test Chat) --> RasaAPI
 
-    note["註：使用者的 Ingestion Scripts\n透過 ./scripts/ volume\n掛載至 Worker 容器內的\n/opt/scripts/"]
+    note["閮鳴?雿輻?? Ingestion Scripts\n?? ./scripts/ volume\n????Worker 摰孵?抒?\n/opt/scripts/"]
     note -.-> Worker
 ```
 
-### 1.2 系統邊界與職責
-- **Backend API**: 負責身分驗證 (JWT)、RBAC 權限管理、商業邏輯、表單驗證、與資料庫互動。
-- **Celery Worker**: 負責將資料庫中的龐大知識條目，轉換、編碼並匯出為實體 `.txt` 檔案，接著在**容器內**直接執行使用者的 Ingestion Script（容器內有完整 Python 執行環境），並將標準輸出 (stdout/stderr) 錄入資料庫。
-- **Shared Volume 機制**：
-  - 使用者的 ingestion scripts 透過 `./scripts/` host bind mount 掛載進入 Worker 容器內的 `/opt/scripts/`
-  - 輸出的 `.txt` 存放於共享 volume，路徑由 `agents.txt_output_path` 決定（推薦格式：`/opt/rasa_docs/{agent_id}/`，使用 UUID 避免中文或特殊字元污染路徑）
-  - 執行環境統一為容器內，**不再依賴宿主持有的 Python 環境或 shell**
-  - 使用者的 Ingestion Script 需自行處理與 Qdrant 的連線（Qdrant 服務可能位于宿主機、其他主機或獨立容器，由 script 使用實際 IP/hostname 連線）
+### 1.2 蝟餌絞???鞎?- **Backend API**: 鞎痊頨怠?撽? (JWT)?BAC 甈?蝞∠???璆剝?頛胯”?桅?霅?鞈?摨思???- **Celery Worker**: 鞎痊撠??澈銝剔?樴之?亥?璇嚗??楊蝣潔蒂?臬?箏祕擃?`.txt` 瑼?嚗?**摰孵??*?湔?瑁?雿輻?? Ingestion Script嚗捆?典????Python ?瑁??啣?嚗?銝血?璅?頛詨 (stdout/stderr) ?鞈?摨怒?- **Shared Volume 璈**嚗?  - 雿輻?? ingestion scripts ?? `./scripts/` host bind mount ???脣 Worker 摰孵?抒? `/opt/scripts/`
+  - 頛詨??`.txt` 摮?澆鈭?volume嚗楝敺 `agents.txt_output_path` 瘙箏?嚗?行撘?`/opt/rasa_docs/{agent_id}/`嚗蝙??UUID ?踹?銝剜??畾??情?楝敺?
+  - ?瑁??啣?蝯曹??箏捆?典嚗?*銝?靘陷摰蹂蜓????Python ?啣???shell**
+  - 雿輻?? Ingestion Script ??芾?????Qdrant ???嚗drant ???航雿?摰蹂蜓璈隞蜓璈??函?摰孵嚗 script 雿輻撖阡? IP/hostname ???嚗?
+### 1.3 ?銵捱蝑?閬?(Technical Decision Record)
 
-### 1.3 技術決策摘要 (Technical Decision Record)
-
-以下為跨章節影響整體實作方向的架構決策，**實作前必讀**，避免選錯方向後大幅重寫。
-
-| 決策點 | 選定方案 | 排除方案 | 理由 |
+隞乩??箄楊蝡?敶梢?湧?撖虫??孵??瑽捱蝑?**撖虫???霈**嚗??舀??憭批??神??
+| 瘙箇?暺?| ?詨??寞? | ??寞? | ? |
 |--------|---------|---------|------|
-| **SQLAlchemy 模式** | **同步**（`psycopg2-binary`、`Session`、`def` route） | 非同步（`asyncpg`、`AsyncSession`、`async def`） | Celery Worker 為同步環境，統一同步降低複雜度 |
-| **Celery result backend** | **`task_ignore_result = True`**，不設任何 result backend | Redis / DB result backend | 任務狀態與 log 完整記錄於 `sync_logs` 表，不需 Celery 原生 result 查詢 |
-| **Access token 黑名單** | **不查 Redis**，依賴 15 分鐘自然過期 | 每次請求查 Redis 黑名單 | Redis round-trip 對每個 API 請求代價過高；15 分鐘有效期可接受 |
-| **Refresh token 黑名單** | **查 Redis**（僅限 `/auth/refresh` 與 `/auth/logout` 兩個端點） | — | Rotation 機制必要，確保舊 token 一次性使用 |
+| **SQLAlchemy 璅∪?** | **?郊**嚗psycopg2-binary`?Session`?def` route嚗?| ??甇伐?`asyncpg`?AsyncSession`?async def`嚗?| Celery Worker ?箏?甇亦憓?蝯曹??郊??銴?摨?|
+| **Celery result backend** | **`task_ignore_result = True`**嚗?閮凋遙雿?result backend | Redis / DB result backend | 隞餃???? log 摰閮???`sync_logs` 銵剁?銝? Celery ?? result ?亥岷 |
+| **Access token 暺???* | **銝 Redis**嚗?鞈?15 ???芰?? | 瘥活隢???Redis 暺???| Redis round-trip 撠???API 隢?隞???嚗?5 ??????亙? |
+| **Refresh token 暺???* | **??Redis**嚗???`/auth/refresh` ??`/auth/logout` ?拙垢暺? | ??| Rotation 璈敹?嚗Ⅱ靽? token 銝甈⊥找蝙??|
 
-**同步 SQLAlchemy 實作要點**：
-
+**?郊 SQLAlchemy 撖虫?閬?**嚗?
 ```python
 # backend/api/database/session.py
 from sqlalchemy import create_engine
@@ -96,11 +85,10 @@ def get_db() -> Generator[Session, None, None]:
         db.close()
 ```
 
-- Route 簽名一律使用 `def`（非 `async def`）；FastAPI 對同步 route 自動在 thread pool 執行，不阻塞 event loop
-- `categories.updated_at` 與 `knowledge_items.updated_at` 需在 Column 設 `onupdate=func.now()`；Alembic autogenerate **不會**自動偵測此屬性，需手動在 migration 中補 `server_onupdate=FetchedValue()`
+- Route 蝪賢?銝敺蝙??`def`嚗? `async def`嚗?FastAPI 撠?甇?route ?芸???thread pool ?瑁?嚗??餃? event loop
+- `categories.updated_at` ??`knowledge_items.updated_at` ???Column 閮?`onupdate=func.now()`嚗lembic autogenerate **銝?**?芸??菜葫甇文惇?改??????migration 銝剛? `server_onupdate=FetchedValue()`
 
-**Celery 設定要點**：
-
+**Celery 閮剖?閬?**嚗?
 ```python
 # backend/tasks.py
 from celery import Celery
@@ -113,19 +101,17 @@ celery_app.conf.update(
 )
 ```
 
-Docker Compose `celery_worker` 服務啟動命令：
-
+Docker Compose `celery_worker` ?????賭誘嚗?
 ```yaml
 command: celery -A backend.tasks.celery_app worker --concurrency=2 --loglevel=info
 ```
 
 ---
 
-## 2. 資料庫詳細設計 (Database Schema)
+## 2. 鞈?摨怨底蝝啗身閮?(Database Schema)
 
-資料庫採用 PostgreSQL，利用強型別與 Foreign Key 確保多 Agent 環境下的資料隔離。以下為核心 ERD（實體關聯圖）與 Schema 定義。
-
-### 2.1 實體關聯圖 (ERD)
+鞈?摨急??PostgreSQL嚗?典撥???Foreign Key 蝣箔?憭?Agent ?啣?銝?鞈???誑銝?詨? ERD嚗祕擃??臬?嚗? Schema 摰儔??
+### 2.1 撖阡????(ERD)
 
 ```mermaid
 erDiagram
@@ -142,236 +128,180 @@ erDiagram
     users ||--o{ sync_logs : "triggers"
 ```
 
-### 2.2 核心資料表規格 (Table Specifications)
+### 2.2 ?詨?鞈?銵刻???(Table Specifications)
 
-#### `users` (系統使用者)
-全系統共用的帳號表。
-| 欄位名稱 | 資料型別 | 屬性限制 | 說明 |
+#### `users` (蝟餌絞雿輻??
+?函頂蝯勗?函?撣唾?銵具?| 甈??迂 | 鞈?? | 撅祆折???| 隤芣? |
 |---------|---------|---------|------|
-| `id` | UUID | PK | 唯一識別碼 |
-| `username` | VARCHAR(100) | UNIQUE, NOT NULL | 登入帳號 |
-| `password_hash` | VARCHAR(255) | NOT NULL | Bcrypt 雜湊密碼 |
-| `is_superadmin`| BOOLEAN | DEFAULT FALSE | 若為 True，則在無視映射表的情況下擁有全系統最高權限 |
-| `is_active` | BOOLEAN | DEFAULT TRUE | 停用註記 |
-| `created_at` | TIMESTAMP | NOT NULL, DEFAULT NOW() | 建立時間 |
+| `id` | UUID | PK | ?臭?霅蝣?|
+| `username` | VARCHAR(100) | UNIQUE, NOT NULL | ?餃撣唾? |
+| `password_hash` | VARCHAR(255) | NOT NULL | Bcrypt ??撖Ⅳ |
+| `is_superadmin`| BOOLEAN | DEFAULT FALSE | ?亦 True嚗??函閬?撠”??瘜????函頂蝯望?擃???|
+| `is_active` | BOOLEAN | DEFAULT TRUE | ?閮餉? |
+| `created_at` | TIMESTAMP | NOT NULL, DEFAULT NOW() | 撱箇??? |
 
-#### `agents` (Rasa 代理專案)
-紀錄系統中需要受控管理的各個 Rasa 服務個體。
-| 欄位名稱 | 資料型別 | 屬性限制 | 說明 |
+#### `agents` (Rasa 隞??撠?)
+蝝?頂蝯曹葉?閬??抒恣????Rasa ??????| 甈??迂 | 鞈?? | 撅祆折???| 隤芣? |
 |---------|---------|---------|------|
-| `id` | UUID | PK | 唯一識別碼 |
-| `name` | VARCHAR(100) | UNIQUE, NOT NULL | Rasa 專案代稱 (e.g. `CustomerService_Bot`) |
-| `txt_output_path` | VARCHAR(255) | NOT NULL | 主機上匯出 `.txt` 檔案的絕對路徑 |
-| `rasa_rest_url` | VARCHAR(255) | NULLABLE | 供「對話測試」功能串接之 API Endpoint |
-| `ingest_script_path` | VARCHAR(255) | NULLABLE | Ingestion script 的相對路徑（相對於 `./scripts/` 根目錄），例如 `customer_service/ingest.py` |
+| `id` | UUID | PK | ?臭?霅蝣?|
+| `name` | VARCHAR(100) | UNIQUE, NOT NULL | Rasa 撠?隞?迂 (e.g. `CustomerService_Bot`) |
+| `txt_output_path` | VARCHAR(255) | NOT NULL | 銝餅?銝??`.txt` 瑼???撠楝敺?|
+| `rasa_rest_url` | VARCHAR(255) | NULLABLE | 靘?閰望葫閰艾??賭葡?乩? API Endpoint |
+| `ingest_script_path` | VARCHAR(255) | NULLABLE | Ingestion script ?撠楝敺??詨???`./scripts/` ?寧??嚗?憒?`customer_service/ingest.py` |
 | `created_at` | TIMESTAMP | DEFAULT NOW() | |
 
-#### `user_agent_roles` (代理權限映射)
-多對多關聯表，記錄使用者在各 Agent 兼任的具體職責。
-| 欄位名稱 | 資料型別 | 屬性限制 | 說明 |
+#### `user_agent_roles` (隞??甈???)
+憭?憭??航”嚗??蝙?刻??Agent ?潔遙?擃鞎研?| 甈??迂 | 鞈?? | 撅祆折???| 隤芣? |
 |---------|---------|---------|------|
 | `user_id` | UUID | PK, FK -> `users.id` | |
 | `agent_id` | UUID | PK, FK -> `agents.id` | |
-| `role` | ENUM | NOT NULL | `['reviewer', 'editor']` 角色劃分 |
+| `role` | ENUM | NOT NULL | `['reviewer', 'editor']` 閫?? |
 
-#### `categories` (階層分類節點)
-採用 Adjacency List 模型實現無限層級樹狀結構。
-| 欄位名稱 | 資料型別 | 屬性限制 | 說明 |
+#### `categories` (?惜??蝭暺?
+?∠ Adjacency List 璅∪?撖衣?⊿?撅斤?璅寧?蝯???| 甈??迂 | 鞈?? | 撅祆折???| 隤芣? |
 |---------|---------|---------|------|
 | `id` | UUID | PK | |
-| `agent_id` | UUID | FK -> `agents.id` | 限定此分類所屬的專案 |
-| `parent_id` | UUID | FK -> `categories.id`, NULLABLE | NULL 則代表根節點 (Root) |
-| `name` | VARCHAR(120) | NOT NULL | 節點顯示名稱 |
-| `sort_order` | INTEGER | DEFAULT 0 | 介面排序用權重 |
-| `created_at` | TIMESTAMP | NOT NULL, DEFAULT NOW() | 建立時間 |
-| `updated_at` | TIMESTAMP | NOT NULL, DEFAULT NOW() | 最新異動時間（ON UPDATE 觸發） |
+| `agent_id` | UUID | FK -> `agents.id` | ??甇文?憿?撅祉?撠? |
+| `parent_id` | UUID | FK -> `categories.id`, NULLABLE | NULL ?誨銵冽蝭暺?(Root) |
+| `name` | VARCHAR(120) | NOT NULL | 蝭暺＊蝷箏?蝔?|
+| `sort_order` | INTEGER | DEFAULT 0 | 隞???冽???|
+| `created_at` | TIMESTAMP | NOT NULL, DEFAULT NOW() | 撱箇??? |
+| `updated_at` | TIMESTAMP | NOT NULL, DEFAULT NOW() | ??啁????ON UPDATE 閫貊嚗?|
 
-#### `knowledge_items` (知識問答主檔)
-存放最新當代版本的 FAQ 記錄。
-| 欄位名稱 | 資料型別 | 屬性限制 | 說明 |
+#### `knowledge_items` (?亥???銝餅?)
+摮??啁隞???祉? FAQ 閮???| 甈??迂 | 鞈?? | 撅祆折???| 隤芣? |
 |---------|---------|---------|------|
 | `id` | UUID | PK | |
-| `agent_id` | UUID | FK -> `agents.id` | 確保資料隔離 |
-| `category_id` | UUID | FK -> `categories.id` | 問題歸屬類別 |
-| `question` | TEXT | NOT NULL | FAQ 之 問題內容 |
-| `answer` | TEXT | NOT NULL | FAQ 之 回覆內容 |
-| `tags` | VARCHAR[] | DEFAULT '{}' | 標籤陣列 |
+| `agent_id` | UUID | FK -> `agents.id` | 蝣箔?鞈?? |
+| `category_id` | UUID | FK -> `categories.id` | ??甇詨惇憿 |
+| `question` | TEXT | NOT NULL | FAQ 銋????批捆 |
+| `answer` | TEXT | NOT NULL | FAQ 銋????批捆 |
+| `tags` | VARCHAR[] | DEFAULT '{}' | 璅惜??? |
 | `status` | ENUM | NOT NULL | `['draft', 'pending', 'approved', 'rejected', 'synced']` |
-| `version` | INTEGER | DEFAULT 1 | 記錄當下版號，每次更動累加 |
-| `locked_by` | UUID | FK -> `users.id`, NULL | 當前編輯鎖持有者（防多人衝突）|
-| `locked_at` | TIMESTAMP | NULL | 鎖定時間（逾時 10 分鐘自動解除）|
-| `created_by` | UUID | FK -> `users.id` | 初始建立者 |
-| `created_at` | TIMESTAMP | NOT NULL, DEFAULT NOW() | 建立時間 |
-| `updated_at` | TIMESTAMP | NOT NULL, DEFAULT NOW() | 最新異動時間（ON UPDATE 觸發） |
+| `version` | INTEGER | DEFAULT 1 | 閮??嗡???嚗?甈⊥?敞??|
+| `locked_by` | UUID | FK -> `users.id`, NULL | ?嗅?蝺刻摩?????脣?鈭箄?蝒?|
+| `locked_at` | TIMESTAMP | NULL | ????嚗暹? 10 ???芸?閫?嚗
+| `created_by` | UUID | FK -> `users.id` | ??撱箇???|
+| `created_at` | TIMESTAMP | NOT NULL, DEFAULT NOW() | 撱箇??? |
+| `updated_at` | TIMESTAMP | NOT NULL, DEFAULT NOW() | ??啁????ON UPDATE 閫貊嚗?|
 
-#### `knowledge_item_histories` (知識問答版本庫)
-不可變 (Immutable) 的紀錄表，記載所有變更與審查痕跡，用於 Rollback（回復）。
-| 欄位名稱 | 資料型別 | 屬性限制 | 說明 |
+#### `knowledge_item_histories` (?亥????摨?
+銝霈?(Immutable) ???”嚗?頛????渲?撖拇?楚嚗??Rollback嚗?敺抬???| 甈??迂 | 鞈?? | 撅祆折???| 隤芣? |
 |---------|---------|---------|------|
 | `id` | UUID | PK | |
-| `item_id` | UUID | FK -> `knowledge_items.id` | ON DELETE SET NULL（主條目刪除後，歷史軌跡保留供稽核使用） |
-| `version` | INTEGER | NOT NULL | 版號 |
-| `question` | TEXT | NOT NULL | 該版號當下留存之問題 |
-| `answer` | TEXT | NOT NULL | 該版號當下留存之解答 |
-| `category_id` | UUID | FK -> `categories.id` | 該版分類 |
-| `saved_by` | UUID | FK -> `users.id` | 此版本締造者 |
+| `item_id` | UUID | FK -> `knowledge_items.id` | ON DELETE SET NULL嚗蜓璇?芷敺?甇瑕頠楚靽?靘里?訾蝙?剁? |
+| `version` | INTEGER | NOT NULL | ?? |
+| `question` | TEXT | NOT NULL | 閰脩??銝?摮??? |
+| `answer` | TEXT | NOT NULL | 閰脩??銝?摮?閫?? |
+| `category_id` | UUID | FK -> `categories.id` | 閰脩??? |
+| `saved_by` | UUID | FK -> `users.id` | 甇斤??祉???|
 | `action` | VARCHAR(50) | NOT NULL | `['created', 'edited', 'approved', 'rejected', 'rollback']` |
-| `action_reason` | TEXT | NULLABLE | 填寫退回理由或審核評論；當 `action = 'rejected'` 時，後端應驗證此欄位不可為空（前端亦需提示必填） |
+| `action_reason` | TEXT | NULLABLE | 憛怠神????望?撖拇閰?嚗 `action = 'rejected'` ??敺垢??霅迨甈?銝?箇征嚗?蝡臭漲??內敹‵嚗?|
 | `created_at` | TIMESTAMP | DEFAULT NOW() | |
 
-#### `audit_logs` (軌跡紀錄表)
-不可篡改的操作軌跡日誌，符合資安稽核要求。
-| 欄位名稱 | 資料型別 | 屬性限制 | 說明 |
+#### `audit_logs` (頠楚蝝?”)
+銝蝭⊥??雿?頝⊥隤?蝚血?鞈?蝔賣閬???| 甈??迂 | 鞈?? | 撅祆折???| 隤芣? |
 |---------|---------|---------|------|
 | `id` | UUID | PK | |
-| `agent_id` | UUID | FK -> `agents.id` | 所屬專案 |
-| `item_id` | UUID | FK -> `knowledge_items.id` | 牽涉之 FAQ ID |
+| `agent_id` | UUID | FK -> `agents.id` | ?撅砍?獢?|
+| `item_id` | UUID | FK -> `knowledge_items.id` | ?賣?銋?FAQ ID |
 | `action` | VARCHAR(50) | NOT NULL | `['create', 'update', 'delete', 'approve', 'reject', 'export', 'import']` |
-| `performed_by` | UUID | FK -> `users.id` | 執行操作之人員 |
-| `diff` | JSONB | NULLABLE | 紀錄修改前後的欄位級別差異，格式為 `{"field": {"before": "舊值", "after": "新值"}}` 的物件，例如 `{"question": {"before": "舊問題", "after": "新問題"}, "status": {"before": "draft", "after": "pending"}}`；建立與刪除操作不記錄 diff |
+| `performed_by` | UUID | FK -> `users.id` | ?瑁???銋犖??|
+| `diff` | JSONB | NULLABLE | 蝝?耨?孵?敺?甈?蝝撌桃嚗撘 `{"field": {"before": "??, "after": "?啣?}}` ?隞塚?靘? `{"question": {"before": "??憿?, "after": "?啣?憿?}, "status": {"before": "draft", "after": "pending"}}`嚗遣蝡??芷??銝???diff |
 | `created_at` | TIMESTAMP | DEFAULT NOW() | |
 
 ---
 
-## 3. 業務邏輯規格與狀態機 (Business Logic & State Machine)
+## 3. 璆剖??摩閬???? (Business Logic & State Machine)
 
-### 3.1 審核流程狀態機 (Status State Machine)
+### 3.1 撖拇瘚???? (Status State Machine)
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Draft: 新增
-    [*] --> Approved: 新增（Superadmin 自動核准）
-    Draft --> Pending: Editor 申請送審
-    Pending --> Draft: 可隨時撤回
-    Pending --> Approved: Reviewer 核准通過
-    Pending --> Rejected: Reviewer 退回要求修改
-    Rejected --> Pending: 修改後重新送審
-    Approved --> Draft: Editor 重新編輯 (自動降級為草稿)
-    Synced --> Draft: 需重新編輯時手動重置或自動降級
+    [*] --> Draft: ?啣?
+    [*] --> Approved: ?啣?嚗uperadmin ?芸??詨?嚗?    Draft --> Pending: Editor ?唾??祟
+    Pending --> Draft: ?舫???    Pending --> Approved: Reviewer ?詨???
+    Pending --> Rejected: Reviewer ???瘙耨??    Rejected --> Pending: 靽格敺??圈祟
+    Approved --> Draft: Editor ?蝺刻摩 (?芸????箄?蝔?
+    Synced --> Draft: ??蝺刻摩????蝵格??芸???
 ```
-- **過濾原則**：「一鍵同步 (Ingestion)」執行時，後端會取出狀態為 `Approved OR Synced` 的所有 FAQ 並建置 `.txt` 文件。同步成功後，所有已同步項目標記為 `Synced`。
-- **重新編輯**：`Synced` 或 `Approved` 的項目被編輯時，自動降級為 `Draft`。
+- **?蕪??**嚗??萄?甇?(Ingestion)?銵?嚗?蝡舀???? `Approved OR Synced` ????FAQ 銝血遣蝵?`.txt` ?辣??甇交???嚗??歇?郊?璅???`Synced`??- **?蝺刻摩**嚗Synced` ??`Approved` ???株◤蝺刻摩???芸?????`Draft`??
+### 3.2 閫甈??拚 (RBAC Matrix)
 
-### 3.2 角色權限矩陣 (RBAC Matrix)
-
-| 行為 (Action) | Superadmin | Agent Reviewer | Agent Editor |
+| 銵 (Action) | Superadmin | Agent Reviewer | Agent Editor |
 |--------------|------------|----------------|--------------|
-| 管理人員/全系統 | ✅ | ❌ | ❌ |
-| 新增/編輯 Agent | ✅ | ❌ | ❌ |
-| 分類節點管理 | ✅ | ✅ | ❌ |
-| 新增/修改 FAQ | ✅ | ✅ | ✅ |
-| 刪除 FAQ | ✅ | ✅ (若非核准態) | ✅ (僅限自己建立且為草稿) |
-| FAQ 送審 | ✅ (自動核准，跳過 pending 直接設為 approved) | ✅ | ✅ |
-| 核准/退回 FAQ | ✅ | ✅ | ❌ |
-| 版本查閱/復原 | ✅ | ✅ | ✅ |
-| 觸發一鍵同步 | ✅ | ✅ | ❌ |
-| Excel 匯入/匯出 | ✅ | ✅ | ✅ |
-| 內建對話測試 | ✅ | ✅ | ✅ |
+| 蝞∠?鈭箏/?函頂蝯?| ??| ??| ??|
+| ?啣?/蝺刻摩 Agent | ??| ??| ??|
+| ??蝭暺恣??| ??| ??| ??|
+| ?啣?/靽格 FAQ | ??| ??| ??|
+| ?芷 FAQ | ??| ??(?仿??詨??? | ??(???芸楛撱箇?銝?阮) |
+| FAQ ?祟 | ??(?芸??詨?嚗歲??pending ?湔閮剔 approved) | ??| ??|
+| ?詨?/???FAQ | ??| ??| ??|
+| ??仿/敺拙? | ??| ??| ??|
+| 閫貊銝?萄?甇?| ??| ??| ??|
+| Excel ?臬/?臬 | ??| ??| ??|
+| ?批遣撠店皜祈岫 | ??| ??| ??|
 
 ---
 
-## 4. API 與同步通訊規格 (API Specifications)
+## 4. API ??甇仿?閬 (API Specifications)
 
-由於系統採 SPA (React)，前後端以 RESTful API + JSON 介接，以下摘要關鍵 Endpoint：
-
-### 4.0 系統端點
+?望蝟餌絞??SPA (React)嚗?敺垢隞?RESTful API + JSON 隞嚗誑銝?閬???Endpoint嚗?
+### 4.0 蝟餌絞蝡舫?
 
 - `GET /api/v1/health`
-  - **說明**: 健康檢查端點，供 Docker Compose `healthcheck` 及負載平衡器探測使用。**不需認證**。
-  - **回應**: `{"status": "ok", "db": "ok", "redis": "ok"}` — 同時驗證 PostgreSQL 連線（執行 `SELECT 1`）與 Redis 連線（執行 `PING`），任一失敗則回傳 503。
-
-### 4.1 Agent 專案配置路由 (Superadmin 限定)
+  - **隤芣?**: ?亙熒瑼Ｘ蝡舫?嚗? Docker Compose `healthcheck` ??頛像銵∪?Ｘ葫雿輻??*銝?隤?**??  - **??**: `{"status": "ok", "db": "ok", "redis": "ok"}` ????撽? PostgreSQL ???嚗銵?`SELECT 1`嚗? Redis ???嚗銵?`PING`嚗?隞颱?憭望?????503??
+### 4.1 Agent 撠??蔭頝舐 (Superadmin ??)
 - `POST /api/v1/agents`
-  - **說明**: Superadmin 建立新 Agent。Request Body: `{ name, txt_output_path, rasa_rest_url, ingest_script_path }`。
-- `GET /api/v1/agents`
-  - 返回該使用者有權存取的所有 Agent 清單，供首頁「專案選擇」使用。
-- `GET /api/v1/agents/{agent_id}`
-  - **說明**: 查詢單一 Agent 詳細配置（含 `txt_output_path`、`rasa_rest_url`、`ingest_script_path`）。
-- `PUT /api/v1/agents/{agent_id}`
-  - **說明**: Superadmin 修改 Agent 基礎配置（Partial Update 也支援用 PATCH）。
-- `DELETE /api/v1/agents/{agent_id}`
-  - **說明**: Superadmin 刪除 Agent。若有關聯的 categories 或 knowledge_items，回 422 禁止刪除。
-- `GET /api/v1/agents/{agent_id}/stats`
-  - 返回 Agent 儀表板統計（待審核件數、各分類 FAQ 分佈、已同步件數）。
-- `POST /api/v1/agents/{agent_id}/roles`
-  - **說明**: Superadmin 為使用者分配 Agent 角色。Request Body: `{ user_id, role: 'reviewer' | 'editor' }`。
-- `DELETE /api/v1/agents/{agent_id}/roles/{user_id}`
-  - **說明**: Superadmin 移除使用者的 Agent 角色。
-
-### 4.1.1 分類管理路由
+  - **隤芣?**: Superadmin 撱箇???Agent?equest Body: `{ name, txt_output_path, rasa_rest_url, ingest_script_path }`??- `GET /api/v1/agents`
+  - 餈?閰脖蝙?刻?甈??????Agent 皜嚗?擐???獢?蝙?具?- `GET /api/v1/agents/{agent_id}`
+  - **隤芣?**: ?亥岷?桐? Agent 閰喟敦?蔭嚗 `txt_output_path`?rasa_rest_url`?ingest_script_path`嚗?- `PUT /api/v1/agents/{agent_id}`
+  - **隤芣?**: Superadmin 靽格 Agent ?箇??蔭嚗artial Update 銋?渡 PATCH嚗?- `DELETE /api/v1/agents/{agent_id}`
+  - **隤芣?**: Superadmin ?芷 Agent????舐? categories ??knowledge_items嚗? 422 蝳迫?芷??- `GET /api/v1/agents/{agent_id}/stats`
+  - 餈? Agent ?銵冽蝯梯?嚗?撖拇隞嗆???? FAQ ???歇?郊隞嗆嚗?- `POST /api/v1/agents/{agent_id}/roles`
+  - **隤芣?**: Superadmin ?箔蝙?刻???Agent 閫?equest Body: `{ user_id, role: 'reviewer' | 'editor' }`??- `DELETE /api/v1/agents/{agent_id}/roles/{user_id}`
+  - **隤芣?**: Superadmin 蝘駁雿輻?? Agent 閫??
+### 4.1.1 ??蝞∠?頝舐
 - `GET /api/v1/agents/{agent_id}/categories`
-  - **說明**: 返回該 Agent 的分類樹狀結構（CTE 遞迴查詢，返回嵌套 JSON）。
-- `POST /api/v1/agents/{agent_id}/categories`
-  - **說明**: 建立分類節點。Request Body: `{ name, parent_id (nullable), sort_order }`。需 Reviewer 或 Superadmin 權限。
-- `PATCH /api/v1/agents/{agent_id}/categories/{category_id}`
-  - **說明**: 修改分類節點（改名、移動父節點、調整排序）。需 Reviewer 或 Superadmin 權限。
-- `DELETE /api/v1/agents/{agent_id}/categories/{category_id}`
-  - **說明**: 刪除分類節點。若該節點或其子節點關聯 FAQ，回 422 禁止刪除；否則 CASCADE 刪除子節點。
-
-### 4.2 FAQ 操作核心
-所有請求必需將所選的 Agent Context 帶入 Path 或 Header（建議以 `X-Agent-Id: <uuid>` 或放置於 Path `/api/v1/agents/{agent_id}/...`）。
-- `GET /api/v1/agents/{agent_id}/faqs?category_id=XXX&status=pending`
-  - **說明**: 取得 FAQ 清單，支援分頁 (`page`, `per_page`)、排序 (`sort`, `order`)、過濾 (`category_id`, `status`, `tags`) 及文字搜尋 (`q`)。
-- `GET /api/v1/agents/{agent_id}/faqs/{faq_id}`
-  - **說明**: 查詢單一 FAQ 詳細內容。若被他人鎖定，回傳鎖定資訊；若鎖過期，自動清除並釋放。回傳的 `locked_by` 欄位需 JOIN `users` 表，同時回傳 `locked_by_id`（UUID）與 `locked_by_username`（VARCHAR），前端方可顯示「正在被 xxx 編輯中」。
-- `POST /api/v1/agents/{agent_id}/faqs`
+  - **隤芣?**: 餈?閰?Agent ??憿邦?蝯?嚗TE ?艘?亥岷嚗???憟?JSON嚗?- `POST /api/v1/agents/{agent_id}/categories`
+  - **隤芣?**: 撱箇???蝭暺equest Body: `{ name, parent_id (nullable), sort_order }`?? Reviewer ??Superadmin 甈???- `PATCH /api/v1/agents/{agent_id}/categories/{category_id}`
+  - **隤芣?**: 靽格??蝭暺??孵??宏?蝭暺矽?湔?摨??? Reviewer ??Superadmin 甈???- `DELETE /api/v1/agents/{agent_id}/categories/{category_id}`
+  - **隤芣?**: ?芷??蝭暺閰脩?暺??嗅?蝭暺???FAQ嚗? 422 蝳迫?芷嚗??CASCADE ?芷摮?暺?
+### 4.2 FAQ ???詨?
+???瘙??撠??貊? Agent Context 撣嗅 Path ??Header嚗遣霅唬誑 `X-Agent-Id: <uuid>` ?蝵格 Path `/api/v1/agents/{agent_id}/...`嚗?- `GET /api/v1/agents/{agent_id}/faqs?category_id=XXX&status=pending`
+  - **隤芣?**: ?? FAQ 皜嚗?游???(`page`, `per_page`)??摨?(`sort`, `order`)??瞈?(`category_id`, `status`, `tags`) ??摮?撠?(`q`)??- `GET /api/v1/agents/{agent_id}/faqs/{faq_id}`
+  - **隤芣?**: ?亥岷?桐? FAQ 閰喟敦?批捆?鋡思?鈭粹?摰????鞈?嚗?????芸?皜銝阡??整??喟? `locked_by` 甈?? JOIN `users` 銵剁???? `locked_by_id`嚗UID嚗? `locked_by_username`嚗ARCHAR嚗??垢?孵憿舐內?迤?刻◤ xxx 蝺刻摩銝准?- `POST /api/v1/agents/{agent_id}/faqs`
   - Request Body: `{ "category_id": "uuid", "question": "...", "answer": "..." }`
-  - **Superadmin 自動核准**: 當 `current_user.is_superadmin == True` 時，系統自動將 `status = 'approved'`（跳過 pending 狀態），並同時寫入 `knowledge_item_histories` 與 `audit_logs` 記錄。
-- `PATCH /api/v1/agents/{agent_id}/faqs/{faq_id}`
-  - **說明**: 編輯 FAQ 內容（question, answer, category_id, tags）。需持有編輯鎖。若原狀態為 `approved` 或 `synced`，自動降級為 `draft`。每次編輯觸發 `knowledge_item_histories` 版本紀錄。
-- `PATCH /api/v1/agents/{agent_id}/faqs/{faq_id}/status`
-  - **說明**: 狀態轉換（送審 `draft→pending`、撤回 `pending→draft`、核准 `pending→approved`、退回 `pending→rejected`、重新送審 `rejected→pending`）。需對應角色權限。
-  - Request Body: `{ "status": "approved", "reason": "" }`
+  - **Superadmin ?芸??詨?**: ??`current_user.is_superadmin == True` ??蝟餌絞?芸?撠?`status = 'approved'`嚗歲??pending ???嚗蒂??撖怠 `knowledge_item_histories` ??`audit_logs` 閮???- `PATCH /api/v1/agents/{agent_id}/faqs/{faq_id}`
+  - **隤芣?**: 蝺刻摩 FAQ ?批捆嚗uestion, answer, category_id, tags嚗???蝺刻摩???? `approved` ??`synced`嚗??蝝 `draft`??甈∠楊頛航孛??`knowledge_item_histories` ?蝝??- `PATCH /api/v1/agents/{agent_id}/faqs/{faq_id}/status`
+  - **隤芣?**: ??????祟 `draft?ending`???`pending?raft`???`pending?pproved`???`pending?ejected`???圈祟 `rejected?ending`嚗?撠?閫甈???  - Request Body: `{ "status": "approved", "reason": "" }`
 - `POST /api/v1/agents/{agent_id}/faqs/{faq_id}/lock`
-  - **說明**: 取得此 FAQ 編輯鎖，避免覆蓋衝突。設定 `locked_by = current_user_id`、`locked_at = now()`。
-- `PUT /api/v1/agents/{agent_id}/faqs/{faq_id}/lock`
-  - **說明**: 延長編輯鎖（心跳端點）。前端每 60 秒呼叫一次更新 `locked_at = now()`，確保持鎖期間不被 Lazy Expire 清除。需為當前鎖持有者才能延長。
-- `DELETE /api/v1/agents/{agent_id}/faqs/{faq_id}`
-  - **說明**: 刪除 FAQ。權限限制：Superadmin（全部）、Reviewer（非 approved/synced 態）、Editor（僅自己建立且為草稿）。
-- `GET /api/v1/agents/{agent_id}/faqs/{faq_id}/histories`
-  - **說明**: 查詢該 FAQ 的版本歷史紀錄（從 `knowledge_item_histories` 表）。
-- `POST /api/v1/agents/{agent_id}/faqs/{faq_id}/rollback`
-  - **說明**: 將 FAQ 內容復原至指定版本。Request Body: `{ "version": 3 }` → 覆蓋 question/answer 至該版本內容，自動降級為 `draft`，`version` 欄位累加。
-- `DELETE /api/v1/agents/{agent_id}/faqs/{faq_id}/lock`
-  - **說明**: 釋放編輯鎖。
-
-### 4.3 匯入/匯出與對話測試
-- `GET /api/v1/agents/{agent_id}/faqs/export`
-  - **細節**: 匯出 Excel (`.xlsx`)。包含欄位：ID, 狀態, 分類路徑, 標籤, Question, Answer。
-- `POST /api/v1/agents/{agent_id}/faqs/import`
-  - **說明**: 解析上傳的 Excel 檔案，讀取對應欄位，將資料批次以 **`draft` 狀態**寫入（無論 Excel 中是否存在狀態欄位，匯入一律為草稿，需經正常審核流程），並回傳成功/失敗行數統計。
-  - **必填欄位**：`question`、`answer`、`category_path`（以 `/` 分隔的路徑，如「常見問題/帳號管理」）
-  - **選填欄位**：`tags`（逗號分隔字串）
-  - **`category_path` 不存在時**：**自動建立**路徑中缺少的分類節點（若「常見問題」存在但「帳號管理」不存在，則新建「帳號管理」子節點）；若完整路徑均不存在，從根節點依序建立。此行為需在操作結果中標示「新建分類：xxx」。
-  - **重複檢測**：相同 `agent_id` + `question` 組合已存在時，跳過並記錄至結果報告（不更新現有資料）。
-  - **安全限制**: 檔案類型白名單（`.xlsx` 僅）、最大檔案大小 10MB、最大行數 5000 行、上傳後刪除暫存檔。
-- `POST /api/v1/agents/{agent_id}/chat/test`
-  - **細節說明**: 負責與 Rasa 的 REST 頻道對接。
-  - **邏輯**: 
-    1. 前端送出 `{ "message": "你好" }`。
-    2. 後端查出該 Agent 設定的 `rasa_rest_url` (例如 `http://localhost:5005`)。
-    3. 後端實際發送請求至 Rasa 官方要求之 REST webhook 接口：`POST {rasa_rest_url}/webhooks/rest/webhook`，並帶入 payload `{"sender": "{agent_id}_{user_id}", "message": "你好"}`（sender 組合 agent_id 與 user_id，避免不同 Agent 間的 Rasa conversation tracker 發生 ID 衝突）。
-    4. 將 Rasa 的陣列回應（例如 `[{"recipient_id": "...", "text": "..."}]`）轉發給前端渲染。
-
-### 4.4 Celery 非同步同步路由
-- `POST /api/v1/agents/{agent_id}/sync`
-  - **說明**: 要求觸發一鍵同步，Controller 驗證權限後發送排程 `tasks.run_ingestion_sync.delay(agent_id)`，並建立 `sync_logs` 記錄（`status = 'pending'`）
-  - **回應**: `{"task_id": "<Celery task ID>", "sync_log_id": "<uuid>", "status": "pending"}`
-  - **註**: Celery 預設採 UUID4 格式產生 task_id，例如 `a1b2c3d4-e5f6-7890-abcd-ef1234567890`
+  - **隤芣?**: ??甇?FAQ 蝺刻摩???踹?閬?銵??身摰?`locked_by = current_user_id`?locked_at = now()`??- `PUT /api/v1/agents/{agent_id}/faqs/{faq_id}/lock`
+  - **隤芣?**: 撱園蝺刻摩??敹歲蝡舫?嚗?蝡舀? 60 蝘?思?甈⊥??`locked_at = now()`嚗Ⅱ靽?????鋡?Lazy Expire 皜???箇???????賢辣?瑯?- `DELETE /api/v1/agents/{agent_id}/faqs/{faq_id}`
+  - **隤芣?**: ?芷 FAQ?????塚?Superadmin嚗?剁??eviewer嚗? approved/synced ???ditor嚗??芸楛撱箇?銝?阮嚗?- `GET /api/v1/agents/{agent_id}/faqs/{faq_id}/histories`
+  - **隤芣?**: ?亥岷閰?FAQ ???祆風?脩???敺?`knowledge_item_histories` 銵剁???- `POST /api/v1/agents/{agent_id}/faqs/{faq_id}/rollback`
+  - **隤芣?**: 撠?FAQ ?批捆敺拙??單?摰??研equest Body: `{ "version": 3 }` ??閬? question/answer ?唾府??批捆嚗??蝝 `draft`嚗version` 甈?蝝臬???- `DELETE /api/v1/agents/{agent_id}/faqs/{faq_id}/lock`
+  - **隤芣?**: ?蝺刻摩??
+### 4.3 ?臬/?臬??閰望葫閰?- `GET /api/v1/agents/{agent_id}/faqs/export`
+  - **蝝啁?**: ?臬 Excel (`.xlsx`)???急?雿?ID, ??? ??頝臬?, 璅惜, Question, Answer??- `POST /api/v1/agents/{agent_id}/faqs/import`
+  - **隤芣?**: 閫??銝??Excel 瑼?嚗?????雿?撠??甈∩誑 **`draft` ???*撖怠嚗隢?Excel 銝剜?血??函???雿??臬銝敺?阮嚗?蝬迤撣詨祟?豢?蝔?嚗蒂???/憭望?銵蝯梯???  - **敹‵甈?**嚗question`?answer`?category_path`嚗誑 `/` ???楝敺?憒虜閬?憿?撣唾?蝞∠???
+  - **?詨‵甈?**嚗tags`嚗???摮葡嚗?  - **`category_path` 銝??冽?**嚗?*?芸?撱箇?**頝臬?銝剔撩撠???蝭暺??乓虜閬?憿??其??董?恣??摮嚗??啣遣?董?恣??蝭暺?嚗摰頝臬???摮嚗??寧?暺?摨遣蝡迨銵??冽?雿??葉璅內?撱箏?憿?xxx??  - **??瑼Ｘ葫**嚗??`agent_id` + `question` 蝯?撌脣??冽?嚗歲?蒂閮??喟????銝?啁??????  - **摰?**: 瑼?憿??賢??殷?`.xlsx` ????憭扳?獢之撠?10MB??憭扯???5000 銵??喳??芷?怠?瑼?- `POST /api/v1/agents/{agent_id}/chat/test`
+  - **蝝啁?隤芣?**: 鞎痊??Rasa ??REST ?駁?撠??  - **?摩**: 
+    1. ?垢? `{ "message": "雿末" }`??    2. 敺垢?亙閰?Agent 閮剖???`rasa_rest_url` (靘? `http://localhost:5005`)??    3. 敺垢撖阡??潮?瘙 Rasa 摰閬?銋?REST webhook ?亙嚗POST {rasa_rest_url}/webhooks/rest/webhook`嚗蒂撣嗅 payload `{"sender": "{agent_id}_{user_id}", "message": "雿末"}`嚗ender 蝯? agent_id ??user_id嚗????Agent ?? Rasa conversation tracker ?潛? ID 銵?嚗?    4. 撠?Rasa ?????靘? `[{"recipient_id": "...", "text": "..."}]`嚗??潛策?垢皜脫???
+### 4.4 Celery ??甇亙?甇亥楝??- `POST /api/v1/agents/{agent_id}/sync`
+  - **隤芣?**: 閬?閫貊銝?萄?甇伐?Controller 撽?甈?敺??蝔?`tasks.run_ingestion_sync.delay(agent_id)`嚗蒂撱箇? `sync_logs` 閮?嚗status = 'pending'`嚗?  - **??**: `{"task_id": "<Celery task ID>", "sync_log_id": "<uuid>", "status": "pending"}`
+  - **閮?*: Celery ?身??UUID4 ?澆??Ｙ? task_id嚗?憒?`a1b2c3d4-e5f6-7890-abcd-ef1234567890`
 - `GET /api/v1/sync/tasks/{task_id}`
-  - **說明**: 讓前端輪詢或透過 WebSocket 取得最新匯出與 Ingestion 執行 LOG。
-
+  - **隤芣?**: 霈?蝡航憚閰Ｘ??? WebSocket ????啣?箄? Ingestion ?瑁? LOG??
 ---
 
-## 5. 自動化匯出檔案規範 (Export File Specification)
+## 5. ?芸???箸?獢?蝭?(Export File Specification)
 
-當觸發一鍵同步任務時，Celery Worker 會依照以下確切規格於伺服器上組合知識檔案：
-
-1. **編碼**：`UTF-8`
-2. **路徑定義**：以資料庫中 `agents.txt_output_path` 為根目錄，例如 `/opt/rasa_project_A/docs/`
-3. **檔案命名**：`faq_export.txt`（固定單一檔案，所有 approved/synced FAQ 匯出至同一檔案；不採多檔切分，以保持 Celery 任務的命令介面一致性）
-4. **輸出排版防呆**：
-   系統將完全剝離文字內的特殊保留字元，並依 Rasa 訓練所需的精確區塊劃分：
+?嗉孛?潔??萄?甇乩遙??嚗elery Worker ???找誑銝Ⅱ???潭隡箸??其?蝯??亥?瑼?嚗?
+1. **蝺函Ⅳ**嚗UTF-8`
+2. **頝臬?摰儔**嚗誑鞈?摨思葉 `agents.txt_output_path` ?箸?桅?嚗?憒?`/opt/rasa_project_A/docs/`
+3. **瑼??賢?**嚗faq_export.txt`嚗摰銝瑼?嚗???approved/synced FAQ ?臬?喳?銝瑼?嚗??∪?瑼???隞乩???Celery 隞餃??隞支??Ｖ??湔改?
+4. **頛詨???脣?**嚗?   蝟餌絞撠??典??Ｘ?摮?畾?????銝虫? Rasa 閮毀???移蝣箏?憛???
    ```text
    [Question]
    {{ faq.question }}
@@ -383,164 +313,153 @@ stateDiagram-v2
    {{ faq.question }}
    ...
    ```
-   *註：項目間嚴格控制為雙換行（\n\n）分隔，以確保不發生段落解析融合的問題。*
+   *閮鳴????潭?嗥??銵?\n\n嚗???隞亦Ⅱ靽??潛?畾菔閫??????憿?
 
-5. **關鍵字防護**：若 question 或 answer 內容中包含 `[Question]`、`[Answer]` 字串，在輸出前將其替換为全形方括號 `【Question】`、`【Answer】`，防止 Ingestion Script 誤解析內容中的保留字元為區塊標記。
-
+5. **?摮霅?*嚗 question ??answer ?批捆銝剖???`[Question]`?[Answer]` 摮葡嚗頛詨???嗆?蛹?典耦?寞??`?uestion???nswer?嚗甇?Ingestion Script 隤方圾?摰嫣葉??????憛?閮?
 ---
 
-## 6. 認證規格 (Authentication Specification)
+## 6. 隤?閬 (Authentication Specification)
 
-### 6.1 JWT 架構
+### 6.1 JWT ?嗆?
 
-| 決策點 | 規格 |
+| 瘙箇?暺?| 閬 |
 |--------|------|
-| JWT 儲存 | **HttpOnly Cookie**（Secure, SameSite=Strict）—— 防止 XSS 竊取 token |
-| Access Token 有效期 | **15 分鐘** |
-| Refresh Token 有效期 | **7 天** |
-| JWT Payload | `{ sub: user_id, is_superadmin: bool, jti: uuid, iat, exp }` —— 角色**不**放 JWT（角色會隨時改），JWT 只驗證身分；`jti` 為每次簽發的唯一識別碼，供 revocation 使用 |
-| Refresh Token Rotation | **每次 refresh 換發全新 access + refresh token**，舊 refresh token 的 `jti` 立即寫入 Redis 黑名單（TTL = 剩餘有效期），後續持舊 token 請求一律回 401 |
-| 登出 revocation | `POST /auth/logout` 除清除 Cookie 外，同時將當前 refresh token 的 `jti` 加入 Redis 黑名單，確保伺服器端真正失效 |
-| Redis 黑名單 key | `revoked_refresh:{jti}`，TTL = refresh token 剩餘有效期秒數 |
-| 帳號建立 | **僅 Superadmin 可建立新帳號**，不開放自註冊 |
-| 密碼重設 | **Superadmin 手動重設**，端點 `PATCH /api/v1/users/{id}/reset-password` |
+| JWT ?脣? | **HttpOnly Cookie**嚗ecure, SameSite=Strict嚗??脫迫 XSS 蝡? token |
+| Access Token ????| **15 ??** |
+| Refresh Token ????| **7 憭?* |
+| JWT Payload | `{ sub: user_id, is_superadmin: bool, jti: uuid, iat, exp }` ??閫**銝?*??JWT嚗??脫??冽??對?嚗WT ?芷?霅澈??`jti` ?箸?甈∠偷?潛??臭?霅蝣潘?靘?revocation 雿輻 |
+| Refresh Token Rotation | **瘥活 refresh ??冽 access + refresh token**嚗? refresh token ??`jti` 蝡撖怠 Redis 暺??殷?TTL = ?拚?????嚗?蝥???token 隢?銝敺? 401 |
+| ?餃 revocation | `POST /auth/logout` ?斗???Cookie 憭???撠??refresh token ??`jti` ? Redis 暺??殷?蝣箔?隡箸??函垢?迤憭望? |
+| Redis 暺???key | `revoked_refresh:{jti}`嚗TL = refresh token ?拚???????|
+| 撣唾?撱箇? | **??Superadmin ?臬遣蝡撣唾?**嚗???芾酉??|
+| 撖Ⅳ?身 | **Superadmin ???身**嚗垢暺?`PATCH /api/v1/users/{id}/reset-password` |
 
-### 6.2 認證路由
+### 6.2 隤?頝舐
 
-| 方法 | 端點 | 說明 |
+| ?寞? | 蝡舫? | 隤芣? |
 |------|------|------|
-| POST | `/api/v1/auth/login` | Request: `{ username, password }` → 回設 HttpOnly Cookie |
-| POST | `/api/v1/auth/logout` | 清除 HttpOnly Cookie，並將 refresh token `jti` 加入 Redis 黑名單 |
-| POST | `/api/v1/auth/refresh` | 舊 refresh token 換新 access + refresh token（Rotation）；舊 token `jti` 立即 revoke |
-| GET | `/api/v1/auth/me` | 返回當前登入者基本資料（不含密碼雜湊） |
-| POST | `/api/v1/users` | Superadmin 建立新帳號 `{ username, password, is_superadmin }` |
-| GET | `/api/v1/users` | Superadmin 取得全部帳號清單（含 `is_active`、`is_superadmin`、建立時間） |
-| PATCH | `/api/v1/users/{id}` | Superadmin 修改帳號（`is_active`、`is_superadmin`）|
-| PATCH | `/api/v1/users/{id}/reset-password` | Superadmin 重置密碼 `{ new_password }` |
+| POST | `/api/v1/auth/login` | Request: `{ username, password }` ???身 HttpOnly Cookie |
+| POST | `/api/v1/auth/logout` | 皜 HttpOnly Cookie嚗蒂撠?refresh token `jti` ? Redis 暺???|
+| POST | `/api/v1/auth/refresh` | ??refresh token ? access + refresh token嚗otation嚗???token `jti` 蝡 revoke |
+| GET | `/api/v1/auth/me` | 餈??嗅??餃??祈???銝撖Ⅳ??嚗?|
+| POST | `/api/v1/users` | Superadmin 撱箇??啣董??`{ username, password, is_superadmin }` |
+| GET | `/api/v1/users` | Superadmin ???券撣唾?皜嚗 `is_active`?is_superadmin`?遣蝡??? |
+| PATCH | `/api/v1/users/{id}` | Superadmin 靽格撣唾?嚗is_active`?is_superadmin`嚗
+| PATCH | `/api/v1/users/{id}/reset-password` | Superadmin ?蔭撖Ⅳ `{ new_password }` |
 
-### 6.3 認證流程
+### 6.3 隤?瘚?
 
-1. **登入**：前端 POST `/auth/login` → 後端驗證帳密 → 設定兩支 HttpOnly Cookie（`access_token` / `refresh_token`，各含 `jti`）
-2. **請求 API**：瀏覽器自動附帶 Cookie → FastAPI 解讀 access token → 驗證成功則繼續，過期則回 401
-3. **Access Token 過期**：前端收 401 → 自動呼叫 `/auth/refresh`；後端驗證 refresh token 未被 revoke（查 Redis 黑名單）→ 換發新 access + refresh token（Rotation），舊 refresh `jti` 加入黑名單 → 前端重試原請求
-4. **Refresh Token 也過期或被 revoke**：`/auth/refresh` 回 401，前端跳轉 `/login`，用戶需重新登入
-5. **登出**：POST `/auth/logout` → 清除兩支 Cookie，**同時** revoke refresh token `jti`（寫入 Redis），確保 Cookie 泄漏後無法被濫用
+1. **?餃**嚗?蝡?POST `/auth/login` ??敺垢撽?撣喳? ??閮剖??拇 HttpOnly Cookie嚗access_token` / `refresh_token`嚗???`jti`嚗?2. **隢? API**嚗汗?刻??撣?Cookie ??FastAPI 閫?? access token ??撽????匱蝥????? 401
+3. **Access Token ??**嚗?蝡舀 401 ???芸??澆 `/auth/refresh`嚗?蝡舫?霅?refresh token ?芾◤ revoke嚗 Redis 暺??殷??????access + refresh token嚗otation嚗???refresh `jti` ?暺??????垢?岫??瘙?4. **Refresh Token 銋???鋡?revoke**嚗/auth/refresh` ??401嚗?蝡航歲頧?`/login`嚗?園???餃
+5. **?餃**嚗OST `/auth/logout` ??皜?拇 Cookie嚗?*??** revoke refresh token `jti`嚗神??Redis嚗?蝣箔? Cookie 瘜?敺瘜◤瞈怎
 
 ---
 
-## 7. API 規範 (API Conventions)
+## 7. API 閬? (API Conventions)
 
-### 7.1 統一回應格式
+### 7.1 蝯曹????澆?
 
-**成功回應**：
-```json
+**????**嚗?```json
 {
   "success": true,
   "data": { ... },
-  "message": "操作成功"
+  "message": "????"
 }
 ```
 
-**失敗回應**：
-```json
+**憭望???**嚗?```json
 {
   "success": false,
   "error": {
     "code": "FORBIDDEN",
-    "message": "您無權核准此條目"
+    "message": "?函甈?迨璇"
   }
 }
 ```
 
-### 7.2 HTTP Status Code 映射
+### 7.2 HTTP Status Code ??
 
-| Status | 情境 |
+| Status | ?? |
 |--------|------|
-| 200 | 成功（GET、PATCH、PUT） |
-| 201 | 建立成功（POST） |
-| 400 | 參數驗證失敗 |
-| 401 | 未認證 / Token 過期 |
-| 403 | 無權限（有登入但角色不符） |
-| 404 | 資源不存在 |
-| 409 | 衝突（編輯鎖被他人持有） |
-| 422 | 業務規則違反（如：草稿不可刪除、狀態轉換非法） |
-| 500 | 伺服器內部錯誤 |
+| 200 | ??嚗ET?ATCH?UT嚗?|
+| 201 | 撱箇???嚗OST嚗?|
+| 400 | ?撽?憭望? |
+| 401 | ?芾?霅?/ Token ?? |
+| 403 | ?⊥?????乩?閫銝泵嚗?|
+| 404 | 鞈?銝???|
+| 409 | 銵?嚗楊頛舫?鋡思?鈭箸??? |
+| 422 | 璆剖?閬???嚗?嚗?蝔蹂??臬?扎?????瘜? |
+| 500 | 隡箸??典?券隤?|
 
-### 7.3 路由約定
+### 7.3 頝舐蝝?
 
-- 所有路由統一前綴：`/api/v1/`
-- Agent 上下文一律用 **Path 變數**：`/api/v1/agents/{agent_id}/...`
-- 分頁參數：`?page=1&per_page=20&sort=updated_at&order=desc`
-- 過濾參數：`?status=pending&category_id=uuid`（GET 查詢用）
+- ??楝?梁絞銝?韌嚗/api/v1/`
+- Agent 銝???敺 **Path 霈**嚗/api/v1/agents/{agent_id}/...`
+- ???嚗?page=1&per_page=20&sort=updated_at&order=desc`
+- ?蕪?嚗?status=pending&category_id=uuid`嚗ET ?亥岷?剁?
 
 ---
 
-## 8. 前端規格 (Frontend Specification)
+## 8. ?垢閬 (Frontend Specification)
 
-### 8.1 技術棧定案
+### 8.1 ?銵ㄖ摰?
 
-| 項目 | 技術 |
+| ? | ?銵?|
 |------|------|
-| UI 元件庫 | **shadcn/ui**（基於 Tailwind + Radix，零依賴安裝，可高度客製） |
-| 狀態管理 | **Zustand**（輕量 hooks API，適合中型管理後台） |
-| 前端路由 | **React Router v7** |
-| API 客戶端 | **Axios** + 攔截器（自動附帶 Cookie、統一錯誤處理） |
-| 資料表格 | **TanStack Table (React Table)** — headless，搭配 shadcn/ui 範例 |
-| 表單處理 | **React Hook Form + Zod** — 前端驗證 schema |
+| UI ?辣摨?| **shadcn/ui**嚗??Tailwind + Radix嚗靘陷摰?嚗擃漲摰Ｚˊ嚗?|
+| ??恣??| **Zustand**嚗???hooks API嚗?葉?恣???堆? |
+| ?垢頝舐 | **React Router v7** |
+| API 摰Ｘ蝡?| **Axios** + ??剁??芸??葆 Cookie?絞銝?航炊??嚗?|
+| 鞈?銵冽 | **TanStack Table (React Table)** ??headless嚗??shadcn/ui 蝭? |
+| 銵典?? | **React Hook Form + Zod** ???垢撽? schema |
 
-### 8.2 前端路由結構
+### 8.2 ?垢頝舐蝯?
 
-| URL | 頁面 | 說明 |
+| URL | ? | 隤芣? |
 |-----|------|------|
-| `/login` | 登入頁 | 帳密表單，登入成功重定向至 `/agents`（JWT 以 HttpOnly Cookie 儲存） |
-| `/agents` | Agent 選擇器 | 登入後首頁，列出使用者有權存取的 Agent |
-| `/agents/:id` | DashboardLayout | 核心佈局，含側邊欄導航 |
-| `/agents/:id/dashboard` | 儀表板 | 統計：待審核件數、各分類分佈 |
-| `/agents/:id/categories` | 分類管理 | 樹狀結構，增刪改分類節點 |
-| `/agents/:id/faqs` | FAQ 清單 | 表格檢視，含過濾/搜尋/分頁 |
-| `/agents/:id/faqs/:faq_id` | FAQ 詳細/編輯 | 編輯、版本歷史、Rollback |
-| `/agents/:id/sync` | 同步管理 | 觸發同步、查看記錄 |
-| `/agents/:id/chat` | 對話測試 | 即時聊天框，串接 Rasa REST |
-| `/agents/:id/audit` | 軌跡追蹤 | 操作日誌查詢 |
-| `/agents/:id/settings` | Agent 設定 | Superadmin 專用：修改 txt_output_path 等 |
-| `/admin/users` | 使用者管理 | Superadmin 專用：帳號管理、角色分配 |
+| `/login` | ?餃??| 撣喳?銵典嚗?交???摰???`/agents`嚗WT 隞?HttpOnly Cookie ?脣?嚗?|
+| `/agents` | Agent ?豢???| ?餃敺????雿輻??甈??? Agent |
+| `/agents/:id` | DashboardLayout | ?詨?雿?嚗?湧?甈???|
+| `/agents/:id/dashboard` | ?銵冽 | 蝯梯?嚗?撖拇隞嗆?????? |
+| `/agents/:id/categories` | ??蝞∠? | 璅寧?蝯?嚗??芣??蝭暺?|
+| `/agents/:id/faqs` | FAQ 皜 | 銵冽瑼Ｚ?嚗?蕪/??/?? |
+| `/agents/:id/faqs/:faq_id` | FAQ 閰喟敦/蝺刻摩 | 蝺刻摩???祆風?脯ollback |
+| `/agents/:id/sync` | ?郊蝞∠? | 閫貊?郊?????|
+| `/agents/:id/chat` | 撠店皜祈岫 | ?單??予獢?銝脫 Rasa REST |
+| `/agents/:id/audit` | 頠楚餈質馱 | ???亥??亥岷 |
+| `/agents/:id/settings` | Agent 閮剖? | Superadmin 撠嚗耨??txt_output_path 蝑?|
+| `/admin/users` | 雿輻?恣??| Superadmin 撠嚗董?恣???脣???|
 
-### 8.3 Sync 狀態回報
+### 8.3 Sync ?????
+- **?孵?**嚗?蝡舀? 3 蝘憚閰?`GET /api/v1/sync/tasks/{task_id}`
+- **?迫璇辣**嚗???`status` ??`completed` ??`failed`
+- **?豢??**嚗陛?殷?銝?憿? WebSocket ?箇?閮剜嚗ync 隞餃??虜?貊??單???批???
+### 8.4 Vite ??啣? API Proxy 閮剖?
 
-- **方式**：前端每 3 秒輪詢 `GET /api/v1/sync/tasks/{task_id}`
-- **停止條件**：回傳 `status` 為 `completed` 或 `failed`
-- **選擇理由**：簡單，不需額外 WebSocket 基礎設施；Sync 任務通常數秒至數分鐘內完成
+`vite.config.ts` ??proxy ?格????瑁??啣????
 
-### 8.4 Vite 開發環境 API Proxy 設定
-
-`vite.config.ts` 的 proxy 目標須依執行環境區分：
-
-| 執行方式 | proxy target |
+| ?瑁??孵? | proxy target |
 |----------|-------------|
-| 主機直接跑 `vite dev`（backend 以 `docker compose up` 或本機跑） | `http://localhost:8000` |
-| `vite dev` 也在容器內跑（整組 compose） | `http://backend:8000`（Docker 內部 DNS） |
+| 銝餅??湔頝?`vite dev`嚗ackend 隞?`docker compose up` ?璈?嚗?| `http://localhost:8050` |
+| `vite dev` 銋摰孵?扯?嚗蝯?compose嚗?| `http://backend:8050`嚗ocker ?折 DNS嚗?|
 
-**預設採主機跑 `vite dev` 方案**（開發迭代速度最快）：
-```typescript
+**?身?∩蜓璈? `vite dev` ?寞?**嚗??潸翮隞?漲?敹恬?嚗?```typescript
 // vite.config.ts
 server: {
   proxy: {
     '/api': {
-      target: 'http://localhost:8000',
+      target: 'http://localhost:8050',
       changeOrigin: true,
     },
   },
 }
 ```
 
-若切換至全容器化開發，再修改 target 為 `http://backend:8000`。
+?亙???典捆?典??嚗?靽格 target ??`http://backend:8050`??
+### 8.5 Axios 401 Refresh 蝡嗆???
 
-### 8.5 Axios 401 Refresh 競態處理
-
-多個請求同時收到 401 時，若每個都各自觸發 `/auth/refresh`，第一次換發後舊 token 即被 revoke，後續請求會因持舊 refresh token 再次 refresh 而全部失敗。
-
-**解法**：在 `src/api/client.ts` 的 response interceptor 實作 pending promise queue：
-
+憭?瘙????401 ???交???閫貊 `/auth/refresh`嚗洵銝甈⊥??澆???token ?唾◤ revoke嚗?蝥?瘙?????refresh token ?活 refresh ??典仃??
+**閫??**嚗 `src/api/client.ts` ??response interceptor 撖虫? pending promise queue嚗?
 ```typescript
 let isRefreshing = false;
 let refreshSubscribers: ((token: void) => void)[] = [];
@@ -548,7 +467,7 @@ let refreshSubscribers: ((token: void) => void)[] = [];
 // response interceptor
 if (error.response?.status === 401 && !originalRequest._retry) {
   if (isRefreshing) {
-    // 其他請求等候同一次 refresh 完成
+    // ?嗡?隢?蝑?銝甈?refresh 摰?
     return new Promise(resolve => refreshSubscribers.push(resolve))
       .then(() => axiosInstance(originalRequest));
   }
@@ -562,13 +481,12 @@ if (error.response?.status === 401 && !originalRequest._retry) {
 }
 ```
 
-確保整個 session 生命週期內，同時只發出一次 refresh 請求。
-
+蝣箔??游?session ??望??改????芰?箔?甈?refresh 隢???
 ---
 
-## 9. 環境變數 (Environment Variables)
+## 9. ?啣?霈 (Environment Variables)
 
-### 9.1 `.env` 檔案規範
+### 9.1 `.env` 瑼?閬?
 
 ```env
 # Database
@@ -582,68 +500,63 @@ JWT_REFRESH_DAYS=7
 # Celery / Redis
 REDIS_URL=redis://redis:6379/0
 
-# CORS (開發環境)
+# CORS (??啣?)
 CORS_ORIGIN=http://localhost:5173
 
 # Backend
 APP_HOST=0.0.0.0
-APP_PORT=8000
+APP_PORT=8050
 
-# Ingestion Script (容器內使用)
+# Ingestion Script (摰孵?找蝙??
 QDRANT_HOST=localhost
 
-# 日誌等級
+# ?亥?蝑?
 LOG_LEVEL=INFO
 
-# 初始 Superadmin（首次啟動時若 users 表為空，自動建立）
-SEED_ADMIN_USERNAME=admin
+# ?? Superadmin嚗?甈∪?????users 銵函蝛綽??芸?撱箇?嚗?SEED_ADMIN_USERNAME=admin
 SEED_ADMIN_PASSWORD=CHANGE_ME_8CHARS_UPPER_LOWER_NUM
 
-# 生產環境
+# ??啣?
 # CORS_ORIGIN=https://your-domain.com
 # QDRANT_HOST=10.0.0.5
 # LOG_LEVEL=INFO
 ```
 
-所有程式碼透過 `os.getenv()` 讀取，**不可將 `.env` 存入 Git**。`.env.example`（不含實際密鑰）需加入版本控制。
-
+???撘Ⅳ?? `os.getenv()` 霈??**銝撠?`.env` 摮 Git**?.env.example`嚗??怠祕???堆?????批??
 ---
 
-## 10. Docker Compose 規格 (Docker Compose Specification)
+## 10. Docker Compose 閬 (Docker Compose Specification)
 
-### 10.1 服務配置
+### 10.1 ???蔭
 
-| 服務 | 映像 | Port (Host:Container) | 說明 |
+| ?? | ?? | Port (Host:Container) | 隤芣? |
 |------|------|----------------------|------|
-| `db` | postgres:15 | 5432:5432 | 主機資料庫 |
+| `db` | postgres:15 | 5432:5432 | 銝餅?鞈?摨?|
 | `redis` | redis:7 | 6379:6379 | Celery Broker |
-| `backend` | 自訂 Dockerfile | 8000:8000 | FastAPI 後端 |
-| `celery_worker` | 共用 backend 映像 | — | Celery 背景工作 |
-| `frontend` | 自訂 Dockerfile (Vite + Nginx) | 5173:5173 (dev) | React 前端 |
+| `backend` | ?芾? Dockerfile | 8050:8050 | FastAPI 敺垢 |
+| `celery_worker` | ?梁 backend ?? | ??| Celery ?撌乩? |
+| `frontend` | ?芾? Dockerfile (Vite + Nginx) | 5173:5173 (dev) | React ?垢 |
 
-### 10.2 Volume 掛載
+### 10.2 Volume ??
 
 ```yaml
 volumes:
-  pg_data:                    # PostgreSQL 持久化資料
-  rasa_docs:                  # Celery Worker 輸出 .txt → host ingest script 讀取
-    driver: local
+  pg_data:                    # PostgreSQL ??????  rasa_docs:                  # Celery Worker 頛詨 .txt ??host ingest script 霈??    driver: local
     driver_opts:
       type: none
       o: bind
-      device: ./data/volumes/rasa_docs  # 掛載到容器內的 /opt/rasa_docs
+      device: ./data/volumes/rasa_docs  # ???啣捆?典??/opt/rasa_docs
 ```
 
-- `rasa_docs` volume 透過 bind mount 掛載到容器內的 `/opt/rasa_docs`
-- Agent 的 `txt_output_path` 推薦設定為 `/opt/rasa_docs/{agent_id}/`（使用 UUID 作子目錄名，避免中文或特殊字元造成路徑問題，Superadmin 建立 Agent 時應遵循此慣例）
-- 主機上的 Ingestion Script 直接讀取 `./data/volumes/rasa_docs/{agent_id}/` 下的檔案
+- `rasa_docs` volume ?? bind mount ???啣捆?典??`/opt/rasa_docs`
+- Agent ??`txt_output_path` ?刻閮剖???`/opt/rasa_docs/{agent_id}/`嚗蝙??UUID 雿??桅????踹?銝剜??畾???頝臬???嚗uperadmin 撱箇? Agent ???萄儐甇斗靘?
+- 銝餅?銝? Ingestion Script ?湔霈??`./data/volumes/rasa_docs/{agent_id}/` 銝?瑼?
 
 ### 10.3 Network
 
-- 使用 Docker Compose 預設 bridge network（自動建立），5 個服務在同一 compose 中互通
-- 不需額外 network 配置
+- 雿輻 Docker Compose ?身 bridge network嚗?遣蝡?嚗? ????? compose 銝凋???- 銝?憿? network ?蔭
 
-### 10.4 健康檢查
+### 10.4 ?亙熒瑼Ｘ
 
 ```yaml
 services:
@@ -663,7 +576,7 @@ services:
 
   backend:
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8000/api/v1/health || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8050/api/v1/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 3
@@ -679,11 +592,9 @@ services:
       backend: { condition: service_healthy }
 ```
 
-### 10.5 .env 注入
+### 10.5 .env 瘜典
 
-- Docker Compose 讀取根目錄 `.env` 的用途是**compose 檔本身的變數插值**（例如 `image: myapp:${TAG}`），**不會**自動將 `.env` 中的鍵值傳入容器環境
-- 各服務需顯式加入 `env_file: .env`，容器內的 Python / Node 程序才能透過 `os.getenv()` 或 `process.env` 讀取到對應值
-- 範例（須加入每個需要環境變數的服務）：
+- Docker Compose 霈??桅? `.env` ??**compose 瑼頨怎?霈??*嚗?憒?`image: myapp:${TAG}`嚗?**銝?**?芸?撠?`.env` 銝剔??萄澆?亙捆?函憓?- ????憿臬?? `env_file: .env`嚗捆?典??Python / Node 蝔???? `os.getenv()` ??`process.env` 霈?撠???- 蝭?嚗??瘥?閬憓??貊???嚗?
   ```yaml
   services:
     backend:
@@ -691,596 +602,482 @@ services:
     celery_worker:
       env_file: .env
   ```
-- `frontend` 服務（Nginx 靜態伺服）通常無需注入，但 build 階段若需環境變數，應透過 `build.args` 傳遞（Vite 以 `VITE_` 前綴的 build arg 取代 runtime env）
-
+- `frontend` ??嚗ginx ??隡箸?嚗虜?⊿?瘜典嚗? build ?挾?仿??啣?霈嚗??? `build.args` ?喲?嚗ite 隞?`VITE_` ?韌??build arg ?誨 runtime env嚗?
 ---
 
-## 11. 資料庫索引 (Database Indexes)
+## 11. 鞈?摨怎揣撘?(Database Indexes)
 
-以下索引需在初始 migration 中建立，確保高頻查詢效能：
-
+隞乩?蝝Ｗ???典?憪?migration 銝剖遣蝡?蝣箔?擃?亥岷?嚗?
 ```sql
--- knowledge_items：多 Agent 過濾 + 狀態過濾 + 分類查詢
+-- knowledge_items嚗? Agent ?蕪 + ???瞈?+ ???亥岷
 CREATE INDEX idx_ki_agent_id ON knowledge_items(agent_id);
 CREATE INDEX idx_ki_status ON knowledge_items(status);
 CREATE INDEX idx_ki_category_id ON knowledge_items(category_id);
 
--- 編輯鎖查詢（部分索引，只索引有鎖的記錄）
+-- 蝺刻摩?閰ｇ??典?蝝Ｗ?嚗蝝Ｗ???????
 CREATE INDEX idx_ki_locked_by ON knowledge_items(locked_by) WHERE locked_by IS NOT NULL;
 
--- categories：按 Agent 過濾 + 樹狀遞迴查詢
+-- categories嚗? Agent ?蕪 + 璅寧??艘?亥岷
 CREATE INDEX idx_cat_agent_id ON categories(agent_id);
 CREATE INDEX idx_cat_parent_id ON categories(parent_id);
 
--- audit_logs：按 Agent / FAQ 查詢軌跡
+-- audit_logs嚗? Agent / FAQ ?亥岷頠楚
 CREATE INDEX idx_al_agent_id ON audit_logs(agent_id);
 CREATE INDEX idx_al_item_id ON audit_logs(item_id);
 CREATE INDEX idx_al_created_at ON audit_logs(created_at DESC);
 
--- sync_logs：按 Agent 查詢同步記錄
+-- sync_logs嚗? Agent ?亥岷?郊閮?
 CREATE INDEX idx_sl_agent_id ON sync_logs(agent_id);
 CREATE INDEX idx_sl_started_at ON sync_logs(started_at DESC);
 
--- user_agent_roles：權限檢查頻繁查詢
-CREATE INDEX idx_uar_user_id ON user_agent_roles(user_id);
+-- user_agent_roles嚗??炎?仿蝜閰?CREATE INDEX idx_uar_user_id ON user_agent_roles(user_id);
 CREATE INDEX idx_uar_agent_id ON user_agent_roles(agent_id);
 ```
 
 ---
 
-## 12. Celery 任務規格 (Celery Task Specification)
+## 12. Celery 隞餃?閬 (Celery Task Specification)
 
-### 12.1 核心任務
+### 12.1 ?詨?隞餃?
 
-| 任務 | 簽名 | 說明 |
+| 隞餃? | 蝪賢? | 隤芣? |
 |------|------|------|
-| `run_ingestion_sync` | `run_ingestion_sync(agent_id: str)` | 主同步任務：提取 approved/synced FAQ → 寫 .txt → 執行 ingest script → 標記 synced |
+| `run_ingestion_sync` | `run_ingestion_sync(agent_id: str)` | 銝餃?甇乩遙???? approved/synced FAQ ??撖?.txt ???瑁? ingest script ??璅? synced |
 
-### 12.2 任務參數
+### 12.2 隞餃??
 
-| 參數 | 值 | 說明 |
+| ? | ??| 隤芣? |
 |------|-----|------|
-| 重試次數 | 3 次 | 指數退避：10s → 20s → 40s |
-| 任務超時 | 300 秒 (5 分鐘) | `soft_time_limit=300` |
-| Worker 並發數 | `--concurrency=2` | 避免多個 sync 同時寫入同一主機路徑 |
-| 結果儲存 | **DB（sync_logs 表）** | 不使用 Redis result backend，所有結果持久化至 PostgreSQL |
-| 錯誤處理 | 任務失敗時更新 `sync_logs.status = 'failed'` 並存留 `stderr` | 前端輪詢可獲取失敗訊息 |
+| ?岫甈⊥ | 3 甈?| ???選?10s ??20s ??40s |
+| 隞餃?頞? | 300 蝘?(5 ??) | `soft_time_limit=300` |
+| Worker 銝衣??| `--concurrency=2` | ?踹?憭?sync ??撖怠??銝餅?頝臬? |
+| 蝯??脣? | **DB嚗ync_logs 銵剁?** | 銝蝙??Redis result backend嚗?????銋???PostgreSQL |
+| ?航炊?? | 隞餃?憭望????`sync_logs.status = 'failed'` 銝血???`stderr` | ?垢頛芾岷?舐?仃????|
 
-### 12.3 任務執行流程
+### 12.3 隞餃??瑁?瘚?
 
-1. 接收 `agent_id` → 查詢 `agents` 取得 `txt_output_path`、`ingest_script_path`
-2. 查詢 `knowledge_items` 中 `agent_id` 且 `status IN ('approved', 'synced')` 的所有記錄
-3. 依 §5 規格生成 `.txt` 內容 → 寫入 `txt_output_path/faq_export.txt`
-4. 使用 `subprocess.run()` 執行 ingest script：
-   - 從 `agents.ingest_script_path` 取得相對路徑（如 `customer_service/ingest.py`）
-   - 在容器內執行 `python /opt/scripts/{ingest_script_path} {txt_output_path}/faq_export.txt`（`txt_output_path` 直接使用 `agents` 表中的欄位值，Celery Worker 不自行拼接路徑）
-   - 捕獲 `stdout` / `stderr` / `returncode`
-5. 同步成功後，將所有已同步項目標記為 `status = 'synced'`
-6. 將結果寫入 `sync_logs` 表
-7. 返回 `sync_log_id` 供前端輪詢
-
+1. ?交 `agent_id` ???亥岷 `agents` ?? `txt_output_path`?ingest_script_path`
+2. ?亥岷 `knowledge_items` 銝?`agent_id` 銝?`status IN ('approved', 'synced')` ??????3. 靘?禮5 閬?? `.txt` ?批捆 ??撖怠 `txt_output_path/faq_export.txt`
+4. 雿輻 `subprocess.run()` ?瑁? ingest script嚗?   - 敺?`agents.ingest_script_path` ???詨?頝臬?嚗? `customer_service/ingest.py`嚗?   - ?典捆?典?瑁? `python /opt/scripts/{ingest_script_path} {txt_output_path}/faq_export.txt`嚗txt_output_path` ?湔雿輻 `agents` 銵其葉??雿潘?Celery Worker 銝銵?亥楝敺?
+   - ? `stdout` / `stderr` / `returncode`
+5. ?郊??敺?撠??歇?郊?璅???`status = 'synced'`
+6. 撠??神??`sync_logs` 銵?7. 餈? `sync_log_id` 靘?蝡航憚閰?
 ---
 
-## 13. sync_logs 資料表 (Sync Logs Table)
+## 13. sync_logs 鞈?銵?(Sync Logs Table)
 
-Implementation Plan §2 提及的同步紀錄表：
-
-| 欄位名稱 | 資料型別 | 屬性限制 | 說明 |
+Implementation Plan 禮2 ????甇亦??”嚗?
+| 甈??迂 | 鞈?? | 撅祆折???| 隤芣? |
 |---------|---------|---------|------|
-| `id` | UUID | PK | 唯一識別碼 |
-| `agent_id` | UUID | FK → `agents.id` | 所屬專案 |
-| `triggered_by` | UUID | FK → `users.id` | 觸發者 |
+| `id` | UUID | PK | ?臭?霅蝣?|
+| `agent_id` | UUID | FK ??`agents.id` | ?撅砍?獢?|
+| `triggered_by` | UUID | FK ??`users.id` | 閫貊??|
 | `celery_task_id` | VARCHAR(255) | NULL | Celery task ID |
 | `status` | ENUM | NOT NULL | `['pending', 'running', 'completed', 'failed']` |
-| `items_count` | INTEGER | DEFAULT 0 | 實際匯出的條目數 |
-| `output_file` | VARCHAR(500) | NULL | 寫入的完整檔案路徑 |
-| `stdout` | TEXT | NULL | Ingestion script 標準輸出 |
-| `stderr` | TEXT | NULL | Ingestion script 標準錯誤 |
-| `started_at` | TIMESTAMP | NULL | 任務開始時間 |
-| `finished_at` | TIMESTAMP | NULL | 任務完成時間 |
-| `duration_sec` | INTEGER | NULL | 執行耗時（秒） |
-| `created_at` | TIMESTAMP | DEFAULT NOW() | 記錄建立時間 |
+| `items_count` | INTEGER | DEFAULT 0 | 撖阡??臬???格 |
+| `output_file` | VARCHAR(500) | NULL | 撖怠???湔?獢楝敺?|
+| `stdout` | TEXT | NULL | Ingestion script 璅?頛詨 |
+| `stderr` | TEXT | NULL | Ingestion script 璅??航炊 |
+| `started_at` | TIMESTAMP | NULL | 隞餃????? |
+| `finished_at` | TIMESTAMP | NULL | 隞餃?摰??? |
+| `duration_sec` | INTEGER | NULL | ?瑁???嚗?嚗?|
+| `created_at` | TIMESTAMP | DEFAULT NOW() | 閮?撱箇??? |
 
 ---
 
-## 14. 編輯鎖逾時機制 (Lock Expiry Mechanism)
+## 14. 蝺刻摩?暹?璈 (Lock Expiry Mechanism)
 
-### 14.1 Lazy Expire（惰性過期）
+### 14.1 Lazy Expire嚗?折???
 
-- **不**使用 Celery Beat 或背景排程定期清理
-- 在每次 `GET /faq/:id` 或 `PATCH /faq/:id` 時執行檢查：
-  - 若 `locked_by IS NOT NULL` 且 `locked_at < NOW() - INTERVAL '10 minutes'` → 自動清除鎖定（設 `locked_by = NULL, locked_at = NULL`）
-  - 清除動作在同一 DB transaction 中完成，不產生死鎖
+- **銝?*雿輻 Celery Beat ???舀?蝔?????- ?冽?甈?`GET /faq/:id` ??`PATCH /faq/:id` ?銵炎?伐?
+  - ??`locked_by IS NOT NULL` 銝?`locked_at < NOW() - INTERVAL '10 minutes'` ???芸?皜??嚗身 `locked_by = NULL, locked_at = NULL`嚗?  - 皜???典?銝 DB transaction 銝剖???銝?香??
+### 14.2 ?垢 UX
 
-### 14.2 前端 UX
-
-- 前端在 `GET /faq/:id` 回傳中若發現 `locked_by` 變為 `null`，解除編輯鎖定狀態
-- 前端每 60 秒自動 `PATCH` 延長當前使用者的鎖定（若仍在編輯畫面）
-- 使用者導離編輯頁面時，前端自動呼叫 `DELETE /lock` 釋放
+- ?垢??`GET /faq/:id` ?銝剛?潛 `locked_by` 霈 `null`嚗圾?斤楊頛舫?摰???- ?垢瘥?60 蝘??`PATCH` 撱園?嗅?雿輻????嚗隞蝺刻摩?恍嚗?- 雿輻???Ｙ楊頛舫??Ｘ?嚗?蝡航???`DELETE /lock` ?
 
 ---
 
-## 15. 安全性考量 (Security Considerations)
+## 15. 摰?扯? (Security Considerations)
 
-### 15.1 Command Injection 防護
+### 15.1 Command Injection ?脰風
 
-- `ingest_script_path` 僅 **Superadmin** 可設定和修改
-- Celery Worker 執行時使用 `shlex.split()` 拆解指令字串
-- 不直接使用 `shell=True` 呼叫 subprocess
+- `ingest_script_path` ??**Superadmin** ?航身摰?靽格
+- Celery Worker ?瑁??蝙??`shlex.split()` ?圾?誘摮葡
+- 銝?乩蝙??`shell=True` ?澆 subprocess
 
-### 15.2 XSS 防護
+### 15.2 XSS ?脰風
 
-- FAQ 內容在前端渲染前經 `DOMPurify` sanitize
-- **不**使用 `dangerouslySetInnerHTML` 直接渲染原始內容
+- FAQ ?批捆?典?蝡舀葡??蝬?`DOMPurify` sanitize
+- **銝?*雿輻 `dangerouslySetInnerHTML` ?湔皜脫????批捆
 
-### 15.3 SQL Injection 防護
+### 15.3 SQL Injection ?脰風
 
-- 全數使用 SQLAlchemy ORM 參數化查詢，不需額外防護
+- ?冽雿輻 SQLAlchemy ORM ??閰ｇ?銝?憿??脰風
 
-### 15.4 CORS 策略
+### 15.4 CORS 蝑
 
-**後端配置**：
+**敺垢?蔭**嚗?
+- ??啣?嚗CORS_ORIGIN=http://localhost:5173`嚗astAPI CORSMiddleware ??`allow_origins`嚗?- ??啣?嚗身摰撖阡??垢??嚗ginx ??嚗ORS ?虜銝孛?潘?雿??身摰?霅瘀?
+- `allow_credentials=True`嚗?閮梯楊 origin 隢?撣?Cookie嚗?- `allow_origins` **銝閮?`["*"]`**嚗???蝣箏???origin嚗allow_credentials=True` ??`*` 銝摰對?FastAPI ???
+**?垢?蔭**嚗?
+- Axios ?典?閮剖? `withCredentials: true`嚗???瘙????撣?Cookie
+- 銝身甇斗?璅?嚗楊 port ??瘙?撣?Cookie嚗雿踹?蝡?CORS 閮剖?甇?Ⅱ銋??
+**SameSite=Strict ??CSRF ?脰風隤芣?**嚗?
+- ?祉頂蝯梢??潛憓?`http://localhost:5173` ??`http://localhost:8050`嚗惇 same-site嚗localhost` ??eTLD+1嚗?閬 same-site嚗?`SameSite=Strict` 銝???潛憓?頝?port 隢?
+- ??啣???Nginx ??隞??嚗?敺垢??origin嚗SameSite=Strict` 摰??
+- `SameSite=Strict` ?祈澈?喟 CSRF ?脰風嚗楊蝡?cross-site嚗韏瑞?隢?銝葆 Cookie嚗?瘜????session嚗?*?⊿?憿?撖虫? CSRF token 璈**
 
-- 開發環境：`CORS_ORIGIN=http://localhost:5173`（FastAPI CORSMiddleware 的 `allow_origins`）
-- 生產環境：設定為實際前端域名（Nginx 同源，CORS 通常不觸發，但仍應設定保護）
-- `allow_credentials=True`（允許跨 origin 請求帶 Cookie）
-- `allow_origins` **不可設 `["*"]`**，必須明確列出 origin；`allow_credentials=True` 與 `*` 不相容，FastAPI 會報錯
+### 15.5 摮?摨銵???h
+- 摮?摨??撥?嗥?甇ｇ?`subprocess.TimeoutExpired`嚗?
+### 15.6 Ingestion Script 摰孵?銵敦蝭
 
-**前端配置**：
-
-- Axios 全域設定 `withCredentials: true`，所有請求才會自動附帶 Cookie
-- 不設此旗標時，跨 port 的請求不帶 Cookie，即使後端 CORS 設定正確也無效
-
-**SameSite=Strict 與 CSRF 防護說明**：
-
-- 本系統開發環境（`http://localhost:5173` → `http://localhost:8000`）屬 same-site（`localhost` 無 eTLD+1，同視為 same-site），`SameSite=Strict` 不阻擋開發環境的跨 port 請求
-- 生產環境採 Nginx 反向代理，前後端同 origin，`SameSite=Strict` 完全有效
-- `SameSite=Strict` 本身即為 CSRF 防護：跨站（cross-site）發起的請求不帶 Cookie，攻擊者無法偽造有效 session，**無需額外實作 CSRF token 機制**
-
-### 15.5 子程序執行限制
-h
-- 子程序超時強制終止（`subprocess.TimeoutExpired`）
-
-### 15.6 Ingestion Script 容器化執行細節
-
-- **存放位置**：使用者將 ingestion scripts 放置在 `./scripts/` 根目錄下
-- **Volume 掛載**：`docker-compose.yml` 透過 volume 將宿主機的 `./scripts` 掛載到 Worker 容器內的 `/opt/scripts`（唯讀 `:ro`）
-- **執行方式**：Worker 執行時呼叫：
+- **摮雿蔭**嚗蝙?刻? ingestion scripts ?曄蔭??`./scripts/` ?寧??
+- **Volume ??**嚗docker-compose.yml` ?? volume 撠挪銝餅???`./scripts` ????Worker 摰孵?抒? `/opt/scripts`嚗霈 `:ro`嚗?- **?瑁??孵?**嚗orker ?瑁???恬?
   ```python
-  script_path = "/opt/scripts/{agents.ingest_script_path}"  # 如 /opt/scripts/customer_service/ingest.py
+  script_path = "/opt/scripts/{agents.ingest_script_path}"  # 憒?/opt/scripts/customer_service/ingest.py
   subprocess.run(["python", script_path, f"{agent.txt_output_path}/faq_export.txt"])
   ```
-- **ingest_script_path 欄位**：儲存相對於 `./scripts/` 根目錄的 script 路徑，例如 `customer_service/ingest.py`
-- **Qdrant 連線**：使用者的 script 需自行處理與 Qdrant 的連線。Qdrant 服務可能位于宿主機、其他主機或獨立容器，由 script 使用環境變數 `QDRANT_HOST` 連線
+- **ingest_script_path 甈?**嚗摮撠 `./scripts/` ?寧?? script 頝臬?嚗?憒?`customer_service/ingest.py`
+- **Qdrant ???**嚗蝙?刻? script ??芾?????Qdrant ????drant ???航雿?摰蹂蜓璈隞蜓璈??函?摰孵嚗 script 雿輻?啣?霈 `QDRANT_HOST` ???
 
 ---
 
-## 16. 測試策略 (Testing Strategy)
+## 16. 皜祈岫蝑 (Testing Strategy)
 
-### 16.1 測試框架
+### 16.1 皜祈岫獢
 
-| 層級 | 框架 | 說明 |
+| 撅斤? | 獢 | 隤芣? |
 |------|------|------|
-| 後端單元測試 | **pytest + pytest-asyncio** | 測試模型、工具函數、服務層邏輯 |
-| 前端單元測試 | **Vitest + React Testing Library** | 測試 React 元件、hooks、状態管理 |
-| 整合測試 | **pytest + TestClient** | 測試 API endpoint + DB 互動 |
-| E2E 測試 | **Playwright** | 測試完整使用者流程（登入、CRUD、同步） |
+| 敺垢?桀?皜祈岫 | **pytest + pytest-asyncio** | 皜祈岫璅∪??極?瑕?詻??惜?摩 |
+| ?垢?桀?皜祈岫 | **Vitest + React Testing Library** | 皜祈岫 React ?辣?ooks??恣??|
+| ?游?皜祈岫 | **pytest + TestClient** | 皜祈岫 API endpoint + DB 鈭? |
+| E2E 皜祈岫 | **Playwright** | 皜祈岫摰雿輻??蝔??餃?RUD??甇伐? |
 
-### 16.2 Mock 策略
+### 16.2 Mock 蝑
 
-- **Celery 任務**：使用 `celery.contrib.test_utils` 將 async task 轉為同步執行，避免測試時需要 Redis 連線
-- **外部 API（Rasa REST）**：使用 `responses` library mock HTTP 回應，隔離外部依賴
-- **Qdrant 連線**：由 ingestion script 自行處理，測試時不模擬 Qdrant 實際連線（屬於合同測試範圍）
+- **Celery 隞餃?**嚗蝙??`celery.contrib.test_utils` 撠?async task 頧?郊?瑁?嚗?葫閰行??閬?Redis ???
+- **憭 API嚗asa REST嚗?*嚗蝙??`responses` library mock HTTP ??嚗??Ｗ??其?鞈?- **Qdrant ???**嚗 ingestion script ?芾???嚗葫閰行?銝芋??Qdrant 撖阡????嚗惇?澆??葫閰衣???
 
-### 16.3 CI/CD 測試執行流程
+### 16.3 CI/CD 皜祈岫?瑁?瘚?
 
-1. **Lint 檢查**：`ruff check`（後端）、`eslint`（前端）
-2. **類型檢查**：`mypy`（後端）、`tsc --noEmit`（前端）
-3. **單元測試**：`pytest`（後端）、`vitest run`（前端）
-4. **整合測試**：`pytest --integration`（啟動 Docker Compose 服務後執行）
-5. **E2E 測試**：Playwright 測試（全量部署後執行）
-6. **覆蓋率報告**：後端 `pytest-cov` > 80% 覆蓋率門檻
+1. **Lint 瑼Ｘ**嚗ruff check`嚗?蝡荔??eslint`嚗?蝡荔?
+2. **憿?瑼Ｘ**嚗mypy`嚗?蝡荔??tsc --noEmit`嚗?蝡荔?
+3. **?桀?皜祈岫**嚗pytest`嚗?蝡荔??vitest run`嚗?蝡荔?
+4. **?游?皜祈岫**嚗pytest --integration`嚗???Docker Compose ??敺銵?
+5. **E2E 皜祈岫**嚗laywright 皜祈岫嚗?蝵脣??瑁?嚗?6. **閬????*嚗?蝡?`pytest-cov` > 80% 閬???瑼?
+### 16.4 皜祈岫鞈?蝞∠?
 
-### 16.4 測試資料管理
+- 雿輻 `@pytest.fixture` 撱箇?皜祈岫鞈?摨?session嚗?甈⊥葫閰血? truncate嚗葫閰血? rollback嚗?- Factory 璅∪?嚗蝙??`factory_boy` ??皜祈岫鞈?嚗?′蝺函Ⅳ fixture
 
-- 使用 `@pytest.fixture` 建立測試資料庫 session（每次測試前 truncate，測試後 rollback）
-- Factory 模式：使用 `factory_boy` 生成測試資料，避免硬編碼 fixture
+### 16.5 敺垢?亥?璅?
 
-### 16.5 後端日誌標準
-
-採用 Python 標準 `logging` 模組，透過 `structlog` 輸出結構化 JSON 日誌，確保 ELK / Grafana Loki 等工具可解析。
-
-| 設定項目 | 值 |
+?∠ Python 璅? `logging` 璅∠?嚗? `structlog` 頛詨蝯???JSON ?亥?嚗Ⅱ靽?ELK / Grafana Loki 蝑極?瑕閫????
+| 閮剖?? | ??|
 |---------|-----|
-| 日誌格式 | JSON（含 `timestamp`、`level`、`event`、`request_id`、`user_id`） |
-| 日誌等級 | 生產環境 `INFO`；開發環境 `DEBUG`（透過 `.env` 的 `LOG_LEVEL` 切換） |
-| Request ID | FastAPI middleware 為每個請求生成 UUID，寫入 `contextvars`，所有下游日誌自動帶入 `request_id` |
-| Celery 任務日誌 | Celery 任務啟動 / 完成 / 失敗均寫入結構化日誌，task_id 帶入 `celery_task_id` 欄位 |
-| 敏感資料 | `password`、`password_hash`、`JWT_SECRET` 等欄位**不可**寫入日誌 |
+| ?亥??澆? | JSON嚗 `timestamp`?level`?event`?request_id`?user_id`嚗?|
+| ?亥?蝑? | ??啣? `INFO`嚗??潛憓?`DEBUG`嚗? `.env` ??`LOG_LEVEL` ??嚗?|
+| Request ID | FastAPI middleware ?箸???瘙???UUID嚗神??`contextvars`嚗???皜豢隤?葆??`request_id` |
+| Celery 隞餃??亥? | Celery 隞餃??? / 摰? / 憭望??神?亦?瑽??亥?嚗ask_id 撣嗅 `celery_task_id` 甈? |
+| ??鞈? | `password`?password_hash`?JWT_SECRET` 蝑?雿?*銝**撖怠?亥? |
 
-加入 `requirements.txt`：`structlog>=24.0`。
-
+? `requirements.txt`嚗structlog>=24.0`??
 ---
 
-## 17. 資料庫 Migration 策略 (Database Migration Strategy)
+## 17. 鞈?摨?Migration 蝑 (Database Migration Strategy)
 
-### 17.1 工具
+### 17.1 撌亙
 
-- **Alembic**（已包含在 requirements.txt），與 SQLAlchemy ORM 緊密整合
+- **Alembic**嚗歇???requirements.txt嚗???SQLAlchemy ORM 蝺??游?
 
-### 17.2 初始建置
+### 17.2 ??撱箇蔭
 
 ```bash
 alembic upgrade head
 ```
-在 Docker Compose 啟動後自動執行，確保所有表結構建立完成。
+??Docker Compose ??敺?銵?蝣箔???”蝯?撱箇?摰???
+### 17.3 ?蝞∠?
 
-### 17.3 版本管理
-
-每次 schema 變更產生新 migration：
-```bash
+瘥活 schema 霈?Ｙ???migration嚗?```bash
 alembic revision --autogenerate -m "description_of_change"
 ```
-產生後**需手動審查** migration 檔內容，確保 autogenerate 正確捕捉所有變更。
-
+?Ｙ?敺?*???撖拇** migration 瑼摰對?蝣箔? autogenerate 甇?Ⅱ??????氬?
 ### 17.4 Rollback
 
 ```bash
-alembic downgrade -1    # 回退一個版本
-alembic downgrade <revision>  # 回退到指定版本
-```
+alembic downgrade -1    # ?銝????alembic downgrade <revision>  # ??唳?摰???```
 
-### 17.5 CI/CD 自動化
+### 17.5 CI/CD ?芸???
+- ??????炎皜?migration ???- ??migration 敺銵??芸??瑁? `alembic upgrade head`
+- Migration 憭望??甇Ｘ?????銝血??單?蝣粹隤方??航?亥?
 
-- 服務啟動前自動檢測 migration 狀態
-- 若 migration 待執行，自動執行 `alembic upgrade head`
-- Migration 失敗時阻止服務啟動，並回傳明確錯誤訊息至日誌
-
-### 17.6 Migration 最佳實踐
-
-- 每個 migration 檔對應單一邏輯變更（一次 migration = 一個功能）
-- 避免在同一 migration 中混合 DDL 和 DML 操作
-- 生產環境執行 migration 前，先在 Staging 環境驗證
+### 17.6 Migration ?雿喳祕頦?
+- 瘥?migration 瑼??銝?摩霈嚗?甈?migration = 銝???踝?
+- ?踹??典?銝 migration 銝剜毽??DDL ??DML ??
+- ??啣??瑁? migration ??? Staging ?啣?撽?
 
 ---
 
-## 18. 密碼策略與安全參數 (Password Policy & Security Parameters)
+## 18. 撖Ⅳ蝑???典???(Password Policy & Security Parameters)
 
-### 18.1 密碼規則
+### 18.1 撖Ⅳ閬?
 
-| 參數 | 值 | 說明 |
+| ? | ??| 隤芣? |
 |------|-----|------|
-| 最小長度 | **8 字元** | 不含 8 字元不通過 |
-| 複雜度要求 | **至少包含大寫、小寫、數字** | 英文大寫 (A-Z) + 英文小寫 (a-z) + 數字 (0-9) 各至少一個 |
-| 驗證層級 | **前端 zod + 後端二次驗證** | 前端即時反饋，後端作為最後防線 |
+| ?撠摨?| **8 摮?** | 銝 8 摮?銝? |
+| 銴?摨西?瘙?| **?喳??憭批神??撖怒摮?* | ?望?憭批神 (A-Z) + ?望?撠神 (a-z) + ?詨? (0-9) ?撠???|
+| 撽?撅斤? | **?垢 zod + 敺垢鈭活撽?** | ?垢?單???嚗?蝡臭??箸?敺蝺?|
 
-### 18.2 雜湊參數
+### 18.2 ???
 
-| 參數 | 值 | 說明 |
+| ? | ??| 隤芣? |
 |------|-----|------|
-| Bcrypt cost factor | **12** | 平衡安全性與效能（雜湊時間約 250ms） |
-| 雜湊演算法 | **bcrypt** | 使用 `passlib[bcrypt]` 進行密碼雜湊 |
+| Bcrypt cost factor | **12** | 撟唾﹛摰?扯??嚗?皝??? 250ms嚗?|
+| ??瞍?瘜?| **bcrypt** | 雿輻 `passlib[bcrypt]` ?脰?撖Ⅳ?? |
 
-### 18.3 JWT 安全
+### 18.3 JWT 摰
 
-| 參數 | 值 | 說明 |
+| ? | ??| 隤芣? |
 |------|-----|------|
-| JWT Secret 最小長度 | **64 字元** | 使用 `secrets.token_urlsafe(64)` 產生 |
-| 簽名演算法 | **HS256** | HMAC with SHA-256 |
+| JWT Secret ?撠摨?| **64 摮?** | 雿輻 `secrets.token_urlsafe(64)` ?Ｙ? |
+| 蝪賢?瞍?瘜?| **HS256** | HMAC with SHA-256 |
 
-### 18.4 登入防爆破
-
-| 參數 | 值 | 說明 |
+### 18.4 ?餃?脩???
+| ? | ??| 隤芣? |
 |------|-----|------|
-| 失敗鎖定門檻 | **5 次** | 同一 IP + 帳號組合累積失敗 5 次 |
-| 鎖定時間 | **15 分鐘** | 鎖定期間一律回傳 429 Too Many Requests |
-| 儲存機制 | **Redis 計數器** | Key 格式：`login_attempts:{ip}:{username}`，TTL 15 分鐘 |
+| 憭望????瑼?| **5 甈?* | ?? IP + 撣唾?蝯?蝝舐?憭望? 5 甈?|
+| ???? | **15 ??** | ????銝敺???429 Too Many Requests |
+| ?脣?璈 | **Redis 閮??* | Key ?澆?嚗login_attempts:{ip}:{username}`嚗TL 15 ?? |
 
 ---
 
-## 19. 錯誤處理與回退方案 (Error Handling & Fallback)
+## 19. ?航炊??????寞? (Error Handling & Fallback)
 
-### 19.1 同步失敗三级處置
+### 19.1 ?郊憭望?銝漣?蔭
 
-| 級別 | 措施 | 說明 |
+| 蝝 | ?芣 | 隤芣? |
 |------|------|------|
-| **一級** | 自動重試 | Celery 任務內建 3 次指數退避重試（10s → 20s → 40s） |
-| **二級** | 手動重試 | 前端 Sync 頁面提供「重新同步」按鈕，Reviewer 可手動觸發重試 |
-| **三級** | 通知機制 | 失敗時寫入 `sync_logs.status = 'failed'` 並在前端顯示紅色警告，附帶 stderr 內容 |
+| **銝蝝?* | ?芸??岫 | Celery 隞餃??批遣 3 甈⊥??賊?輸?閰佗?10s ??20s ??40s嚗?|
+| **鈭?** | ???岫 | ?垢 Sync ??????啣?甇乓???Reviewer ?舀??孛?潮?閰?|
+| **銝?** | ?璈 | 憭望??神??`sync_logs.status = 'failed'` 銝血?垢憿舐內蝝霅血?嚗?撣?stderr ?批捆 |
 
-### 19.2 `.txt` 備份機制
+### 19.2 `.txt` ?遢璈
 
-- 每次覆蓋 `faq_export.txt` 前，將前一版本備份為 `faq_export.txt.backup`
-- 若當前同步失敗，可透過手動將 `.backup` 復原到 `.txt` 進行回退
-- 僅保留一個備份檔（最新覆蓋前的版本），避免磁碟空間浪費
-- **從 sync_logs 重建**：若 `.backup` 也損毀，可查詢 `sync_logs` 找到最近成功的 `sync_log_id`，再以相同 `agent_id` 重新觸發一次同步任務，從 PostgreSQL 當前的 `approved/synced` 資料重新生成 `.txt`（資料源頭在 DB，`.txt` 是派生物，可隨時重建）
+- 瘥活閬? `faq_export.txt` ??撠?銝??遢??`faq_export.txt.backup`
+- ?亦??甇亙仃???舫???撠?`.backup` 敺拙???`.txt` ?脰??
+- ??????隞賣?嚗??啗??????穿?嚗??蝣征?答鞎?- **敺?sync_logs ?遣**嚗 `.backup` 銋?瘥嚗?亥岷 `sync_logs` ?曉?餈??? `sync_log_id`嚗?隞亦??`agent_id` ?閫貊銝甈∪?甇乩遙??敺?PostgreSQL ?嗅???`approved/synced` 鞈???? `.txt`嚗????剖 DB嚗.txt` ?舀晷?嚗?冽??遣嚗?
+### 19.3 ?典?憭望???
 
-### 19.3 部分失敗處理
+- ?桐? FAQ 閫??憭望?**銝葉??*?湧??郊瘚?
+- 憭望???FAQ ?璅???stderr 頛詨嚗撘?`[SKIP] FAQ #{id}: {error_message}`
+- ?郊蝯??嚗{"total": 100, "synced": 98, "skipped": 2, "errors": [...]}`
+- 頝喲???FAQ ?典?蝡?Sync ?隞仿??脰郎??蝷綽?靘犖撌交炎??
+### 19.4 Worker ?啣虜??
 
-- 單一 FAQ 解析失敗**不中斷**整體同步流程
-- 失敗的 FAQ 項目標記至 stderr 輸出，格式：`[SKIP] FAQ #{id}: {error_message}`
-- 同步結果回報：`{"total": 100, "synced": 98, "skipped": 2, "errors": [...]}`
-- 跳過的 FAQ 在前端 Sync 頁面以黃色警告標示，供人工檢查
-
-### 19.4 Worker 異常處理
-
-- Worker 執行時若發生未預期例外，Celery 自動將任務標記為 `FAILED`
-- `sync_logs` 表記錄完整 traceback（截斷至 1000 字元）
-- 前端輪詢時若發現 `status = 'failed'`，顯示錯誤詳情並提供重試入口
+- Worker ?瑁???潛??芷???憭?Celery ?芸?撠遙??閮 `FAILED`
+- `sync_logs` 銵刻?????traceback嚗?瑁 1000 摮?嚗?- ?垢頛芾岷??潛 `status = 'failed'`嚗＊蝷粹隤方底?蒂???岫?亙
 
 ---
 
-## 20. v0.2 文件廢止宣告 (Deprecation Notice)
+## 20. v0.2 ?辣撱Ｘ迫摰?? (Deprecation Notice)
 
-> `[design-knowledge-base-management.md](design-knowledge-base-management.md)` (v0.2) 已被本文 (v1.0) **完全取代**。
-> 兩版本之間的差異：
-> - v0.2 的 `knowledge_items` 缺少 `tags`、`locked_by`、`locked_at` 欄位
-> - v0.2 的 `knowledge_items_history`（單數）已改為 `knowledge_item_histories`（複數）
-> - v0.2 的 `status` 枚舉為 `draft / pending / approved / synced / rejected`，v1.0 維持 `synced` 但補充了完整的狀態轉移規則和 Superadmin 跳躍路徑
-> - v0.2 的 `knowledge_item_histories` 使用 `reason` 欄位，v1.0 分為 `action` + `action_reason`
-> - v0.2 的 `agents` 使用 `ingest_command`（完整 CLI 指令），v1.0 改為 `ingest_script_path`（相對於 `./scripts/` 的相對路徑）
-> - 實作時以 **本文 (v1.1) 為準**。
-
+> `[design-knowledge-base-management.md](design-knowledge-base-management.md)` (v0.2) 撌脰◤?祆? (v1.0) **摰?誨**??> ?拍??砌???撌桃嚗?> - v0.2 ??`knowledge_items` 蝻箏? `tags`?locked_by`?locked_at` 甈?
+> - v0.2 ??`knowledge_items_history`嚗?賂?撌脫??`knowledge_item_histories`嚗??賂?
+> - v0.2 ??`status` ????`draft / pending / approved / synced / rejected`嚗1.0 蝬剜? `synced` 雿???摰????蝘餉??? Superadmin 頝唾?頝臬?
+> - v0.2 ??`knowledge_item_histories` 雿輻 `reason` 甈?嚗1.0 ? `action` + `action_reason`
+> - v0.2 ??`agents` 雿輻 `ingest_command`嚗???CLI ?誘嚗?v1.0 ?寧 `ingest_script_path`嚗撠 `./scripts/` ?撠楝敺?
+> - 撖虫??誑 **?祆? (v1.1) ?箸?**??
 ---
 
-## 21. v1.1 修訂記錄 (Revision History)
+## 21. v1.1 靽株?閮? (Revision History)
 
-> **修訂日期**：2026-04-27  
-> **修訂原因**：可實作性審查發現兩項阻斷性技術錯誤（A3、A4），及兩項規格說明不完整（A1、A2），本次修訂予以修正或補充說明。
+> **靽株??交?**嚗?026-04-27  
+> **靽株???**嚗撖虫??批祟?亦?曉??瑟扳?銵隤歹?A3?4嚗?????潸牧??摰嚗1?2嚗??祆活靽株?鈭誑靽格迤???牧??
+### 21.1 [A3 靽格迤] Vite ??啣? Proxy ?格?嚗??粹?瑕?憿?
 
-### 21.1 [A3 修正] Vite 開發環境 Proxy 目標（原為阻斷問題）
+- **??**嚗祕?質???禮蝚砌??挾撠?`vite.config.ts` proxy target 閮剔 `http://backend:8050`嚗迨??Docker 摰孵?折 DNS嚗璈? `vite dev` ?瘜圾??proxy ???憭望???- **靽格迤**嚗憓?禮8.4嚗ite ??啣? API Proxy 閮剖?嚗??Ⅱ閬?銝餅???璅 `http://localhost:8050`嚗蒂隤芣??典捆?典?????撘?
+### 21.2 [A4 靽格迤] Docker Compose .env 瘜典璈嚗??粹?瑕?憿?
 
-- **問題**：實施計畫 §第一階段將 `vite.config.ts` proxy target 設為 `http://backend:8000`，此為 Docker 容器內部 DNS，本機跑 `vite dev` 時無法解析，proxy 連線失敗。
-- **修正**：新增 §8.4（Vite 開發環境 API Proxy 設定），明確規定主機開發時目標為 `http://localhost:8000`，並說明全容器化開發的切換方式。
+- **??**嚗?0.5 摰?迂??桅? `.env` ??Compose ?芸?瘜典?唳?????甇方牧瘜?*?航炊**?ompose ??`.env` ?? compose 瑼頨怨??豢??潘?銝?亙捆?函憓????游?蝡舐瘜???`DATABASE_URL`?JWT_SECRET` 蝑??萇憓??詻?- **靽格迤**嚗?0.5 ?神嚗?蝣箄?瘙???? `env_file: .env`嚗蒂隤芣? Vite build ?啣?霈?迤蝣箏?撘?
+### 21.3 [A1 瞉?] Cookie SameSite=Strict ?楊???綽???隡啁?餅嚗??啗?隡啣???瘀?
 
-### 21.2 [A4 修正] Docker Compose .env 注入機制（原為阻斷問題）
-
-- **問題**：§10.5 宣稱「根目錄 `.env` 由 Compose 自動注入到所有服務」，此說法**錯誤**。Compose 的 `.env` 僅供 compose 檔本身變數插值，不傳入容器環境，會導致後端無法讀取 `DATABASE_URL`、`JWT_SECRET` 等關鍵環境變數。
-- **修正**：§10.5 重寫，明確要求各服務加入 `env_file: .env`，並說明 Vite build 環境變數的正確傳遞方式。
-
-### 21.3 [A1 澄清] Cookie SameSite=Strict 與跨域行為（原評估為阻斷，重新評估後非阻斷）
-
-- **原疑慮**：`SameSite=Strict` 配合跨 port 請求（5173 → 8000）會阻擋 Cookie。
-- **澄清**：`SameSite` 的「site」定義基於 eTLD+1，`localhost` 無 eTLD+1，`localhost:5173` 與 `localhost:8000` 屬 same-site，`Strict` 不阻擋此請求。生產環境採 Nginx 同源亦無問題。
-- **補充**：§15.4 新增後端 `allow_credentials=True` + 具體 origin 配置要求，及前端 Axios `withCredentials: true` 全域設定要求，確保跨 port 的 Cookie 傳輸正確運作。
-
-### 21.4 [A2 澄清] CSRF 防護（原評估為阻斷，重新評估後已覆蓋）
-
-- **原疑慮**：規格未定義 CSRF token 機制。
-- **澄清**：`SameSite=Strict` 本身即為 CSRF 防護，跨站（cross-site）請求不攜帶 Cookie，攻擊者無法偽造有效 session。本系統純 JSON API、無 form action，進一步降低 CSRF 攻擊向量。
-- **補充**：§15.4 新增 SameSite=Strict 防護說明，不需額外 CSRF token 實作。
-
+- **????*嚗SameSite=Strict` ??頝?port 隢?嚗?173 ??8050嚗??餅? Cookie??- **瞉?**嚗SameSite` ?ite??蝢拙??eTLD+1嚗localhost` ??eTLD+1嚗localhost:5173` ??`localhost:8050` 撅?same-site嚗Strict` 銝?迨隢????Ｙ憓 Nginx ??鈭衣????- **鋆?**嚗?5.4 ?啣?敺垢 `allow_credentials=True` + ?琿? origin ?蔭閬?嚗??垢 Axios `withCredentials: true` ?典?閮剖?閬?嚗Ⅱ靽楊 port ??Cookie ?唾撓甇?Ⅱ????
+### 21.4 [A2 瞉?] CSRF ?脰風嚗?閰摯?粹?瘀??閰摯敺歇閬?嚗?
+- **????*嚗??潭摰儔 CSRF token 璈??- **瞉?**嚗SameSite=Strict` ?祈澈?喟 CSRF ?脰風嚗楊蝡?cross-site嚗?瘙??葆 Cookie嚗?瘜????session?蝟餌絞蝝?JSON API? form action嚗脖?甇仿?雿?CSRF ?餅?????- **鋆?**嚗?5.4 ?啣? SameSite=Strict ?脰風隤芣?嚗??憿? CSRF token 撖虫???
 ---
 
-### 21.5 [B1 修正] `{agent_name}` 路徑安全性
+### 21.5 [B1 靽格迤] `{agent_name}` 頝臬?摰??
+- **??**嚗?.2??0.2??2.3??5.6 雿輻 `{agent_name}` ???潭瑼?蝟餌絞頝臬?嚗agents.name` ?迂銝剜??畾???撠頝臬?瘜典?楊蝣澆?憿◢?芥?- **靽格迤**嚗??楝敺?靘??`{agent_id}`嚗UID嚗?Superadmin 撱箇? Agent ??虫誑 UUID ?箏??桅???禮12.3 Celery Worker ?寧?湔雿輻 `agents.txt_output_path` 甈??潘?銝銵?亥楝敺?
+### 21.6 [B2 靽格迤] Refresh Token Rotation ??Revocation
 
-- **問題**：§1.2、§10.2、§12.3、§15.6 使用 `{agent_name}` 動態拼接檔案系統路徑，`agents.name` 允許中文與特殊字元，導致路徑注入或編碼問題風險。
-- **修正**：所有路徑範例改為 `{agent_id}`（UUID），Superadmin 建立 Agent 時推薦以 UUID 為子目錄名；§12.3 Celery Worker 改為直接使用 `agents.txt_output_path` 欄位值，不自行拼接路徑。
+- **??**嚗?閬????Cookie嚗efresh Token ?其撩?蝡臭???嚗◤蝡??舫?翰?具?- **靽格迤**嚗?.1 ?啣? JWT `jti` 甈???Redis 暺??格??塚?禮6.2 logout 蝡舫?鋆? revoke 銵嚗?.3 隤?瘚?鋆? rotation + revocation 摰隤芣???
+### 21.7 [B3 靽格迤] 蝺刻摩?辣??API 蝻箏仃
 
-### 21.6 [B2 修正] Refresh Token Rotation 與 Revocation
+- **??**嚗?4.2 閬??垢瘥?60 蝘辣?琿?摰?雿?禮4.2 頝舐皜?芣?靘??垢暺?- **靽格迤**嚗?.2 ?啣? `PUT /faqs/{faq_id}/lock` 敹歲蝡舫?嚗??箇???????賢辣?瑯?
+### 21.8 [B4 靽格迤] 憭???蝑?
 
-- **問題**：原規格僅清除 Cookie，Refresh Token 在伺服器端仍有效，被竊後可長期濫用。
-- **修正**：§6.1 新增 JWT `jti` 欄位與 Redis 黑名單機制；§6.2 logout 端點補充 revoke 行為；§6.3 認證流程補充 rotation + revocation 完整說明。
+- **??**嚗? ???????faq_category1.txt??雿?禮12.3 ?箏??格?銝?ingest script ?賭誘?芸銝??獢楝敺??抵??整?- **靽格迤**嚗? 蝣箇?**?箏??格?**蝑嚗?文?瑼???餈啜?
+### 21.9 [B5 靽格迤] Axios Token Refresh 蝡嗆?
 
-### 21.7 [B3 修正] 編輯鎖延長 API 缺失
+- **??**嚗???瘙????401 ?閫貊 refresh嚗洵銝甈?rotation 敺? token 鋡?revoke嚗擗?瘙?refresh 憭望?撠雿輻?◤?餃??- **靽格迤**嚗?.5 ?啣? pending promise queue 撖虫?璅∪?嚗Ⅱ靽???澆銝甈?refresh 隢???
+### 21.10 [C1 靽格迤] sync_logs ??潔?銝??
+- **??**嚗?.4 ?郊蝡舫???蝭???`"status": "processing"`嚗? 禮13 摰儔??ENUM `['pending','running','completed','failed']` 銝泵??- **靽格迤**嚗?.4 ??蝭??寧 `"status": "pending"`嚗蒂鋆? `sync_log_id` 甈???
+### 21.11 [C2 靽格迤] Celery task_id 隤芣??芰?
 
-- **問題**：§14.2 要求前端每 60 秒延長鎖定，但 §4.2 路由清單未提供對應端點。
-- **修正**：§4.2 新增 `PUT /faqs/{faq_id}/lock` 心跳端點，需為當前鎖持有者才能延長。
+- **??**嚗?.4 隤芥?璅? UUID ?澆???蝭?蝯衣??舀?皞?UUID4??- **靽格迤**嚗?.4 隤芣??寧?elery ?身??UUID4 ?澆?????靘??氬?
+### 21.12 [C5/C6 靽格迤] categories ??knowledge_items 蝻箸??
 
-### 21.8 [B4 修正] 多檔切分策略矛盾
+- **??**嚗categories` ?∩遙雿??嚗knowledge_items` 蝻?`created_at`嚗瘜里?詨遣蝡???- **靽格迤**嚗?.2 `categories` ?啣? `created_at` / `updated_at`嚗knowledge_items` ?啣? `created_at`??
+### 21.13 [D1 鋆?] audit_logs.diff JSONB 蝯?
 
-- **問題**：§5 提「可切分成多個 faq_category1.txt」，但 §12.3 固定單檔且 ingest script 命令只傳一個檔案路徑，兩者矛盾。
-- **修正**：§5 確立**固定單檔**策略，刪除多檔切分描述。
+- **鋆?**嚗?.2 `audit_logs.diff` 甈?隤芣??Ⅱ閬? JSON ?澆?嚗{"field": {"before": "??, "after": "?啣?}}`??
+### 21.14 [D2/D3 鋆?] Excel ?臬蝝啁?
 
-### 21.9 [B5 修正] Axios Token Refresh 競態
+- **鋆?**嚗?.3 import 蝡舫?隤芣??啣?嚗?乩?敺?`draft` ???`category_path` 銝??冽??芸?撱箇???蝭暺??? question 頝喲?銝西???
+### 21.15 [D4 鋆?] action_reason 敹‵璇辣
 
-- **問題**：多個請求同時收到 401 各自觸發 refresh，第一次 rotation 後舊 token 被 revoke，其餘請求 refresh 失敗導致使用者被登出。
-- **修正**：§8.5 新增 pending promise queue 實作模式，確保同時只發出一次 refresh 請求。
+- **鋆?**嚗?.2 `knowledge_item_histories.action_reason` 隤芣?鋆?嚗action = 'rejected'` ??蝡舫?霅??舐蝛箝?
+### 21.16 [D5 鋆?] GET /health 蝡舫???backend healthcheck
 
-### 21.10 [C1 修正] sync_logs 狀態值不一致
+- **鋆?**嚗?.0 ?啣?蝟餌絞?亙熒瑼Ｘ蝡舫?嚗?0.4 backend ???啣? healthcheck 閮剖?嚗elery_worker ?啣?靘陷 backend ?亙熒??
+### 21.17 [D6 鋆?] GET /api/v1/users 蝡舫?
 
-- **問題**：§4.4 同步端點回應範例為 `"status": "processing"`，與 §13 定義的 ENUM `['pending','running','completed','failed']` 不符。
-- **修正**：§4.4 回應範例改為 `"status": "pending"`，並補充 `sync_log_id` 欄位。
+- **鋆?**嚗?.2 ?啣? `GET /api/v1/users`嚗uperadmin ??嚗?Superadmin 蝞∠??敹???
+### 21.18 [D7 鋆?] 敺垢?亥?璅?
 
-### 21.11 [C2 修正] Celery task_id 說明自相矛盾
+- **鋆?**嚗?6.5 ?啣?蝯??隤?蝭?structlog + JSON ?澆??equest_id ?喲???????踝???
+### 21.19 [D8 鋆?] locked_by_username ?
 
-- **問題**：§4.4 說「非標準 UUID 格式」但範例給的是標準 UUID4。
-- **修正**：§4.4 說明改為「Celery 預設採 UUID4 格式」，與範例一致。
+- **鋆?**嚗?.2 GET /faq/:id 隤芣?鋆?嚗? JOIN users 銵典???`locked_by_username`嚗?蝡舀?舫＊蝷箸?????
+### 21.20 [D9 鋆?] chat/test sender ?澆?
 
-### 21.12 [C5/C6 修正] categories 與 knowledge_items 缺時間戳
+- **鋆?**嚗?.3 sender ??`{user_id}` ?寧 `{agent_id}_{user_id}`嚗?楊 Agent ??Rasa tracker ID 銵???
+### 21.21 [D11 鋆?] .txt ?遢?儔蝑
 
-- **問題**：`categories` 無任何時間戳，`knowledge_items` 缺 `created_at`，無法稽核建立時間。
-- **修正**：§2.2 `categories` 新增 `created_at` / `updated_at`；`knowledge_items` 新增 `created_at`。
-
-### 21.13 [D1 補充] audit_logs.diff JSONB 結構
-
-- **補充**：§2.2 `audit_logs.diff` 欄位說明明確規範 JSON 格式：`{"field": {"before": "舊值", "after": "新值"}}`。
-
-### 21.14 [D2/D3 補充] Excel 匯入細節
-
-- **補充**：§4.3 import 端點說明新增：匯入一律 `draft` 狀態；`category_path` 不存在時自動建立分類節點；重複 question 跳過並記錄。
-
-### 21.15 [D4 補充] action_reason 必填條件
-
-- **補充**：§2.2 `knowledge_item_histories.action_reason` 說明補充：`action = 'rejected'` 時後端驗證不可為空。
-
-### 21.16 [D5 補充] GET /health 端點與 backend healthcheck
-
-- **補充**：§4.0 新增系統健康檢查端點；§10.4 backend 服務新增 healthcheck 設定，celery_worker 新增依賴 backend 健康。
-
-### 21.17 [D6 補充] GET /api/v1/users 端點
-
-- **補充**：§6.2 新增 `GET /api/v1/users`（Superadmin 限定），Superadmin 管理頁面必要。
-
-### 21.18 [D7 補充] 後端日誌標準
-
-- **補充**：§16.5 新增結構化日誌規範（structlog + JSON 格式、request_id 傳遞、敏感資料遮蔽）。
-
-### 21.19 [D8 補充] locked_by_username 回傳
-
-- **補充**：§4.2 GET /faq/:id 說明補充：需 JOIN users 表回傳 `locked_by_username`，前端方可顯示持鎖者姓名。
-
-### 21.20 [D9 補充] chat/test sender 格式
-
-- **補充**：§4.3 sender 由 `{user_id}` 改為 `{agent_id}_{user_id}`，避免跨 Agent 的 Rasa tracker ID 衝突。
-
-### 21.21 [D11 補充] .txt 備份回復策略
-
-- **補充**：§19.2 新增「從 PostgreSQL 重建」說明，`.txt` 是派生物，資料源頭在 DB，可隨時透過重新觸發同步重建。
-
+- **鋆?**嚗?9.2 ?啣??? PostgreSQL ?遣?牧??`.txt` ?舀晷?嚗????剖 DB嚗?冽????閫貊?郊?遣??
 ---
 
-## 22. v1.2 補充：實作期新增功能與前端架構差異
-
-> 本章記錄 v1.1 規格凍結後於實作期新增的功能，以及前端 §8 與實際實作之間的差異。
-
+## 22. v1.2 鋆?嚗祕雿??啣????蝡舀瑽榆??
+> ?祉?閮? v1.1 閬??敺撖虫??憓??嚗誑??蝡?禮8 ?祕?祕雿???撌桃??
 ---
 
-### 22.1 新功能：分類層級匯入匯出
+### 22.1 ?啣??踝???撅斤??臬?臬
 
-v1.1 規格僅定義全域匯入匯出（`/faqs/import`、`/faqs/export`），實作時補充了分類層級的操作。
+v1.1 閬??蝢拙??亙?綽?`/faqs/import`?/faqs/export`嚗?撖虫???????撅斤???雿?
+#### 22.1.1 蝡舫?
 
-#### 22.1.1 端點
-
-| Method | Path | 說明 |
+| Method | Path | 隤芣? |
 |--------|------|------|
-| `GET` | `/api/v1/agents/{agent_id}/categories/{category_id}/export` | 匯出指定分類（含所有子孫分類）的 FAQ 為 .xlsx |
-| `POST` | `/api/v1/agents/{agent_id}/categories/{category_id}/import` | 匯入 .xlsx 至指定分類；`mode` 參數決定行為 |
+| `GET` | `/api/v1/agents/{agent_id}/categories/{category_id}/export` | ?臬????嚗???摮怠?憿???FAQ ??.xlsx |
+| `POST` | `/api/v1/agents/{agent_id}/categories/{category_id}/import` | ?臬 .xlsx ?單?摰?憿?`mode` ?瘙箏?銵 |
 
-#### 22.1.2 匯入模式（`mode` query parameter）
-
-| mode | 行為 |
+#### 22.1.2 ?臬璅∪?嚗mode` query parameter嚗?
+| mode | 銵 |
 |------|------|
-| `append`（預設） | 保留現有資料，僅新增匯入的 FAQ；重複問題（含子孫分類範圍內）跳過 |
-| `replace` | 先刪除該分類（含子孫）所有現有 FAQ，再全量寫入匯入資料 |
+| `append`嚗?閮哨? | 靽??暹?鞈?嚗??啣??臬??FAQ嚗?銴?憿??怠?摮怠?憿??嚗歲??|
+| `replace` | ??方府??嚗摮重嚗????FAQ嚗??券?撖怠?臬鞈? |
 
-#### 22.1.3 重複偵測範圍
+#### 22.1.3 ???菜葫蝭?
 
-重複問題比對範圍限定於**目標分類的子孫分類樹**，不與其他分類的問題比較。
-
+????瘥?蝭?????*?格?????摮怠?憿邦**嚗??隞?憿???瘥???
 ---
 
-### 22.2 新功能：分類精準向量同步
+### 22.2 ?啣??踝???蝎暹????郊
 
-v1.1 規格僅定義全量同步（`POST /sync`，`--clear` 清空整個 collection 重建）。實作時補充了分類層級的精準同步，最小化 Qdrant 操作範圍。
+v1.1 閬??蝢拙??甇伐?`POST /sync`嚗--clear` 皜征?游?collection ?遣嚗祕雿?鋆?鈭?憿惜蝝?蝎暹??郊嚗?撠? Qdrant ??蝭???
+#### 22.2.1 蝡舫?
 
-#### 22.2.1 端點
-
-| Method | Path | 說明 |
+| Method | Path | 隤芣? |
 |--------|------|------|
-| `POST` | `/api/v1/agents/{agent_id}/categories/{category_id}/sync` | 觸發指定分類（含子孫）的精準向量同步 |
+| `POST` | `/api/v1/agents/{agent_id}/categories/{category_id}/sync` | 閫貊????嚗摮重嚗?蝎暹????郊 |
 
-#### 22.2.2 Qdrant Metadata：`category_path`
+#### 22.2.2 Qdrant Metadata嚗category_path`
 
-所有寫入 Qdrant 的向量必須包含 `category_path` 欄位（格式：`根分類/子分類`）。此欄位是分類精準刪除的依據。
-
+??神??Qdrant ????????`category_path` 甈?嚗撘?`?孵?憿?摮?憿嚗迨甈??臬?憿移皞?斤?靘???
 ```json
 {
   "payload": {
     "question": "...",
     "answer": "...",
-    "category_path": "銷售/常見問題",
+    "category_path": "?瑕/撣貉???",
     "agent_id": "...",
     "doc_id": "knowledgebase_v1"
   }
 }
 ```
 
-#### 22.2.3 精準同步流程
+#### 22.2.3 蝎暹??郊瘚?
 
 ```
 POST /categories/{id}/sync
-  → 查詢 category 子樹所有節點（collect_category_subtree）
-  → 查詢 approved/synced FAQ（僅限子樹範圍）
-  → 為每筆 FAQ 計算 category_path（build_category_path）
-  → 寫出 .txt（含 [Category] 區塊標頭）
-  → 執行 ingest_kb.py --delete-category-paths "路徑1,路徑2"
-      → Qdrant filter_delete（payload.category_path IN [...]）
-      → Upsert 新向量
-  → 更新 sync_log（completed / failed）
-```
+  ???亥岷 category 摮邦???暺?collect_category_subtree嚗?  ???亥岷 approved/synced FAQ嚗???璅寧???
+  ???箸?蝑?FAQ 閮? category_path嚗uild_category_path嚗?  ??撖怠 .txt嚗 [Category] ?憛??哨?
+  ???瑁? ingest_kb.py --delete-category-paths "頝臬?1,頝臬?2"
+      ??Qdrant filter_delete嚗ayload.category_path IN [...]嚗?      ??Upsert ?啣???  ???湔 sync_log嚗ompleted / failed嚗?```
 
-#### 22.2.4 ingest_kb.py 新增參數
+#### 22.2.4 ingest_kb.py ?啣??
 
-| 參數 | 說明 |
+| ? | 隤芣? |
 |------|------|
-| `--delete-category-paths` | 逗號分隔的 `category_path` 清單；精準刪除對應向量後再寫入 |
+| `--delete-category-paths` | ??????`category_path` 皜嚗移皞?文??????神??|
 
-與既有 `--clear`（清空整個 collection）互斥，分類同步使用 `--delete-category-paths`，全量同步使用 `--clear`。
+???`--clear`嚗?蝛箸??collection嚗??伐????郊雿輻 `--delete-category-paths`嚗??甇乩蝙??`--clear`??
+#### 22.2.5 ?賊?撌亙璅∠?
 
-#### 22.2.5 相關工具模組
-
-`backend/api/utils/category_path.py`：
-
-| 函式 | 說明 |
+`backend/api/utils/category_path.py`嚗?
+| ?賢? | 隤芣? |
 |------|------|
-| `build_category_path(db, category_id)` | 遞迴向上查詢，回傳 `根分類/子分類` 格式字串 |
-| `collect_category_subtree(db, root_id)` | O(N) 反向索引法，收集指定節點的所有子孫 category ID |
+| `build_category_path(db, category_id)` | ?艘???亥岷嚗???`?孵?憿?摮?憿 ?澆?摮葡 |
+| `collect_category_subtree(db, root_id)` | O(N) ??蝝Ｗ?瘜??園???蝭暺????摮?category ID |
 
 ---
 
-### 22.3 前端 §8 實作差異說明
+### 22.3 ?垢 禮8 撖虫?撌桃隤芣?
 
-以下記錄 §8 規劃內容與實際前端實作的差異，供後續維護人員參考。
+隞乩?閮? 禮8 閬??批捆?祕??蝡臬祕雿?撌桃嚗?敺?蝬剛風鈭箏??
+#### 22.3.1 頝舐蝯?隤踵
 
-#### 22.3.1 路由結構調整
-
-| 規格書 §8.2 | 實際實作 | 說明 |
+| 閬??禮8.2 | 撖阡?撖虫? | 隤芣? |
 |------------|---------|------|
-| `/agents/:id/categories`（獨立頁） | 整合至 `/agents/:id/knowledge` | 分類樹與 FAQ 清單合併為三欄 ResizablePanel 佈局 |
-| `/agents/:id/faqs`（獨立頁） | 整合至 `/agents/:id/knowledge` | 同上 |
-| `/agents/:id/faqs/:faq_id`（獨立頁） | 整合至 `/agents/:id/knowledge` 右欄 | FAQ 詳情為第三欄 inline 編輯，非獨立路由 |
-| `/agents/:id/chat` | `/agents/:id/test-chat` | 路由名稱調整 |
+| `/agents/:id/categories`嚗蝡?嚗?| ?游???`/agents/:id/knowledge` | ??璅寡? FAQ 皜?蔥?箔?甈?ResizablePanel 雿? |
+| `/agents/:id/faqs`嚗蝡?嚗?| ?游???`/agents/:id/knowledge` | ?? |
+| `/agents/:id/faqs/:faq_id`嚗蝡?嚗?| ?游???`/agents/:id/knowledge` ?單? | FAQ 閰單??箇洵銝? inline 蝺刻摩嚗??函?頝舐 |
+| `/agents/:id/chat` | `/agents/:id/test-chat` | 頝舐?迂隤踵 |
 
-#### 22.3.2 元件庫使用調整
-
-| 規格書 §8.1 | 實際實作 | 說明 |
+#### 22.3.2 ?辣摨思蝙?刻矽??
+| 閬??禮8.1 | 撖阡?撖虫? | 隤芣? |
 |------------|---------|------|
-| TanStack Table（headless） | 自製清單元件 + Tailwind | FAQ 清單需求單純，引入 TanStack 反而增加複雜度 |
-| React Hook Form + Zod | 無 form library | FAQ 採 Inline Edit 模式，每個欄位獨立儲存，不需整表單提交 |
-| React Router v7 | React Router v6（DOM） | v7 語法於實作期尚不穩定，維持 v6 |
+| TanStack Table嚗eadless嚗?| ?芾ˊ皜?辣 + Tailwind | FAQ 皜?瘙蝝?撘 TanStack ?????漲 |
+| React Hook Form + Zod | ??form library | FAQ ??Inline Edit 璅∪?嚗???雿蝡摮?銝??渲”?格?鈭?|
+| React Router v7 | React Router v6嚗OM嚗?| v7 隤??澆祕雿?撠?蝛拙?嚗雁??v6 |
 
-#### 22.3.3 目錄結構（§8 未描述，實際採用）
-
-前端由舊版 `src/pages/` 扁平結構全面重寫為 `src/features/` 分層架構：
-
+#### 22.3.3 ?桅?蝯?嚗? ?芣?餈堆?撖阡??∠嚗?
+?垢?梯???`src/pages/` ?像蝯??券?神??`src/features/` ?惜?嗆?嚗?
 ```
 src/
-├── features/              # 依業務功能分層（每個 feature 自帶 hook + component）
-│   ├── auth/              # 登入、PasswordInput、useLogin
-│   ├── agents/            # Agent 選擇、設定、useAgentList
-│   ├── dashboard/         # KPI、待辦、活動、useDashboardStats
-│   ├── knowledge/         # 分類樹 + FAQ 清單 + FAQ 詳情（三欄整合）
-│   ├── sync/              # 同步觸發 + 歷史 + useSyncTrigger
-│   ├── import-export/     # 拖放上傳 + 匯出 + useExport
-│   ├── audit/             # 稽核日誌 + useAuditLog
-│   ├── chat/              # 測試對話 + useChat
-│   └── users/             # 使用者管理 + 角色指派
-├── components/            # 跨 feature 共用元件（AppShell、EmptyState、ErrorBoundary）
-├── api/                   # Axios client + 各 feature endpoint 函式
-├── store/                 # Zustand stores（useAuthStore、useAgentContext、useUiPreferences）
-├── hooks/                 # 通用 hooks（useDebounce、useLocalStorage、useKeyboardShortcut）
-└── lib/                   # 純函式工具（cn、format、diff、categories）
-```
+??? features/              # 靘平???賢?撅歹?瘥?feature ?芸葆 hook + component嚗???  ??? auth/              # ?餃?asswordInput?seLogin
+??  ??? agents/            # Agent ?豢??身摰seAgentList
+??  ??? dashboard/         # KPI??颲艾暑?seDashboardStats
+??  ??? knowledge/         # ??璅?+ FAQ 皜 + FAQ 閰單?嚗?甈??
+??  ??? sync/              # ?郊閫貊 + 甇瑕 + useSyncTrigger
+??  ??? import-export/     # ?銝 + ?臬 + useExport
+??  ??? audit/             # 蝔賣?亥? + useAuditLog
+??  ??? chat/              # 皜祈岫撠店 + useChat
+??  ??? users/             # 雿輻?恣??+ 閫?晷
+??? components/            # 頝?feature ?梁?辣嚗ppShell?mptyState?rrorBoundary嚗???? api/                   # Axios client + ??feature endpoint ?賢?
+??? store/                 # Zustand stores嚗seAuthStore?seAgentContext?seUiPreferences嚗???? hooks/                 # ? hooks嚗seDebounce?seLocalStorage?seKeyboardShortcut嚗???? lib/                   # 蝝撘極?瘀?cn?ormat?iff?ategories嚗?```
 
-#### 22.3.4 AppShell 高度繼承鏈（§8 未描述）
+#### 22.3.4 AppShell 擃漲蝜潭??禮8 ?芣?餈堆?
 
-KnowledgePage 採三欄 ResizablePanel 佈局，高度繼承鏈為：
+KnowledgePage ?∩?甈?ResizablePanel 雿?嚗?摨衣匱?輸??綽?
 
 ```
-AppShell（h-screen overflow-hidden）
-  └── main（flex-1 overflow-hidden）
-       └── KnowledgePage（h-full）
-            └── ResizablePanelGroup（h-full）
-                 └── ResizablePanel（className="h-full !overflow-hidden"）
-```
+AppShell嚗-screen overflow-hidden嚗?  ??? main嚗lex-1 overflow-hidden嚗?       ??? KnowledgePage嚗-full嚗?            ??? ResizablePanelGroup嚗-full嚗?                 ??? ResizablePanel嚗lassName="h-full !overflow-hidden"嚗?```
 
-**關鍵限制**：react-resizable-panels v4 的 `className` 直接套用在 inner wrapper，不可用 `[&>div]:h-full` 父選擇器，須直接設定 `h-full !overflow-hidden`。
+**??**嚗eact-resizable-panels v4 ??`className` ?湔憟??inner wrapper嚗??舐 `[&>div]:h-full` ?園?嚗??湔閮剖? `h-full !overflow-hidden`??
+#### 22.3.5 Zustand Store 閮剛?嚗? ?芣?餈堆?
 
-#### 22.3.5 Zustand Store 設計（§8 未描述）
-
-| Store | 說明 |
+| Store | 隤芣? |
 |-------|------|
-| `useAuthStore` | `user`、`isLoading`、`login()`、`logout()`、`fetchMe()` |
-| `useAgentContext` | `currentAgent`（persist 至 localStorage） |
-| `useUiPreferences` | `sidebarOpen`、`panelWidth`（persist 至 localStorage） |
+| `useAuthStore` | `user`?isLoading`?login()`?logout()`?fetchMe()` |
+| `useAgentContext` | `currentAgent`嚗ersist ??localStorage嚗?|
+| `useUiPreferences` | `sidebarOpen`?panelWidth`嚗ersist ??localStorage嚗?|

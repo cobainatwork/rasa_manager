@@ -69,31 +69,40 @@ export function FaqFilterBar({ filters, setFilter, clearAll, onNew, canAdd = fal
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs text-text-muted">已套用：</span>
           {filters.status && (
-            <Badge
-              variant="secondary"
-              className="cursor-pointer"
+            <button
+              type="button"
+              aria-label={`移除狀態篩選：${filters.status}`}
               onClick={() => setFilter({ status: '' })}
+              className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
             >
-              狀態:{filters.status} <X className="w-3 h-3 ml-1" />
-            </Badge>
+              <Badge variant="secondary" className="cursor-pointer">
+                狀態:{filters.status} <X className="w-3 h-3 ml-1" />
+              </Badge>
+            </button>
           )}
           {filters.category_id && (
-            <Badge
-              variant="secondary"
-              className="cursor-pointer"
+            <button
+              type="button"
+              aria-label="移除分類篩選"
               onClick={() => setFilter({ category_id: '' })}
+              className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
             >
-              分類已選 <X className="w-3 h-3 ml-1" />
-            </Badge>
+              <Badge variant="secondary" className="cursor-pointer">
+                分類已選 <X className="w-3 h-3 ml-1" />
+              </Badge>
+            </button>
           )}
           {filters.q && (
-            <Badge
-              variant="secondary"
-              className="cursor-pointer"
+            <button
+              type="button"
+              aria-label={`移除搜尋篩選：${filters.q}`}
               onClick={() => setFilter({ q: '' })}
+              className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
             >
-              搜尋:{filters.q} <X className="w-3 h-3 ml-1" />
-            </Badge>
+              <Badge variant="secondary" className="cursor-pointer">
+                搜尋:{filters.q} <X className="w-3 h-3 ml-1" />
+              </Badge>
+            </button>
           )}
           <Button variant="ghost" size="sm" onClick={clearAll}>清除全部</Button>
         </div>

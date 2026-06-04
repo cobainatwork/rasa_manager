@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from 'react'
+import { useState, useRef, type KeyboardEvent } from 'react'
 import { X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -11,12 +11,15 @@ interface Props {
 
 export function EditableTags({ tags, onSave }: Props) {
   const [draft, setDraft] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
 
-  async function add() {
+  // keepFocus: Enter/逗號 觸發時為 true；onBlur 觸發時為 false
+  async function add(keepFocus = false) {
     const t = draft.trim()
     if (!t || tags.includes(t)) { setDraft(''); return }
     await onSave([...tags, t])
     setDraft('')
+    if (keepFocus) inputRef.current?.focus()
   }
 
   async function remove(t: string) {
@@ -26,7 +29,7 @@ export function EditableTags({ tags, onSave }: Props) {
   function onKey(e: KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'Enter' || e.key === ',') {
       e.preventDefault()
-      add()
+      void add(true)
     }
   }
 
@@ -37,18 +40,19 @@ export function EditableTags({ tags, onSave }: Props) {
         {tags.map((t) => (
           <Badge key={t} variant="secondary" className="gap-1">
             {t}
-            <button type="button" onClick={() => remove(t)} className="hover:text-red-600" aria-label={`移除 ${t}`}>
+            <button type="button" onClick={() => remove(t)} className="hover:text-red-600 transition-colors" aria-label={`移除 ${t}`}>
               <X className="w-3 h-3" strokeWidth={1.5} />
             </button>
           </Badge>
         ))}
         <Input
+          ref={inputRef}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={onKey}
-          onBlur={add}
+          onBlur={() => void add(false)}
           placeholder="+ 標籤"
-          className="flex-1 min-w-[60px] border-none shadow-none focus-visible:ring-0 h-7 p-0"
+          className="flex-1 min-w-[60px] border-none bg-transparent shadow-none focus-visible:ring-0 h-7 p-0"
         />
       </div>
     </div>

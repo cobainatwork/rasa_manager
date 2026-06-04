@@ -550,6 +550,7 @@ class TestIngestScriptArgs:
     def _make_agent(self) -> MagicMock:
         agent = MagicMock()
         agent.id = AGENT_ID
+        agent.qdrant_collection = f"agent_{AGENT_ID}"
         agent.txt_output_path = "/opt/rasa_docs/test"
         agent.ingest_script_path = "/opt/project/ingest_kb.py"
         return agent
@@ -609,7 +610,7 @@ class TestIngestScriptArgs:
         assert "--doc-id" in cmd
         # 參數值驗證
         assert cmd[cmd.index("--qdrant-url") + 1] == "http://qdrant.test:6333"
-        assert cmd[cmd.index("--collection") + 1] == f"agent_{agent.id}"
+        assert cmd[cmd.index("--collection") + 1] == agent.qdrant_collection
         # source 應指向匯出 .txt
         source_value = cmd[cmd.index("--source") + 1]
         assert source_value.endswith("faq_export.txt")
@@ -676,3 +677,140 @@ class TestIngestScriptMissingQdrantUrl:
         assert sync_log.status == "failed"
         assert sync_log.stderr is not None
         assert "QDRANT_URL" in sync_log.stderr
+
+
+class TestEmbeddingCliArgs:
+    """tasks._build_embedding_args_from_env：將 agent.embedding_provider/model 轉成 ingest_kb.py CLI args。"""
+
+    def test_openai_provider_omits_base_url_and_api_key(self) -> None:
+        from tasks import _build_embedding_args_from_env  # noqa: PLC0415
+        args = _build_embedding_args_from_env("openai", "text-embedding-3-small")
+        assert args == [
+            "--provider", "openai",
+            "--model", "text-embedding-3-small",
+        ]
+
+    def test_local_provider_includes_base_url_and_api_key_from_env(self) -> None:
+        from tasks import _build_embedding_args_from_env  # noqa: PLC0415
+        with patch.dict(os.environ, {
+            "LOCAL_EMBEDDING_BASE_URL": "http://10.2.66.102/v1/embeddings",
+            "LOCAL_EMBEDDING_API_KEY": "secret-key",
+        }, clear=False):
+            args = _build_embedding_args_from_env("local", "bge-m3-q8_0")
+        assert args == [
+            "--provider", "local",
+            "--model", "bge-m3-q8_0",
+            "--base-url", "http://10.2.66.102/v1/embeddings",
+            "--api-key", "secret-key",
+        ]
+
+    def test_local_provider_defaults_api_key_when_unset(self) -> None:
+        from tasks import _build_embedding_args_from_env  # noqa: PLC0415
+        env = {k: v for k, v in os.environ.items() if k != "LOCAL_EMBEDDING_API_KEY"}
+        env["LOCAL_EMBEDDING_BASE_URL"] = "http://local-only/v1"
+        with patch.dict(os.environ, env, clear=True):
+            args = _build_embedding_args_from_env("local", "bge-m3-q8_0")
+        # 預設 api_key 為 'any'（多數地端 server 不檢查但 OpenAI SDK 要求非空）
+        assert "--api-key" in args
+        idx = args.index("--api-key")
+        assert args[idx + 1] == "any"
+
+    def test_local_provider_missing_base_url_raises(self) -> None:
+        from tasks import _build_embedding_args_from_env  # noqa: PLC0415
+        env = {k: v for k, v in os.environ.items() if k != "LOCAL_EMBEDDING_BASE_URL"}
+        with patch.dict(os.environ, env, clear=True), pytest.raises(
+            RuntimeError, match="LOCAL_EMBEDDING_BASE_URL"
+        ):
+            _build_embedding_args_from_env("local", "bge-m3-q8_0")
+
+
+# ── Embedding snapshot 寫入 sync_log（同步歷史凍結快照）─────────────────────────
+
+class TestEmbeddingSnapshotToSyncLog:
+    """驗證 tasks._snapshot_embedding_to_sync_log 與 run_ingestion_sync / run_category_sync
+    會在同步當下把 agent.embedding_provider / model 凍結至 sync_log。
+    """
+
+    SESSION_PATCH = "api.database.session.SessionLocal"
+
+    def test_snapshot_helper_copies_provider_and_model(self) -> None:
+        """helper 直接 copy provider / model 到 sync_log。"""
+        from tasks import _snapshot_embedding_to_sync_log  # noqa: PLC0415
+
+        sync_log = MagicMock()
+        agent = MagicMock()
+        agent.embedding_provider = "local"
+        agent.embedding_model = "bge-m3-q8_0"
+
+        _snapshot_embedding_to_sync_log(sync_log, agent)
+
+        assert sync_log.embedding_provider == "local"
+        assert sync_log.embedding_model == "bge-m3-q8_0"
+
+    def test_snapshot_helper_handles_none_values(self) -> None:
+        """agent 欄位為 None（理論上不發生，防呆）時 sync_log 也存 None，不要拋例外。"""
+        from tasks import _snapshot_embedding_to_sync_log  # noqa: PLC0415
+
+        sync_log = MagicMock()
+        agent = MagicMock()
+        agent.embedding_provider = None
+        agent.embedding_model = None
+
+        _snapshot_embedding_to_sync_log(sync_log, agent)
+
+        assert sync_log.embedding_provider is None
+        assert sync_log.embedding_model is None
+
+    def test_ingestion_sync_freezes_embedding_into_sync_log(self) -> None:
+        """run_ingestion_sync 完成後 sync_log 帶有 agent 當下的 embedding 快照。"""
+        sync_log = MagicMock()
+        sync_log.id = uuid.UUID("00000000-0000-0000-0000-0000000000c1")
+        sync_log.status = "pending"
+        sync_log.started_at = None
+        sync_log.stderr = None
+
+        agent = MagicMock()
+        agent.id = AGENT_ID
+        agent.txt_output_path = "/opt/rasa_docs/test"
+        agent.ingest_script_path = "ingest.py"
+        agent.qdrant_collection = "agent_test"
+        agent.embedding_provider = "openai"
+        agent.embedding_model = "text-embedding-3-large"
+
+        faq = MagicMock()
+        faq.question = "Q"
+        faq.answer = "A"
+        faq.id = uuid.uuid4()
+        faq.status = "approved"
+
+        db = MagicMock()
+        call_index = [0]
+
+        def query_se(model: object) -> MagicMock:  # noqa: ARG001
+            q = MagicMock()
+            idx = call_index[0]
+            call_index[0] += 1
+            if idx == 0:
+                q.filter.return_value.first.return_value = sync_log
+            elif idx == 1:
+                q.filter.return_value.first.return_value = agent
+            else:
+                q.filter.return_value.all.return_value = [faq]
+            return q
+
+        db.query.side_effect = query_se
+
+        with (
+            patch.dict(os.environ, {"QDRANT_URL": "http://fake:6333"}),
+            patch(self.SESSION_PATCH, return_value=db),
+            patch("builtins.open", mock_open()),
+            patch("os.makedirs"),
+            patch("os.path.isfile", return_value=True),
+            patch("subprocess.Popen") as mock_popen,
+        ):
+            mock_popen.return_value = _make_mock_proc(stdout="ok")
+            run_ingestion_sync.apply(args=[str(AGENT_ID), str(sync_log.id)])
+
+        # 凍結快照應於完成後仍保持原 agent 設定
+        assert sync_log.embedding_provider == "openai"
+        assert sync_log.embedding_model == "text-embedding-3-large"

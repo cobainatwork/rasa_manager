@@ -4,7 +4,11 @@ import { extractErrorMessage } from '@/api/client'
 import { toast } from 'sonner'
 import type { Faq } from '@/api/types'
 
-export function useFaqDetail(agentId: string | undefined, faqId: string | null) {
+export function useFaqDetail(
+  agentId: string | undefined,
+  faqId: string | null,
+  onUpdated?: () => void,
+) {
   const [faq, setFaq] = useState<Faq | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -23,6 +27,8 @@ export function useFaqDetail(agentId: string | undefined, faqId: string | null) 
     if (!agentId || !faqId) return
     await api.updateFaq(agentId, faqId, patch)
     reload()
+    // 通知父層（KnowledgePage）刷新中間欄列表，確保狀態變更即時反映
+    onUpdated?.()
   }
 
   return { faq, loading, reload, update }

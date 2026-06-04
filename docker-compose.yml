@@ -52,7 +52,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET 必須在 .env 設定}
     ports:
       # 僅 dev 環境需要對外暴露；production 應由 frontend nginx 反代
-      - "8000:8000"
+      - "8050:8050"
     networks:
       - app
       - data
@@ -62,7 +62,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8000/api/v1/health || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8050/api/v1/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 3
@@ -81,7 +81,7 @@ services:
       QDRANT_URL: ${QDRANT_URL:?QDRANT_URL 必須在 .env 設定}
     command: celery -A tasks.celery_app worker --concurrency=2 --loglevel=info
     healthcheck:
-      # celery worker 不開 HTTP 8000，停用 backend image 繼承來的 HEALTHCHECK
+      # celery worker 不開 HTTP 8050，停用 backend image 繼承來的 HEALTHCHECK
       disable: true
     volumes:
       - ./scripts:/opt/scripts:ro

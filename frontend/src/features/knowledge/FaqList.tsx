@@ -178,11 +178,13 @@ export function FaqList({ agentId, selectedFaqId, onSelectFaq, onNewFaq, canAdd 
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>取消</AlertDialogCancel>
-                  <AlertDialogAction
-                    className="bg-red-600 hover:bg-red-700"
-                    onClick={() => bulkAction('刪除', (id) => api.deleteFaq(agentId, id))}
-                  >
-                    確認刪除
+                  <AlertDialogAction asChild>
+                    <Button
+                      variant="destructive"
+                      onClick={() => bulkAction('刪除', (id) => api.deleteFaq(agentId, id))}
+                    >
+                      確認刪除
+                    </Button>
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
@@ -248,6 +250,21 @@ export function FaqList({ agentId, selectedFaqId, onSelectFaq, onNewFaq, canAdd 
                     : `全選此分類全部 ${data.total} 筆`}
                 </button>
               )}
+            </div>
+            {/* Column header — 欄寬與 FaqListRow 對齊（checkbox 約 1rem + gap-3、版本 w-12、時間 w-16、鎖 w-5） */}
+            <div
+              role="rowgroup"
+              className="flex items-center gap-3 px-4 py-2 border-b border-border-default bg-canvas text-xs text-text-muted uppercase tracking-wide select-none"
+            >
+              {/* 對齊 row 的 Checkbox 寬度（h4-w4） */}
+              <span className="w-4 shrink-0" aria-hidden />
+              <span role="columnheader" className="flex-1 min-w-0">題目</span>
+              <span role="columnheader" className="shrink-0">狀態</span>
+              <span role="columnheader" className="w-12 text-right shrink-0">版本</span>
+              <span role="columnheader" className="w-16 text-right shrink-0">更新時間</span>
+              <span role="columnheader" className="w-5 shrink-0 flex justify-center">
+                <span className="sr-only">鎖定狀態</span>
+              </span>
             </div>
             <ul>
               {data.items.map((faq: Faq) => (

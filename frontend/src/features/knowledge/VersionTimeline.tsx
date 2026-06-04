@@ -35,7 +35,7 @@ export function VersionTimeline({ agentId, faqId }: Props) {
       </div>
       <ul className="space-y-1.5 text-sm">
         {visible.map((v) => (
-          <li key={v.id} className="flex items-center gap-2 p-2 rounded hover:bg-subtle">
+          <li key={v.id} className="flex items-center gap-2 p-2 rounded hover:bg-subtle transition-colors">
             <span className="font-mono text-xs text-text-muted">v{v.version}</span>
             <span className="text-text-secondary">{ACTION_LABELS[v.action] ?? v.action}</span>
             <span className="text-xs text-text-muted ml-auto">{relativeTime(v.created_at)}</span>

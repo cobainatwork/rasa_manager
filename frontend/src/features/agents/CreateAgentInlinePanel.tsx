@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { z } from 'zod'
 import { X } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -11,21 +10,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { createAgent } from '@/api/endpoints/agents'
 import { extractErrorMessage } from '@/api/client'
 import { toast } from 'sonner'
-
-const schema = z.object({
-  name: z.string().min(1, '必填').max(100, '最多 100 字'),
-  txt_output_path: z.string().min(1, '必填').max(255, '最多 255 字'),
-  rasa_rest_url: z
-    .string()
-    .optional()
-    .refine(
-      (v) => !v || v.startsWith('http://') || v.startsWith('https://'),
-      { message: 'Webhook URL 必須以 http:// 或 https:// 開頭' }
-    ),
-  ingest_script_path: z.string().optional(),
-})
-
-type FormData = z.infer<typeof schema>
+import { agentCreateSchema, type AgentCreateFormData as FormData } from './agentFormSchema'
 
 interface Props {
   onCreated: () => void
@@ -36,7 +21,7 @@ export function CreateAgentInlinePanel({ onCreated, onCancel }: Props) {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const { register, handleSubmit, formState: { errors } } = useForm<FormData>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(agentCreateSchema),
   })
 
   async function onSubmit(data: FormData) {
@@ -44,10 +29,10 @@ export function CreateAgentInlinePanel({ onCreated, onCancel }: Props) {
     setError(null)
     try {
       await createAgent({
-        name: data.name,
-        txt_output_path: data.txt_output_path,
-        rasa_rest_url: data.rasa_rest_url || null,
-        ingest_script_path: data.ingest_script_path || null,
+        ...data,
+        // Embedding 預設 OpenAI 雲端；建立後可在「Agent 設定」頁切換 provider/model
+        embedding_provider: 'openai',
+        embedding_model: 'text-embedding-3-small',
       })
       toast.success('Agent 建立成功')
       onCreated()
@@ -70,6 +55,9 @@ export function CreateAgentInlinePanel({ onCreated, onCancel }: Props) {
       <form onSubmit={handleSubmit(onSubmit)} className="grid grid-cols-2 gap-4">
         <Field label="Agent 名稱" required error={errors.name?.message}>
           <Input {...register('name')} placeholder="例如：客服機器人" />
+        </Field>
+        <Field label="Qdrant Collection 名稱" required error={errors.qdrant_collection?.message}>
+          <Input {...register('qdrant_collection')} placeholder="例如：my_agent_kb" />
         </Field>
         <Field label="TXT 輸出路徑" required error={errors.txt_output_path?.message}>
           <Input {...register('txt_output_path')} placeholder="/opt/sap" />

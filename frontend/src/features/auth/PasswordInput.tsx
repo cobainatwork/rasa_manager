@@ -18,7 +18,6 @@ export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
           onClick={() => setShow((v) => !v)}
           className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-text-muted hover:text-text-primary cursor-pointer"
           aria-label={show ? '隱藏密碼' : '顯示密碼'}
-          tabIndex={-1}
         >
           {show ? <EyeOff className="w-4 h-4" strokeWidth={1.5} /> : <Eye className="w-4 h-4" strokeWidth={1.5} />}
         </button>

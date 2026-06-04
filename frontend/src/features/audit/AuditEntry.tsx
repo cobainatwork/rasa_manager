@@ -20,7 +20,7 @@ export function AuditEntry({ entry }: { entry: Entry }) {
       <button
         type="button"
         onClick={() => hasDiff && setExpanded(!expanded)}
-        className={cn('w-full flex items-center gap-2 text-sm text-left', hasDiff && 'cursor-pointer')}
+        className={cn('w-full flex items-center gap-2 text-sm text-left rounded px-2 -mx-2 py-1 -my-1 transition-colors', hasDiff ? 'cursor-pointer hover:bg-black/[0.04]' : 'cursor-default')}
       >
         {hasDiff && (expanded ? <ChevronDown className="w-3.5 h-3.5" strokeWidth={1.5} /> : <ChevronRight className="w-3.5 h-3.5" strokeWidth={1.5} />)}
         <span className="text-text-muted font-mono text-xs w-12">{time}</span>
@@ -42,8 +42,8 @@ export function AuditEntry({ entry }: { entry: Entry }) {
               {Object.entries(entry.diff!).map(([field, change]) => (
                 <tr key={field} className="border-t border-border-default">
                   <td className="py-1 font-mono">{field}</td>
-                  <td className="py-1 bg-red-50 text-red-900">{JSON.stringify(change.before)}</td>
-                  <td className="py-1 bg-emerald-50 text-emerald-900">{JSON.stringify(change.after)}</td>
+                  <td className="py-1 bg-red-500/[0.08] text-red-700">{JSON.stringify(change.before)}</td>
+                  <td className="py-1 bg-emerald-500/[0.08] text-emerald-700">{JSON.stringify(change.after)}</td>
                 </tr>
               ))}
             </tbody>

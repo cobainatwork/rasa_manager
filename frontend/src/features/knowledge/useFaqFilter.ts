@@ -8,14 +8,43 @@ export interface FaqFilters {
   page: number
 }
 
-// localStorage 鍵：以 agentId 隔離，儲存上次的篩選狀態
+// ── 純函式 helpers ────────────────────────────────────────────────────────────
+
+/** localStorage key 計算邏輯集中於此 */
 function filtersKey(agentId: string) { return `kb_filters_${agentId}` }
+
+/** 從 URLSearchParams 讀取並組合成 FaqFilters 物件 */
+function readFilters(params: URLSearchParams): FaqFilters {
+  return {
+    status: params.get('status') ?? '',
+    category_id: params.get('category_id') ?? '',
+    q: params.get('q') ?? '',
+    page: Number(params.get('page') ?? 1),
+  }
+}
+
+/** 判斷 filters 是否含任何非預設值，用來決定是否要持久化至 localStorage */
+function hasActiveFilters(f: FaqFilters): boolean {
+  return !!(f.status || f.category_id || f.q || f.page > 1)
+}
+
+/** 將 FaqFilters 物件序列化為 URLSearchParams（僅輸出非預設值） */
+function filtersToParams(f: FaqFilters): URLSearchParams {
+  const p = new URLSearchParams()
+  if (f.status) p.set('status', f.status)
+  if (f.category_id) p.set('category_id', f.category_id)
+  if (f.q) p.set('q', f.q)
+  if (f.page > 1) p.set('page', String(f.page))
+  return p
+}
+
+// ── Hook ──────────────────────────────────────────────────────────────────────
 
 export function useFaqFilter(agentId?: string) {
   const [params, setParams] = useSearchParams()
 
-  // 掛載或切換 Agent 時，若 URL 無篩選參數，從 localStorage 還原上次的篩選狀態
-  // params / setParams 刻意從依賴陣列省略：此 effect 僅在 agent 切換/掛載時執行一次
+  // 掛載或切換 Agent 時，若 URL 無篩選參數，從 localStorage 還原上次的篩選狀態。
+  // params / setParams 刻意從依賴陣列省略：此 effect 僅在 agent 切換/掛載時執行一次。
   useEffect(() => {
     if (!agentId) return
     const hasUrlParams = (['status', 'category_id', 'q', 'page'] as const).some(k => params.has(k))
@@ -23,48 +52,35 @@ export function useFaqFilter(agentId?: string) {
     const saved = localStorage.getItem(filtersKey(agentId))
     if (!saved) return
     try {
-      const restored = JSON.parse(saved) as Partial<FaqFilters>
-      const next = new URLSearchParams()
-      if (restored.status) next.set('status', restored.status)
-      if (restored.category_id) next.set('category_id', restored.category_id)
-      if (restored.q) next.set('q', restored.q)
-      if (restored.page && restored.page > 1) next.set('page', String(restored.page))
-      if (next.toString()) setParams(next, { replace: true })
+      const restored = filtersToParams(JSON.parse(saved) as FaqFilters)
+      if (restored.toString()) setParams(restored, { replace: true })
     } catch { /* ignore localStorage parse errors */ }
   }, [agentId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 每次 URL 篩選參數變更後，同步儲存至 localStorage
+  // render 中計算一次，供 effect 與 hook 回傳值共用，避免重複呼叫 readFilters
+  const filters = readFilters(params)
+
+  // 每次 URL 篩選參數變更後，同步儲存至 localStorage。
+  // WHY 變更偵測：params 每次 navigate 均為新物件，會觸發此 effect；若實際篩選值
+  // 未改變（如 replace 同一 URL），不需要重複寫入 localStorage，避免無效 I/O。
   useEffect(() => {
     if (!agentId) return
-    const status = params.get('status') ?? ''
-    const category_id = params.get('category_id') ?? ''
-    const q = params.get('q') ?? ''
-    const page = Number(params.get('page') ?? 1)
-    if (status || category_id || q || page > 1) {
-      const toSave: Partial<FaqFilters> = {}
-      if (status) toSave.status = status
-      if (category_id) toSave.category_id = category_id
-      if (q) toSave.q = q
-      if (page > 1) toSave.page = page
-      try { localStorage.setItem(filtersKey(agentId), JSON.stringify(toSave)) } catch { /* ignore */ }
-    } else {
-      try { localStorage.removeItem(filtersKey(agentId)) } catch { /* ignore */ }
-    }
-  }, [params, agentId])
-
-  const filters: FaqFilters = {
-    status: params.get('status') ?? '',
-    category_id: params.get('category_id') ?? '',
-    q: params.get('q') ?? '',
-    page: Number(params.get('page') ?? 1),
-  }
+    const key = filtersKey(agentId)
+    const json = hasActiveFilters(filters) ? JSON.stringify(filters) : null
+    const stored = localStorage.getItem(key)
+    if (json === stored) return
+    try {
+      if (json) localStorage.setItem(key, json)
+      else localStorage.removeItem(key)
+    } catch { /* ignore */ }
+  }, [params, agentId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function setFilter(patch: Partial<FaqFilters>) {
+    const merged: FaqFilters = { ...filters, ...patch, page: patch.page ?? 1 }
+    // 以現有 params 為基底，保留非 filter keys（如其他 hook 寫入的 URL params）
     const next = new URLSearchParams(params)
-    Object.entries({ ...filters, ...patch, page: patch.page ?? 1 }).forEach(([k, v]) => {
-      if (v === '' || v === 0 || v === undefined || v === null) next.delete(k)
-      else next.set(k, String(v))
-    })
+    ;(['status', 'category_id', 'q', 'page'] as const).forEach(k => next.delete(k))
+    filtersToParams(merged).forEach((v, k) => next.set(k, v))
     setParams(next, { replace: true })
   }
 
