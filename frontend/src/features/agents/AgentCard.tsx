@@ -52,7 +52,8 @@ function Stat({ icon: Icon, label, value, highlight }: {
     <div className="flex items-center gap-2">
       <Icon className="w-4 h-4 text-text-muted" strokeWidth={1.5} />
       <span className="text-text-secondary">{label}：</span>
-      <span className={highlight ? 'text-amber-800 font-medium' : 'text-text-primary'}>{value}</span>
+      {/* amber-700：與 FaqListRow 鎖 icon 對齊的中性警示色（rule of three 前不抽 token） */}
+      <span className={highlight ? 'text-amber-700 font-medium' : 'text-text-primary'}>{value}</span>
     </div>
   )
 }

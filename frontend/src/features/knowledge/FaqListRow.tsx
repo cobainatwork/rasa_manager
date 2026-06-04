@@ -53,7 +53,10 @@ export function FaqListRow({ faq, selected, checked, onSelect, onToggleCheck }: 
       <span className="text-xs text-text-muted w-16 text-right shrink-0 mt-1">{relativeTime(faq.updated_at)}</span>
       <span className="w-5 flex justify-center shrink-0 mt-0.5">
         {faq.locked_by_username && (
-          <Lock className="w-3.5 h-3.5 text-amber-600" strokeWidth={1.5} />
+          // amber-700：與 AgentCard pending highlight 對齊的中性警示色。
+          // 兩個用例語意略有差異（此為鎖定通知、AgentCard 為待審行動召喚），
+          // 暫不抽 design token（YAGNI / rule of three：第 3 個用例出現時再抽）。
+          <Lock className="w-3.5 h-3.5 text-amber-700" strokeWidth={1.5} />
         )}
       </span>
     </div>

@@ -41,7 +41,7 @@ export function TestChatPage() {
   }
 
   return (
-    <div className="p-8 max-w-3xl h-full flex flex-col">
+    <div className="p-8 max-w-4xl mx-auto h-full flex flex-col">
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">對話測試</h1>
         <div className="flex gap-2">
