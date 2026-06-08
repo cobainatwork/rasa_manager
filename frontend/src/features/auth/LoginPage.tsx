@@ -39,8 +39,8 @@ export function LoginPage() {
       <main className="flex-1 flex items-center justify-center p-8">
         <div className="w-full max-w-sm">
           <div className="lg:hidden flex items-center gap-3 mb-8">
-            <div className="w-10 h-10 rounded-lg bg-brand-500 flex items-center justify-center font-bold text-white">R</div>
-            <span className="text-xl font-semibold">Rasa KB</span>
+            <img src="/hualiteq.png" alt="Hualiteq" className="w-10 h-10 object-contain" />
+            <span className="text-xl font-semibold">Hualiteq KB</span>
           </div>
 
           <h1 className="text-2xl font-bold mb-2">歡迎回來</h1>
