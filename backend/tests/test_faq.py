@@ -454,9 +454,19 @@ class TestListFaqsBatchUsernamesRegression:
         self, client_superadmin, mock_db: MagicMock
     ) -> None:
         """5 筆 FAQ 含不同 locked_by，User 表只應查一次（IN 批次）。"""
-        from unittest.mock import patch as _patch
+        from contextlib import contextmanager
 
+        from main import app
         from api.database.models import KnowledgeItem, User
+        from api.dependencies import get_accessible_agent
+
+        @contextmanager
+        def _bypass():
+            app.dependency_overrides[get_accessible_agent] = lambda: (MagicMock(), None)
+            try:
+                yield
+            finally:
+                app.dependency_overrides.pop(get_accessible_agent, None)
 
         items = []
         for i in range(5):
@@ -499,10 +509,7 @@ class TestListFaqsBatchUsernamesRegression:
 
         mock_db.query.side_effect = query_side_effect
 
-        with _patch(
-            "api.routes.faq.require_agent_access",
-            return_value=(MagicMock(), None),
-        ):
+        with _bypass():
             resp = client_superadmin.get(
                 f"/api/v1/agents/{AGENT_ID}/faqs"
             )

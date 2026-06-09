@@ -29,9 +29,9 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from api.database.models import Category, KnowledgeItem, User
+from api.database.models import Agent, Category, KnowledgeItem, User
 from api.database.session import get_db
-from api.dependencies import _get_redis, get_current_user, require_agent_access
+from api.dependencies import _get_redis, get_accessible_agent, get_current_user
 from api.services.audit import record_audit
 from api.utils.category_path import build_category_path, collect_category_subtree
 
@@ -185,10 +185,11 @@ def import_faqs(
     agent_id: uuid.UUID,
     file: UploadFile = File(...),
     mode: Literal["append", "replace"] = Query("append", description="append=跳過重複；replace=先清空再匯入"),
+    access: tuple[Agent, str | None] = Depends(get_accessible_agent),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    require_agent_access(agent_id, current_user, db)
+    del access  # 僅做存取驗證
 
     # ── 檔案格式與大小驗證 ─────────────────────────────────────────────────────
     filename = file.filename or ""
@@ -365,10 +366,11 @@ def import_faqs(
 @router.get("/api/v1/agents/{agent_id}/faqs/export")
 def export_faqs(
     agent_id: uuid.UUID,
+    access: tuple[Agent, str | None] = Depends(get_accessible_agent),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> StreamingResponse:
-    require_agent_access(agent_id, current_user, db)
+    del access  # 僅做存取驗證
 
     items = (
         db.query(KnowledgeItem)
@@ -439,10 +441,11 @@ def export_faqs(
 def export_category_faqs(
     agent_id: uuid.UUID,
     category_id: uuid.UUID,
+    access: tuple[Agent, str | None] = Depends(get_accessible_agent),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> StreamingResponse:
-    require_agent_access(agent_id, current_user, db)
+    del access  # 僅做存取驗證
 
     category = (
         db.query(Category)
@@ -520,10 +523,11 @@ def import_category_faqs(
     category_id: uuid.UUID,
     mode: Literal["append", "replace"] = Query("append"),
     file: UploadFile = File(...),
+    access: tuple[Agent, str | None] = Depends(get_accessible_agent),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    require_agent_access(agent_id, current_user, db)
+    del access  # 僅做存取驗證
 
     # 驗證分類存在且屬於此 agent
     category = (

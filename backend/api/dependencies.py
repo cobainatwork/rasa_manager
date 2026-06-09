@@ -88,6 +88,23 @@ def require_agent_access(
     return agent, str(uar.role)
 
 
+def get_accessible_agent(
+    agent_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> tuple[Agent, Optional[str]]:
+    """FastAPI Dependency 版本的 require_agent_access。
+
+    Superadmin → (agent, None)
+    其他 → (agent, role) 或 raise 403
+
+    與 `require_agent_access(...)` callable 語意完全等價，
+    主要差異是可作為 `Depends(get_accessible_agent)` 注入 route handler。
+    `agent_id` 自動從路徑參數 `/agents/{agent_id}/...` 解析。
+    """
+    return require_agent_access(agent_id, current_user, db)
+
+
 def require_reviewer_or_superadmin(
     agent_id: uuid.UUID,
     current_user: User,

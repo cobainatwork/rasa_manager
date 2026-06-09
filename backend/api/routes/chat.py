@@ -10,11 +10,9 @@ from typing import Any
 import httpx
 import structlog
 from fastapi import APIRouter, Depends, status
-from sqlalchemy.orm import Session
 
-from api.database.models import User
-from api.database.session import get_db
-from api.dependencies import get_current_user, require_agent_access
+from api.database.models import Agent, User
+from api.dependencies import get_accessible_agent, get_current_user
 from api.errors import raise_http, raise_unprocessable
 from api.schemas import ChatRequest
 
@@ -41,10 +39,10 @@ def _extract_messages(raw: Any) -> list[Any]:
 def test_chat(
     agent_id: uuid.UUID,
     body: ChatRequest,
+    access: tuple[Agent, str | None] = Depends(get_accessible_agent),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    agent, _ = require_agent_access(agent_id, current_user, db)
+    agent, _ = access
 
     if not agent.rasa_rest_url:
         raise_unprocessable("此 Agent 未設定 Rasa REST URL")

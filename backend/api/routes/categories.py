@@ -16,11 +16,11 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from api.database.models import Category, KnowledgeItem, User
+from api.database.models import Agent, Category, KnowledgeItem, User
 from api.database.session import get_db
 from api.dependencies import (
+    get_accessible_agent,
     get_current_user,
-    require_agent_access,
     require_reviewer_or_superadmin,
 )
 from api.errors import raise_http, raise_not_found, raise_unprocessable
@@ -102,10 +102,10 @@ def _collect_descendants(
 @router.get("/api/v1/agents/{agent_id}/categories")
 def list_categories(
     agent_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
+    access: tuple[Agent, str | None] = Depends(get_accessible_agent),
     db: Session = Depends(get_db),
 ) -> dict:  # type: ignore[type-arg]
-    require_agent_access(agent_id, current_user, db)
+    del access  # 僅做存取驗證
 
     cats = (
         db.query(Category)

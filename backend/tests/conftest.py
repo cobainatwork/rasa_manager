@@ -30,7 +30,7 @@ from sqlalchemy.orm import Session
 
 from main import app
 from api.database.session import get_db
-from api.dependencies import get_current_user
+from api.dependencies import get_accessible_agent, get_current_user
 
 # 測試用低 cost bcrypt（加速測試執行）
 _test_pwd = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=4)
@@ -135,6 +135,40 @@ def client_no_auth(mock_db: MagicMock) -> Generator[TestClient, None, None]:
     app.dependency_overrides[get_db] = lambda: mock_db
     yield TestClient(app, raise_server_exceptions=False)
     app.dependency_overrides.clear()
+
+
+# ── Dependency override：get_accessible_agent ─────────────────────────────────
+#
+# 為 30+ test 從 patch("api.routes.X.require_agent_access", ...) 模式遷移到
+# FastAPI dependency_overrides 模式而設計。用法：
+#
+#     with override_agent_access():  # bypass，回 (MagicMock(), None)
+#         client.post(...)
+#
+#     with override_agent_access(agent=my_agent, role="editor"):
+#         client.patch(...)
+#
+# fixture 自動清除 override，避免測試之間污染。
+
+@pytest.fixture
+def override_agent_access():
+    """提供 context manager 形式的 get_accessible_agent override。"""
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _scope(agent: object | None = None, role: str | None = None):
+        app.dependency_overrides[get_accessible_agent] = lambda: (
+            agent if agent is not None else MagicMock(),
+            role,
+        )
+        try:
+            yield
+        finally:
+            app.dependency_overrides.pop(get_accessible_agent, None)
+
+    yield _scope
+    # 兜底：若測試忘了用 context manager 退出，仍清除
+    app.dependency_overrides.pop(get_accessible_agent, None)
 
 
 # ── Agent mock factory ────────────────────────────────────────────────────────

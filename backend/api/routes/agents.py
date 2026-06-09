@@ -13,9 +13,9 @@ from api.database.models import Agent, Category, KnowledgeItem, User, UserAgentR
 from api.database.session import get_db
 from api.dependencies import (
     _get_agent_or_404,
+    get_accessible_agent,
     get_current_superadmin,
     get_current_user,
-    require_agent_access,
 )
 from api.errors import raise_conflict, raise_not_found, raise_unprocessable
 from api.schemas import AgentCreate, AgentUpdate, RoleAssignRequest
@@ -82,11 +82,9 @@ def create_agent(
 
 @router.get("/{agent_id}")
 def get_agent(
-    agent_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    access: tuple[Agent, str | None] = Depends(get_accessible_agent),
 ) -> dict:  # type: ignore[type-arg]
-    agent, _ = require_agent_access(agent_id, current_user, db)
+    agent, _ = access
     return {"success": True, "data": _agent_to_dict(agent)}
 
 
@@ -143,10 +141,10 @@ def delete_agent(
 @router.get("/{agent_id}/stats")
 def get_agent_stats(
     agent_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
+    access: tuple[Agent, str | None] = Depends(get_accessible_agent),
     db: Session = Depends(get_db),
 ) -> dict:  # type: ignore[type-arg]
-    require_agent_access(agent_id, current_user, db)
+    del access  # 僅做存取驗證，後續 query 用 agent_id
 
     row = db.query(
         func.count(KnowledgeItem.id).label("total"),
@@ -213,11 +211,10 @@ def assign_role(
 
 @router.get("/{agent_id}/my-role")
 def get_my_role(
-    agent_id: uuid.UUID,
+    access: tuple[Agent, str | None] = Depends(get_accessible_agent),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
 ) -> dict:  # type: ignore[type-arg]
-    _, role = require_agent_access(agent_id, current_user, db)
+    _, role = access
     return {
         "success": True,
         "data": {

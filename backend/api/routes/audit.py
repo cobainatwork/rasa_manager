@@ -10,9 +10,9 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from api.database.models import AuditLog, User
+from api.database.models import Agent, AuditLog, User
 from api.database.session import get_db
-from api.dependencies import get_current_user, require_agent_access
+from api.dependencies import get_accessible_agent
 
 router = APIRouter(tags=["audit"])
 
@@ -25,10 +25,10 @@ def list_audit_logs(
     end_date: Optional[datetime] = Query(None),
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=200),
-    current_user: User = Depends(get_current_user),
+    access: tuple[Agent, str | None] = Depends(get_accessible_agent),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    require_agent_access(agent_id, current_user, db)
+    del access  # 僅做存取驗證
 
     query = db.query(AuditLog).filter(AuditLog.agent_id == agent_id)
     if action:

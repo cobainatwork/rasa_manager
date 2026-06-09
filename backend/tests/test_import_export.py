@@ -5,12 +5,38 @@ from __future__ import annotations
 
 import io
 import uuid
+from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import openpyxl
 import pytest
 
+from main import app
+from api.dependencies import get_accessible_agent
 from tests.conftest import AGENT_ID
+
+
+@contextmanager
+def _bypass_agent_access(agent: object | None = None, role: str | None = None):
+    """以 FastAPI dependency_overrides 取代舊 patch('require_agent_access') 模式。
+
+    取代：
+        with patch("api.routes.import_export.require_agent_access",
+                   return_value=(MagicMock(), None)):
+            ...
+
+    為：
+        with _bypass_agent_access():
+            ...
+    """
+    app.dependency_overrides[get_accessible_agent] = lambda: (
+        agent if agent is not None else MagicMock(),
+        role,
+    )
+    try:
+        yield
+    finally:
+        app.dependency_overrides.pop(get_accessible_agent, None)
 
 
 # ── 輔助：在記憶體建立測試用 xlsx ─────────────────────────────────────────────
@@ -102,7 +128,7 @@ class TestImportEndpoint:
         xlsx = _make_xlsx([["問題一", "答案一", "分類A", "tag1,tag2"]])
 
         with (
-            patch("api.routes.import_export.require_agent_access", return_value=(MagicMock(), None)),
+            _bypass_agent_access(),
             patch("api.routes.import_export._resolve_category_path", return_value=(uuid.uuid4(), False)),
         ):
             resp = client_superadmin.post(  # type: ignore[attr-defined]
@@ -119,7 +145,7 @@ class TestImportEndpoint:
     def test_wrong_file_type_rejected(
         self, client_superadmin: object, mock_db: MagicMock
     ) -> None:
-        with patch("api.routes.import_export.require_agent_access", return_value=(MagicMock(), None)):
+        with _bypass_agent_access():
             resp = client_superadmin.post(  # type: ignore[attr-defined]
                 f"/api/v1/agents/{AGENT_ID}/faqs/import",
                 files={"file": ("test.csv", b"q,a,c\n1,2,3", "text/csv")},
@@ -135,7 +161,7 @@ class TestImportEndpoint:
         xlsx = _make_xlsx([["Q_no_cat", "A_no_cat"]], headers=["question", "answer"])
 
         with (
-            patch("api.routes.import_export.require_agent_access", return_value=(MagicMock(), None)),
+            _bypass_agent_access(),
             patch("api.routes.import_export._get_or_create_default_category", return_value=uuid.uuid4()),
         ):
             resp = client_superadmin.post(  # type: ignore[attr-defined]
@@ -161,7 +187,7 @@ class TestImportEndpoint:
         xlsx = _make_xlsx([["問題一", "答案一", "分類A", ""]])
 
         with (
-            patch("api.routes.import_export.require_agent_access", return_value=(MagicMock(), None)),
+            _bypass_agent_access(),
             patch("api.routes.import_export._resolve_category_path", return_value=(uuid.uuid4(), False)),
         ):
             resp = client_superadmin.post(  # type: ignore[attr-defined]
@@ -185,7 +211,7 @@ class TestImportEndpoint:
         ])
 
         with (
-            patch("api.routes.import_export.require_agent_access", return_value=(MagicMock(), None)),
+            _bypass_agent_access(),
             patch("api.routes.import_export._resolve_category_path", return_value=(uuid.uuid4(), False)),
         ):
             resp = client_superadmin.post(  # type: ignore[attr-defined]
@@ -206,7 +232,7 @@ class TestImportEndpoint:
         xlsx = _make_xlsx([["新問題A", "新答案A", "分類X", ""]])
 
         with (
-            patch("api.routes.import_export.require_agent_access", return_value=(MagicMock(), None)),
+            _bypass_agent_access(),
             patch("api.routes.import_export._resolve_category_path", return_value=(uuid.uuid4(), False)),
         ):
             resp = client_superadmin.post(  # type: ignore[attr-defined]
@@ -244,7 +270,7 @@ class TestImportEndpoint:
         mock_db.add.side_effect = capture_add
 
         with (
-            patch("api.routes.import_export.require_agent_access", return_value=(MagicMock(), None)),
+            _bypass_agent_access(),
             patch("api.routes.import_export._resolve_category_path", return_value=(uuid.uuid4(), False)),
         ):
             resp = client_superadmin.post(  # type: ignore[attr-defined]
@@ -273,7 +299,7 @@ class TestImportEndpoint:
         mock_db.add.side_effect = lambda obj: added_items.append(obj)
 
         with (
-            patch("api.routes.import_export.require_agent_access", return_value=(MagicMock(), None)),
+            _bypass_agent_access(),
             patch("api.routes.import_export._resolve_category_path", return_value=(uuid.uuid4(), False)),
         ):
             resp = client_editor.post(  # type: ignore[attr-defined]
@@ -301,7 +327,7 @@ class TestImportEndpoint:
         ])
 
         with (
-            patch("api.routes.import_export.require_agent_access", return_value=(MagicMock(), None)),
+            _bypass_agent_access(),
             patch("api.routes.import_export._resolve_category_path", return_value=(uuid.uuid4(), False)),
         ):
             resp = client_superadmin.post(  # type: ignore[attr-defined]
@@ -337,7 +363,7 @@ class TestExportEndpoint:
         mock_db.commit = MagicMock()
 
         with (
-            patch("api.routes.import_export.require_agent_access", return_value=(MagicMock(), None)),
+            _bypass_agent_access(),
             patch("api.routes.import_export.build_category_path", return_value="分類A"),
             patch("api.routes.import_export._get_redis", side_effect=Exception("no redis in test")),
         ):
@@ -358,7 +384,7 @@ class TestExportEndpoint:
         mock_db.commit = MagicMock()
 
         with (
-            patch("api.routes.import_export.require_agent_access", return_value=(MagicMock(), None)),
+            _bypass_agent_access(),
             patch("api.routes.import_export._get_redis", side_effect=Exception("no redis in test")),
         ):
             resp = client_superadmin.get(  # type: ignore[attr-defined]
@@ -413,10 +439,7 @@ class TestImportSavepointRegression:
             return uuid.uuid4(), False
 
         with (
-            patch(
-                "api.routes.import_export.require_agent_access",
-                return_value=(MagicMock(), None),
-            ),
+            _bypass_agent_access(),
             patch(
                 "api.routes.import_export._resolve_category_path",
                 side_effect=fake_resolve,
@@ -496,10 +519,7 @@ class TestResolveCategoryPathNoCountRegression:
         ])
 
         with (
-            patch(
-                "api.routes.import_export.require_agent_access",
-                return_value=(MagicMock(), None),
-            ),
+            _bypass_agent_access(),
             patch(
                 "api.routes.import_export._resolve_category_path",
                 return_value=(uuid.uuid4(), False),
@@ -561,7 +581,7 @@ class TestExportCategoriesLoadedOnceRegression:
         mock_db.add = MagicMock()
         mock_db.commit = MagicMock()
 
-        with patch("api.routes.import_export.require_agent_access", return_value=(MagicMock(), None)):
+        with _bypass_agent_access():
             resp = client_superadmin.get(
                 f"/api/v1/agents/{AGENT_ID}/faqs/export"
             )
@@ -667,7 +687,7 @@ class TestExportCategoryEndpoint:
         self._make_db(mock_db, cat_id)
 
         with (
-            patch("api.routes.import_export.require_agent_access"),
+            _bypass_agent_access(),
             patch("api.routes.import_export._get_redis", side_effect=Exception("no redis in test")),
         ):
             resp = client_superadmin.get(  # type: ignore[attr-defined]
@@ -692,7 +712,7 @@ class TestExportCategoryEndpoint:
         self._make_db(mock_db, cat_id, faqs=[mock_faq])
 
         with (
-            patch("api.routes.import_export.require_agent_access"),
+            _bypass_agent_access(),
             patch("api.routes.import_export.build_category_path", return_value="測試分類"),
             patch("api.routes.import_export._get_redis", side_effect=Exception("no redis in test")),
         ):
@@ -716,7 +736,7 @@ class TestExportCategoryEndpoint:
         mock_db.add = MagicMock()
         mock_db.commit = MagicMock()
 
-        with patch("api.routes.import_export.require_agent_access"):
+        with _bypass_agent_access():
             resp = client_superadmin.get(  # type: ignore[attr-defined]
                 f"/api/v1/agents/{AGENT_ID}/categories/{cat_id}/export"
             )
@@ -777,7 +797,7 @@ class TestExportCategoryEndpoint:
         mock_db.commit = MagicMock()
 
         with (
-            patch("api.routes.import_export.require_agent_access"),
+            _bypass_agent_access(),
             patch("api.routes.import_export._get_redis", side_effect=Exception("no redis in test")),
         ):
             resp = client_superadmin.get(  # type: ignore[attr-defined]
@@ -849,7 +869,7 @@ class TestImportCategoryEndpoint:
             headers=["question", "answer"],
         )
 
-        with patch("api.routes.import_export.require_agent_access"):
+        with _bypass_agent_access():
             resp = client_superadmin.post(  # type: ignore[attr-defined]
                 f"/api/v1/agents/{AGENT_ID}/categories/{cat_id}/import",
                 files={"file": ("t.xlsx", xlsx,
@@ -869,7 +889,7 @@ class TestImportCategoryEndpoint:
         self._make_db(mock_db, cat_id)
         xlsx = _make_xlsx([["Q"]], headers=["question"])
 
-        with patch("api.routes.import_export.require_agent_access"):
+        with _bypass_agent_access():
             resp = client_superadmin.post(  # type: ignore[attr-defined]
                 f"/api/v1/agents/{AGENT_ID}/categories/{cat_id}/import",
                 files={"file": ("t.xlsx", xlsx,
@@ -910,7 +930,7 @@ class TestImportCategoryEndpoint:
         mock_db.begin_nested.return_value.__exit__ = MagicMock(return_value=False)
 
         xlsx = _make_xlsx([["問題一", "答案一"]], headers=["question", "answer"])
-        with patch("api.routes.import_export.require_agent_access"):
+        with _bypass_agent_access():
             resp = client_superadmin.post(  # type: ignore[attr-defined]
                 f"/api/v1/agents/{AGENT_ID}/categories/{cat_id}/import",
                 files={"file": ("t.xlsx", xlsx,
@@ -957,7 +977,7 @@ class TestImportCategoryEndpoint:
         mock_db.begin_nested.return_value.__exit__ = MagicMock(return_value=False)
 
         xlsx = _make_xlsx([["新問題", "新答案"]], headers=["question", "answer"])
-        with patch("api.routes.import_export.require_agent_access"):
+        with _bypass_agent_access():
             resp = client_superadmin.post(  # type: ignore[attr-defined]
                 f"/api/v1/agents/{AGENT_ID}/categories/{cat_id}/import?mode=replace",
                 files={"file": ("t.xlsx", xlsx,
@@ -976,7 +996,7 @@ class TestImportCategoryEndpoint:
         mock_db.delete = MagicMock()
 
         xlsx = _make_xlsx([["問題A", "答案A"]], headers=["question", "answer"])
-        with patch("api.routes.import_export.require_agent_access"):
+        with _bypass_agent_access():
             resp = client_superadmin.post(  # type: ignore[attr-defined]
                 f"/api/v1/agents/{AGENT_ID}/categories/{cat_id}/import",
                 files={"file": ("t.xlsx", xlsx,
@@ -995,7 +1015,7 @@ class TestImportCategoryEndpoint:
         mock_db.commit = MagicMock()
 
         xlsx = _make_xlsx([["Q", "A"]], headers=["question", "answer"])
-        with patch("api.routes.import_export.require_agent_access"):
+        with _bypass_agent_access():
             resp = client_superadmin.post(  # type: ignore[attr-defined]
                 f"/api/v1/agents/{AGENT_ID}/categories/{cat_id}/import",
                 files={"file": ("t.xlsx", xlsx,
@@ -1050,7 +1070,7 @@ class TestImportCategoryEndpoint:
         )
 
         with (
-            patch("api.routes.import_export.require_agent_access"),
+            _bypass_agent_access(),
             patch(
                 "api.routes.import_export._resolve_category_path",
                 return_value=(resolved_c_id, True),
@@ -1081,7 +1101,7 @@ class TestImportCategoryEndpoint:
 
         xlsx = _make_xlsx([["問題無Path", "答案無Path"]], headers=["question", "answer"])
         with (
-            patch("api.routes.import_export.require_agent_access"),
+            _bypass_agent_access(),
             patch("api.routes.import_export._resolve_category_path") as mock_resolve,
         ):
             resp = client_superadmin.post(  # type: ignore[attr-defined]
@@ -1157,7 +1177,7 @@ class TestImportCategorySubcategoryRegression:
 
         xlsx = _make_xlsx([["問題子分類A", "答案子分類A"]], headers=["question", "answer"])
 
-        with patch("api.routes.import_export.require_agent_access"):
+        with _bypass_agent_access():
             resp = client_superadmin.post(  # type: ignore[attr-defined]
                 f"/api/v1/agents/{AGENT_ID}/categories/{sub_id}/import",
                 files={"file": ("t.xlsx", xlsx,
@@ -1215,7 +1235,7 @@ class TestImportCategorySubcategoryRegression:
 
         xlsx = _make_xlsx([["新問題子分類B", "新答案子分類B"]], headers=["question", "answer"])
 
-        with patch("api.routes.import_export.require_agent_access"):
+        with _bypass_agent_access():
             resp = client_superadmin.post(  # type: ignore[attr-defined]
                 f"/api/v1/agents/{AGENT_ID}/categories/{sub_id}/import?mode=replace",
                 files={"file": ("t.xlsx", xlsx,

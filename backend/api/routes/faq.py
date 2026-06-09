@@ -21,12 +21,13 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from api.database.models import (
+    Agent,
     KnowledgeItem,
     KnowledgeItemHistory,
     User,
 )
 from api.database.session import get_db
-from api.dependencies import get_current_user, require_agent_access
+from api.dependencies import get_accessible_agent, get_current_user
 from api.errors import (
     raise_forbidden,
     raise_locked,
@@ -186,10 +187,10 @@ def list_faqs(
     q: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
-    current_user: User = Depends(get_current_user),
+    access: tuple[Agent, str | None] = Depends(get_accessible_agent),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    require_agent_access(agent_id, current_user, db)
+    del access  # 僅做存取驗證
 
     query = db.query(KnowledgeItem).filter(KnowledgeItem.agent_id == agent_id)
     if category_id:
@@ -242,11 +243,11 @@ def list_faq_ids(
     category_id: Optional[uuid.UUID] = Query(None),
     status_filter: Optional[str] = Query(None, alias="status"),
     q: Optional[str] = Query(None),
-    current_user: User = Depends(get_current_user),
+    access: tuple[Agent, str | None] = Depends(get_accessible_agent),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """回傳符合條件的全部 FAQ ID（不分頁），供前端「全選分類」功能使用。"""
-    require_agent_access(agent_id, current_user, db)
+    del access  # 僅做存取驗證
 
     query = db.query(KnowledgeItem.id).filter(KnowledgeItem.agent_id == agent_id)
     if category_id:
@@ -267,10 +268,10 @@ def list_faq_ids(
 def get_faq(
     agent_id: uuid.UUID,
     faq_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
+    access: tuple[Agent, str | None] = Depends(get_accessible_agent),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    require_agent_access(agent_id, current_user, db)
+    del access  # 僅做存取驗證
 
     item = _get_faq_or_404(db, agent_id, faq_id)
 
@@ -288,10 +289,11 @@ def get_faq(
 def create_faq(
     agent_id: uuid.UUID,
     body: FaqCreate,
+    access: tuple[Agent, str | None] = Depends(get_accessible_agent),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    require_agent_access(agent_id, current_user, db)
+    del access  # 僅做存取驗證
 
     # Superadmin 建立時自動核准（跳過 pending）
     initial_status = "approved" if current_user.is_superadmin else "draft"
@@ -336,10 +338,11 @@ def update_faq(
     agent_id: uuid.UUID,
     faq_id: uuid.UUID,
     body: FaqPatch,
+    access: tuple[Agent, str | None] = Depends(get_accessible_agent),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    require_agent_access(agent_id, current_user, db)
+    del access  # 僅做存取驗證
 
     # with_for_update() 確保取得鎖定後再進行鎖衝突判斷，消除 TOCTOU 競態
     item = _get_faq_for_update_or_404(db, agent_id, faq_id)
@@ -396,10 +399,12 @@ def update_faq_status(
     agent_id: uuid.UUID,
     faq_id: uuid.UUID,
     body: FaqStatusPatch,
+    access: tuple[Agent, str | None] = Depends(get_accessible_agent),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    agent, role = require_agent_access(agent_id, current_user, db)
+    agent, role = access
+    del agent  # 僅取 role 用於狀態機判定
 
     # I16：寫入路徑加 with_for_update，避免兩個並發 PATCH /status 同時通過狀態機檢查
     item = _get_faq_for_update_or_404(db, agent_id, faq_id)
@@ -450,10 +455,11 @@ def update_faq_status(
 def acquire_lock(
     agent_id: uuid.UUID,
     faq_id: uuid.UUID,
+    access: tuple[Agent, str | None] = Depends(get_accessible_agent),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    require_agent_access(agent_id, current_user, db)
+    del access  # 僅做存取驗證
 
     # I16：取鎖必須 with_for_update，避免兩個並發 acquire 都看到 locked_by=None 都成功取鎖
     item = _get_faq_for_update_or_404(db, agent_id, faq_id)
@@ -473,10 +479,11 @@ def acquire_lock(
 def extend_lock(
     agent_id: uuid.UUID,
     faq_id: uuid.UUID,
+    access: tuple[Agent, str | None] = Depends(get_accessible_agent),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    require_agent_access(agent_id, current_user, db)
+    del access  # 僅做存取驗證
 
     # I16：寫入路徑加 with_for_update
     item = _get_faq_for_update_or_404(db, agent_id, faq_id)
@@ -496,10 +503,11 @@ def extend_lock(
 def release_lock(
     agent_id: uuid.UUID,
     faq_id: uuid.UUID,
+    access: tuple[Agent, str | None] = Depends(get_accessible_agent),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> None:
-    require_agent_access(agent_id, current_user, db)
+    del access  # 僅做存取驗證
 
     # I16：寫入路徑加 with_for_update
     item = _get_faq_for_update_or_404(db, agent_id, faq_id)
@@ -525,10 +533,12 @@ def release_lock(
 def delete_faq(
     agent_id: uuid.UUID,
     faq_id: uuid.UUID,
+    access: tuple[Agent, str | None] = Depends(get_accessible_agent),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> None:
-    agent, role = require_agent_access(agent_id, current_user, db)
+    agent, role = access
+    del agent  # 僅取 role 用於授權判定
 
     item = _get_faq_or_404(db, agent_id, faq_id)
 
@@ -566,10 +576,10 @@ def delete_faq(
 def get_histories(
     agent_id: uuid.UUID,
     faq_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
+    access: tuple[Agent, str | None] = Depends(get_accessible_agent),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    require_agent_access(agent_id, current_user, db)
+    del access  # 僅做存取驗證
 
     _get_faq_or_404(db, agent_id, faq_id)
 
@@ -607,10 +617,11 @@ def rollback_faq(
     agent_id: uuid.UUID,
     faq_id: uuid.UUID,
     body: RollbackRequest,
+    access: tuple[Agent, str | None] = Depends(get_accessible_agent),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    require_agent_access(agent_id, current_user, db)
+    del access  # 僅做存取驗證
 
     # I16：rollback 為寫入路徑，加 with_for_update
     item = _get_faq_for_update_or_404(db, agent_id, faq_id)
