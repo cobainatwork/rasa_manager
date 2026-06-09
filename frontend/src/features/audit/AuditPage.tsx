@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { History } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -25,7 +25,7 @@ export function AuditPage() {
   const { data, loading, perPage } = useAuditLog(id, page)
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / perPage)) : 1
-  const grouped = data ? groupByDay(data.items) : new Map()
+  const grouped = useMemo(() => data ? groupByDay(data.items) : new Map<string, AuditLogEntry[]>(), [data])
 
   return (
     <div className="p-8 max-w-4xl">

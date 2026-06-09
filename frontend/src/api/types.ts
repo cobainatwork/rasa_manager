@@ -6,6 +6,14 @@ export interface ApiSuccess<T> {
   message?: string
 }
 
+// 分頁列表共用結構。各端點具體型別以 `Paginated<T>` 衍生（如 FaqListResponse）。
+export interface Paginated<T> {
+  items: T[]
+  total: number
+  page: number
+  per_page: number
+}
+
 export interface ApiError {
   success: false
   error: { code: string; message: string }
@@ -72,12 +80,7 @@ export interface Faq {
   updated_at: string | null
 }
 
-export interface FaqListResponse {
-  items: Faq[]
-  total: number
-  page: number
-  per_page: number
-}
+export type FaqListResponse = Paginated<Faq>
 
 export interface FaqHistory {
   id: string
@@ -122,12 +125,7 @@ export interface AuditLogEntry {
   created_at: string | null
 }
 
-export interface AuditLogList {
-  items: AuditLogEntry[]
-  total: number
-  page: number
-  per_page: number
-}
+export type AuditLogList = Paginated<AuditLogEntry>
 
 export interface ChatMessage {
   recipient_id?: string

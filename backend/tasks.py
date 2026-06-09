@@ -283,21 +283,16 @@ def run_ingestion_sync(self, agent_id: str, sync_log_id: str) -> None:  # type: 
 
         # ── 無資料提前結束（避免以空 txt 清空 Qdrant collection）──────────────
         if not blocks:
-            finished_at = datetime.now(timezone.utc)
-            started_at = sync_log.started_at
-            if started_at and started_at.tzinfo is None:
-                started_at = started_at.replace(tzinfo=timezone.utc)
-            sync_log.status = "completed"
-            sync_log.items_count = 0
-            sync_log.stdout = (
-                "此 Agent 目前無 approved 或 synced 狀態的 FAQ，略過同步。"
-                "請先將 FAQ 審核通過後再執行同步。"
+            _finalize_sync_log_completed(
+                db,
+                sync_log,
+                items_count=0,
+                stdout_data=(
+                    "此 Agent 目前無 approved 或 synced 狀態的 FAQ，略過同步。"
+                    "請先將 FAQ 審核通過後再執行同步。"
+                ),
+                stderr_data="",
             )
-            sync_log.finished_at = finished_at
-            sync_log.duration_sec = (
-                int((finished_at - started_at).total_seconds()) if started_at else None
-            )
-            db.commit()
             return
 
         txt_content = "\n\n".join(blocks)

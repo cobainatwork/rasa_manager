@@ -13,7 +13,6 @@ from typing import Any, Optional
 import structlog
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from jose import JWTError
-from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
 from api.database.models import User
@@ -35,6 +34,7 @@ from api.security.jwt import (
     create_refresh_token,
     decode_token_raw,
 )
+from api.security.password import pwd_context as _pwd_context
 from jose import jwt as _jose_jwt
 
 # 對外 re-export，保持向下相容（既有測試 / 工具仍可從本模組 import）。
@@ -65,8 +65,6 @@ logger = structlog.get_logger()
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
 IS_SECURE = os.environ.get("COOKIE_SECURE", "false").lower() == "true"
-
-_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12)
 
 
 def _set_auth_cookies(response: Response, access_token: str, refresh_token: str) -> None:

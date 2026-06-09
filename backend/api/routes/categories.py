@@ -31,13 +31,21 @@ router = APIRouter(tags=["categories"])
 def _build_tree(
     rows: list[dict[str, Any]], parent_id: Optional[uuid.UUID] = None
 ) -> list[dict[str, Any]]:
-    result = []
+    """以 children_by_parent 索引一次性建樹（O(N)），取代原本逐層 filter（O(N²)）。"""
+    children_by_parent: dict[Optional[uuid.UUID], list[dict[str, Any]]] = {}
     for row in rows:
-        if row["parent_id"] == parent_id:
+        children_by_parent.setdefault(row["parent_id"], []).append(row)
+
+    def _attach(pid: Optional[uuid.UUID]) -> list[dict[str, Any]]:
+        nodes = children_by_parent.get(pid, [])
+        result = []
+        for row in nodes:
             node = dict(row)
-            node["children"] = _build_tree(rows, row["id"])
+            node["children"] = _attach(row["id"])
             result.append(node)
-    return sorted(result, key=lambda x: x["sort_order"])
+        return sorted(result, key=lambda x: x["sort_order"])
+
+    return _attach(parent_id)
 
 
 def _collect_descendants_recursive(

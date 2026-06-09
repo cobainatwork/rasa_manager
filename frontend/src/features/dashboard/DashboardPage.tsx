@@ -1,5 +1,5 @@
 import { useParams } from 'react-router-dom'
-import { useDashboardStats } from './useDashboardStats'
+import { useAgentStats } from '@/features/agents/useAgentStats'
 import { KpiGrid } from './KpiGrid'
 import { PendingTasksPanel } from './PendingTasksPanel'
 import { ActivityFeed } from './ActivityFeed'
@@ -7,7 +7,7 @@ import { QuickActions } from './QuickActions'
 
 export function DashboardPage() {
   const { id } = useParams<{ id: string }>()
-  const { stats, loading } = useDashboardStats(id)
+  const { stats, loading } = useAgentStats(id)
 
   return (
     <div className="p-8 max-w-6xl mx-auto space-y-6">

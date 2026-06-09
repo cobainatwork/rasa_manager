@@ -15,13 +15,11 @@ import os
 import sys
 import uuid
 
-from passlib.context import CryptContext
 from sqlalchemy import text
 
 from api.database.session import SessionLocal
+from api.security.password import pwd_context as _pwd_context
 from api.security.password import validate_password_strength
-
-_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12)
 
 
 def _validate_password(password: str) -> None:

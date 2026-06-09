@@ -67,32 +67,13 @@ def _validate_qdrant_collection(v: str) -> str:
 _EMBEDDING_PROVIDER_PATTERN = "^(openai|local)$"
 
 
-class AgentCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=100)
-    qdrant_collection: str = Field(..., min_length=1, max_length=255)
-    txt_output_path: str = Field(..., min_length=1, max_length=255)
-    rasa_rest_url: Optional[str] = Field(None, max_length=255)
-    ingest_script_path: Optional[str] = Field(None, max_length=255)
-    # 既有 agent 預設 OpenAI 雲端，建立新 agent 時也以此為預設。
-    embedding_provider: str = Field(
-        "openai", pattern=_EMBEDDING_PROVIDER_PATTERN, max_length=20
-    )
-    embedding_model: str = Field(
-        "text-embedding-3-small", min_length=1, max_length=100
-    )
+class _AgentBase(BaseModel):
+    """共用 Agent 欄位 + validator。子類別控制 required / optional 行為。
 
-    @field_validator("rasa_rest_url", mode="before")
-    @classmethod
-    def validate_rasa_url(cls, v: object) -> object:
-        return _validate_rasa_url(v if isinstance(v, str) or v is None else str(v))
+    注意：Pydantic v2 中 `@field_validator` 隨欄位名綁定，子類別只要保留同名欄位就會
+    自動繼承 validator；故此處集中宣告，不需在 AgentCreate / AgentUpdate 重複貼上。
+    """
 
-    @field_validator("qdrant_collection", mode="before")
-    @classmethod
-    def validate_qdrant_collection(cls, v: object) -> object:
-        return _validate_qdrant_collection(str(v) if not isinstance(v, str) else v)
-
-
-class AgentUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     qdrant_collection: Optional[str] = Field(None, min_length=1, max_length=255)
     txt_output_path: Optional[str] = Field(None, min_length=1, max_length=255)
@@ -114,6 +95,25 @@ class AgentUpdate(BaseModel):
         if v is None:
             return v
         return _validate_qdrant_collection(str(v) if not isinstance(v, str) else v)
+
+
+class AgentCreate(_AgentBase):
+    # 建立 Agent：name / qdrant_collection / txt_output_path 必填，
+    # embedding_* 預設值對齊舊行為（OpenAI text-embedding-3-small）。
+    name: str = Field(..., min_length=1, max_length=100)
+    qdrant_collection: str = Field(..., min_length=1, max_length=255)
+    txt_output_path: str = Field(..., min_length=1, max_length=255)
+    embedding_provider: str = Field(
+        "openai", pattern=_EMBEDDING_PROVIDER_PATTERN, max_length=20
+    )
+    embedding_model: str = Field(
+        "text-embedding-3-small", min_length=1, max_length=100
+    )
+
+
+class AgentUpdate(_AgentBase):
+    # PATCH 端點：所有欄位 Optional，None 代表「不更新」。沿用 _AgentBase 的型別簽名。
+    pass
 
 
 class RoleAssignRequest(BaseModel):

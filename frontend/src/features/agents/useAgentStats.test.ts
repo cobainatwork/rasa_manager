@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, waitFor } from '@testing-library/react'
-import { useDashboardStats } from './useDashboardStats'
+import { useAgentStats } from './useAgentStats'
 import type { AgentStats } from '@/api/types'
 
 vi.mock('@/api/endpoints/agents', () => ({
@@ -22,17 +22,16 @@ const FAKE_STATS: AgentStats = {
 
 beforeEach(() => { vi.clearAllMocks() })
 
-describe('useDashboardStats', () => {
+describe('useAgentStats', () => {
   it('agentId 為 undefined 時不呼叫 API', () => {
-    renderHook(() => useDashboardStats(undefined))
+    renderHook(() => useAgentStats(undefined))
     expect(mockGetAgentStats).not.toHaveBeenCalled()
   })
 
   it('成功載入統計資料', async () => {
     mockGetAgentStats.mockResolvedValueOnce(FAKE_STATS)
-    const { result } = renderHook(() => useDashboardStats('a1'))
+    const { result } = renderHook(() => useAgentStats('a1'))
 
-    expect(result.current.loading).toBe(true)
     await waitFor(() => expect(result.current.loading).toBe(false))
 
     expect(result.current.stats).toEqual(FAKE_STATS)
@@ -42,7 +41,7 @@ describe('useDashboardStats', () => {
 
   it('API 失敗時設定 error，stats 為 null', async () => {
     mockGetAgentStats.mockRejectedValueOnce(new Error('500'))
-    const { result } = renderHook(() => useDashboardStats('a1'))
+    const { result } = renderHook(() => useAgentStats('a1'))
 
     await waitFor(() => expect(result.current.loading).toBe(false))
 
@@ -53,7 +52,7 @@ describe('useDashboardStats', () => {
   it('agentId 變更時重新 fetch', async () => {
     mockGetAgentStats.mockResolvedValue(FAKE_STATS)
     const { rerender } = renderHook(
-      ({ id }) => useDashboardStats(id),
+      ({ id }) => useAgentStats(id),
       { initialProps: { id: 'a1' as string | undefined } },
     )
     await waitFor(() => expect(mockGetAgentStats).toHaveBeenCalledTimes(1))

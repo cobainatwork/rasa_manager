@@ -1,14 +1,29 @@
 """
-密碼強度驗證集中化。
+密碼強度驗證 + bcrypt context 集中化。
 
-規格 §五.6：最小 8 字元、需含大寫 + 小寫 + 數字。
+規格 §五.6：最小 8 字元、需含大寫 + 小寫 + 數字；Bcrypt cost factor = 12。
 單一函式以 ValueError 標示違規，由呼叫端自行轉換為 HTTPException 或 sys.exit。
 """
 from __future__ import annotations
 
 import re
 
+from passlib.context import CryptContext
+
 MIN_LENGTH: int = 8
+
+# 共用的 bcrypt context。auth / users / seed 三處原各自實例化，集中於此避免漂移。
+pwd_context: CryptContext = CryptContext(
+    schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12
+)
+
+
+def hash_password(password: str) -> str:
+    return pwd_context.hash(password)
+
+
+def verify_password(password: str, password_hash: str) -> bool:
+    return pwd_context.verify(password, password_hash)
 
 
 def validate_password_strength(password: str) -> None:

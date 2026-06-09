@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Lock } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
@@ -13,7 +14,7 @@ interface Props {
   onToggleCheck: (id: string) => void
 }
 
-export function FaqListRow({ faq, selected, checked, onSelect, onToggleCheck }: Props) {
+export const FaqListRow = memo(function FaqListRow({ faq, selected, checked, onSelect, onToggleCheck }: Props) {
   return (
     <div
       role="button"
@@ -61,4 +62,4 @@ export function FaqListRow({ faq, selected, checked, onSelect, onToggleCheck }: 
       </span>
     </div>
   )
-}
+})

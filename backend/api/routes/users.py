@@ -6,17 +6,16 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
 from api.database.models import User
 from api.database.session import get_db
 from api.dependencies import get_current_superadmin
 from api.schemas import ResetPasswordRequest, UserCreate, UserUpdate
+from api.security.password import pwd_context as _pwd_context
 from api.security.password import validate_password_strength
 
 router = APIRouter(prefix="/api/v1/users", tags=["users"])
-_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12)
 
 
 def _validate_password(password: str) -> None:

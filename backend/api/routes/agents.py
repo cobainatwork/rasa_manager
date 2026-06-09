@@ -11,21 +11,15 @@ from sqlalchemy.orm import Session
 
 from api.database.models import Agent, Category, KnowledgeItem, User, UserAgentRole
 from api.database.session import get_db
-from api.dependencies import get_current_superadmin, get_current_user, require_agent_access
+from api.dependencies import (
+    _get_agent_or_404,
+    get_current_superadmin,
+    get_current_user,
+    require_agent_access,
+)
 from api.schemas import AgentCreate, AgentUpdate, RoleAssignRequest
 
 router = APIRouter(prefix="/api/v1/agents", tags=["agents"])
-
-
-def _get_agent_or_404(db: Session, agent_id: uuid.UUID) -> Agent:
-    """模組層級樣板：找不到 Agent 拋 404，不混入權限檢查。"""
-    agent = db.query(Agent).filter(Agent.id == agent_id).first()
-    if not agent:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "NOT_FOUND", "message": "Agent 不存在"},
-        )
-    return agent
 
 
 def _agent_to_dict(agent: Agent) -> dict:  # type: ignore[type-arg]
@@ -105,7 +99,7 @@ def update_agent(
     current_user: User = Depends(get_current_superadmin),
     db: Session = Depends(get_db),
 ) -> dict:  # type: ignore[type-arg]
-    agent = _get_agent_or_404(db, agent_id)
+    agent = _get_agent_or_404(agent_id, db)
     # name / txt_output_path / qdrant_collection 為必填欄位，null 代表「不更新」
     if body.name is not None:
         agent.name = body.name
@@ -135,7 +129,7 @@ def delete_agent(
     current_user: User = Depends(get_current_superadmin),
     db: Session = Depends(get_db),
 ) -> None:
-    agent = _get_agent_or_404(db, agent_id)
+    agent = _get_agent_or_404(agent_id, db)
     has_items = (
         db.query(KnowledgeItem).filter(KnowledgeItem.agent_id == agent_id).first()
     )
@@ -202,7 +196,7 @@ def assign_role(
     current_user: User = Depends(get_current_superadmin),
     db: Session = Depends(get_db),
 ) -> dict:  # type: ignore[type-arg]
-    _get_agent_or_404(db, agent_id)
+    _get_agent_or_404(agent_id, db)
     target_user = db.query(User).filter(User.id == body.user_id).first()
     if not target_user:
         raise HTTPException(
