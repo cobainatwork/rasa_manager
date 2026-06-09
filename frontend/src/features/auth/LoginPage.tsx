@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { PasswordInput } from './PasswordInput'
 import { useLogin } from './useLogin'
+import { AppLogo } from '@/components/AppLogo'
 
 const schema = z.object({
   username: z.string().min(1, '請輸入帳號'),
@@ -38,9 +39,8 @@ export function LoginPage() {
       {/* 右側登入表單 */}
       <main className="flex-1 flex items-center justify-center p-8">
         <div className="w-full max-w-sm">
-          <div className="lg:hidden flex items-center gap-3 mb-8">
-            <img src="/hualiteq.png" alt="Hualiteq" className="w-10 h-10 object-contain" />
-            <span className="text-xl font-semibold">Hualiteq KB</span>
+          <div className="lg:hidden mb-8">
+            <AppLogo size="lg" />
           </div>
 
           <h1 className="text-2xl font-bold mb-2">歡迎回來</h1>
