@@ -1,26 +1,19 @@
-import { useEffect, useState } from 'react'
 import { getAgentStats } from '@/api/endpoints/agents'
-import { extractErrorMessage } from '@/api/client'
 import type { AgentStats } from '@/api/types'
+import { useApiResource } from '@/hooks/useApiResource'
 
 export function useAgentStats(agentId: string | undefined) {
-  const [stats, setStats] = useState<AgentStats | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const { data, loading, error } = useApiResource<AgentStats | null>(
+    () => (agentId ? getAgentStats(agentId) : Promise.resolve(null)),
+    [agentId],
+    {
+      initialLoading: false,
+      fallback: null,
+      logError: true,
+      logPrefix: '[useAgentStats]',
+      skip: !agentId,
+    },
+  )
 
-  useEffect(() => {
-    if (!agentId) return
-    setLoading(true)
-    setError(null)
-    getAgentStats(agentId)
-      .then(setStats)
-      .catch((err) => {
-        console.error('[useAgentStats]', err)
-        setError(extractErrorMessage(err))
-        setStats(null)
-      })
-      .finally(() => setLoading(false))
-  }, [agentId])
-
-  return { stats, loading, error }
+  return { stats: data, loading, error }
 }

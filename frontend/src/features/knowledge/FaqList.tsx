@@ -24,6 +24,7 @@ import * as api from '@/api/endpoints/faqs'
 import { listFaqIds } from '@/api/endpoints/faqs'  // 全選分類用
 import { extractErrorMessage } from '@/api/client'
 import { toast } from 'sonner'
+import { runWithToast } from '@/lib/runWithToast'
 import type { Faq } from '@/api/types'
 
 interface Props {
@@ -78,19 +79,17 @@ export function FaqList({ agentId, selectedFaqId, onSelectFaq, onNewFaq, canAdd 
 
   async function selectAllCategory() {
     if (loadingAllIds || !agentId) return
-    setLoadingAllIds(true)
-    try {
-      const ids = await listFaqIds(agentId, {
+    await runWithToast(
+      () => listFaqIds(agentId, {
         status: filters.status || undefined,
         category_id: filters.category_id || undefined,
         q: filters.q || undefined,
-      })
-      setChecked(new Set(ids))
-    } catch (err) {
-      toast.error(extractErrorMessage(err))
-    } finally {
-      setLoadingAllIds(false)
-    }
+      }),
+      {
+        busy: setLoadingAllIds,
+        onSuccess: (ids) => { setChecked(new Set(ids)) },
+      },
+    )
   }
 
   function refreshList() {

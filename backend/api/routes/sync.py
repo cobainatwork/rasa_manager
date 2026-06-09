@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
@@ -19,6 +19,7 @@ from api.dependencies import (
     get_current_user,
     require_reviewer_or_superadmin,
 )
+from api.errors import raise_not_found
 
 logger = structlog.get_logger()
 
@@ -106,10 +107,7 @@ def trigger_category_sync(
         .first()
     )
     if not cat:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "NOT_FOUND", "message": "分類不存在"},
-        )
+        raise_not_found("分類不存在")
 
     sync_log = SyncLog(
         id=uuid.uuid4(),
@@ -218,10 +216,7 @@ def get_sync_status(
 ) -> dict:  # type: ignore[type-arg]
     sync_log = db.query(SyncLog).filter(SyncLog.id == sync_log_id).first()
     if not sync_log:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "NOT_FOUND", "message": "同步記錄不存在"},
-        )
+        raise_not_found("同步記錄不存在")
 
     return {
         "success": True,

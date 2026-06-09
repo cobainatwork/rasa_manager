@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import * as api from '@/api/endpoints/sync'
-import { extractErrorMessage } from '@/api/client'
-import { toast } from 'sonner'
+import { runWithToast } from '@/lib/runWithToast'
 import type { SyncLog } from '@/api/types'
 
 const POLL_INTERVAL = 2000
@@ -12,17 +11,17 @@ export function useSyncTrigger(agentId: string | undefined) {
 
   async function trigger() {
     if (!agentId) return
-    setTriggering(true)
-    try {
-      const { sync_log_id } = await api.triggerSync(agentId)
-      const detail = await api.getSyncStatus(sync_log_id)
-      setActiveLog(detail)
-      toast.success('同步任務已觸發')
-    } catch (err) {
-      toast.error(extractErrorMessage(err))
-    } finally {
-      setTriggering(false)
-    }
+    await runWithToast(
+      async () => {
+        const { sync_log_id } = await api.triggerSync(agentId)
+        return api.getSyncStatus(sync_log_id)
+      },
+      {
+        success: '同步任務已觸發',
+        busy: setTriggering,
+        onSuccess: (detail) => { setActiveLog(detail) },
+      },
+    )
   }
 
   // 輪詢進行中任務

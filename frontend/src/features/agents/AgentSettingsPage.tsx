@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils'
 import { listAgents, updateAgent, deleteAgent, testConnection, validateScript } from '@/api/endpoints/agents'
 import { extractErrorMessage } from '@/api/client'
 import { toast } from 'sonner'
+import { runWithToast } from '@/lib/runWithToast'
 import { DangerZone } from './DangerZone'
 import { AgentIntegrationFields } from './AgentIntegrationFields'
 import { agentEditSchema, type AgentEditFormData as FormData } from './agentFormSchema'
@@ -56,53 +57,52 @@ export function AgentSettingsPage() {
 
   async function onSubmit(data: FormData) {
     if (!id) return
-    try {
-      // schema 已 transform 空字串為 null（rasa_rest_url / ingest_script_path）
-      await updateAgent(id, data)
-      toast.success('已儲存')
-      reset(data)
-    } catch (err) {
-      toast.error(extractErrorMessage(err))
-    }
+    // schema 已 transform 空字串為 null（rasa_rest_url / ingest_script_path）
+    const r = await runWithToast(
+      () => updateAgent(id, data),
+      { success: '已儲存' },
+    )
+    if (r.ok) reset(data)
   }
 
   async function handleTestConnection() {
     if (!id) return
-    setTestingConn(true)
-    try {
-      const result = await testConnection(id)
-      if (result.ok) toast.success(`連線成功（${result.latency_ms}ms）`)
-      else toast.error(`連線失敗：${result.error ?? `HTTP ${result.status_code}`}`)
-    } catch (err) {
-      toast.error(extractErrorMessage(err))
-    } finally {
-      setTestingConn(false)
-    }
+    await runWithToast(
+      () => testConnection(id),
+      {
+        busy: setTestingConn,
+        onSuccess: (result) => {
+          if (result.ok) toast.success(`連線成功（${result.latency_ms}ms）`)
+          else toast.error(`連線失敗：${result.error ?? `HTTP ${result.status_code}`}`)
+        },
+      },
+    )
   }
 
   async function handleValidateScript() {
     if (!id) return
-    setValidatingScript(true)
-    try {
-      const result = await validateScript(id)
-      if (result.exists && result.executable) toast.success(`腳本存在（${result.size_bytes} bytes）`)
-      else toast.error(result.error ?? `腳本問題：exists=${result.exists}, executable=${result.executable}`)
-    } catch (err) {
-      toast.error(extractErrorMessage(err))
-    } finally {
-      setValidatingScript(false)
-    }
+    await runWithToast(
+      () => validateScript(id),
+      {
+        busy: setValidatingScript,
+        onSuccess: (result) => {
+          if (result.exists && result.executable) {
+            toast.success(`腳本存在（${result.size_bytes} bytes）`)
+          } else {
+            toast.error(result.error ?? `腳本問題：exists=${result.exists}, executable=${result.executable}`)
+          }
+        },
+      },
+    )
   }
 
   async function handleDelete() {
     if (!id) return
-    try {
-      await deleteAgent(id)
-      toast.success('Agent 已刪除')
-      navigate('/agents')
-    } catch (err) {
-      toast.error(extractErrorMessage(err))
-    }
+    const r = await runWithToast(
+      () => deleteAgent(id),
+      { success: 'Agent 已刪除' },
+    )
+    if (r.ok) navigate('/agents')
   }
 
   if (loading) return <div className="p-8"><Skeleton className="h-96" /></div>

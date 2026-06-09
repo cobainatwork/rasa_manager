@@ -1,7 +1,6 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import * as api from '@/api/endpoints/users'
-import { extractErrorMessage } from '@/api/client'
-import { toast } from 'sonner'
+import { runWithToast } from '@/lib/runWithToast'
 import type { Agent } from '@/api/types'
 
 type RoleValue = 'editor' | 'reviewer' | 'none'
@@ -15,18 +14,13 @@ interface Props {
 
 export function AgentRoleRow({ user_id, agent, currentRole, onChanged }: Props) {
   async function handleChange(next: RoleValue) {
-    try {
-      if (next === 'none') {
-        await api.removeRole(user_id, agent.id)
-        toast.success(`已移除 ${agent.name} 角色`)
-      } else {
-        await api.assignRole(user_id, agent.id, next)
-        toast.success(`已設為 ${next}`)
-      }
-      onChanged()
-    } catch (err) {
-      toast.error(extractErrorMessage(err))
-    }
+    const r = await runWithToast(
+      () => next === 'none'
+        ? api.removeRole(user_id, agent.id)
+        : api.assignRole(user_id, agent.id, next),
+      { success: next === 'none' ? `已移除 ${agent.name} 角色` : `已設為 ${next}` },
+    )
+    if (r.ok) onChanged()
   }
 
   return (

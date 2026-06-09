@@ -6,9 +6,9 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import * as api from '@/api/endpoints/faqs'
-import { extractErrorMessage } from '@/api/client'
 import { toast } from 'sonner'
 import { useAuthStore } from '@/store/useAuthStore'
+import { runWithToast } from '@/lib/runWithToast'
 import type { Faq } from '@/api/types'
 
 interface Props {
@@ -24,10 +24,11 @@ export function StatusActions({ agentId, faq, onChanged, onDeleted }: Props) {
   const [busy, setBusy] = useState(false)
 
   async function call(fn: () => Promise<unknown>, success: string, onSuccess?: () => void) {
-    setBusy(true)
-    try { await fn(); toast.success(success); (onSuccess ?? onChanged)() }
-    catch (err) { toast.error(extractErrorMessage(err)) }
-    finally { setBusy(false) }
+    await runWithToast(fn, {
+      success,
+      busy: setBusy,
+      onSuccess: () => { (onSuccess ?? onChanged)() },
+    })
   }
 
   return (

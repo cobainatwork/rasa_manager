@@ -17,18 +17,24 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from api.database.models import (
-    AuditLog,
     KnowledgeItem,
     KnowledgeItemHistory,
     User,
 )
 from api.database.session import get_db
 from api.dependencies import get_current_user, require_agent_access
+from api.errors import (
+    raise_forbidden,
+    raise_locked,
+    raise_not_found,
+    raise_validation_error,
+)
 from api.schemas import FaqCreate, FaqPatch, FaqStatusPatch, RollbackRequest
+from api.services.audit import record_audit
 
 logger = structlog.get_logger()
 
@@ -79,10 +85,7 @@ def _get_faq_or_404(
         .first()
     )
     if not item:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "NOT_FOUND", "message": "FAQ 不存在"},
-        )
+        raise_not_found("FAQ 不存在")
     return item
 
 
@@ -97,10 +100,7 @@ def _get_faq_for_update_or_404(
         .first()
     )
     if not item:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "NOT_FOUND", "message": "FAQ 不存在"},
-        )
+        raise_not_found("FAQ 不存在")
     return item
 
 
@@ -174,25 +174,6 @@ def _record_history(
         action_reason=reason,
     )
     db.add(history)
-
-
-def _record_audit(
-    db: Session,
-    agent_id: Any,
-    item_id: Any,
-    action: str,
-    performed_by: Any,
-    diff: Optional[dict[str, Any]] = None,
-) -> None:
-    audit = AuditLog(
-        id=uuid.uuid4(),
-        agent_id=agent_id,
-        item_id=item_id,
-        action=action,
-        performed_by=performed_by,
-        diff=diff,
-    )
-    db.add(audit)
 
 
 # ── FAQ CRUD ──────────────────────────────────────────────────────────────
@@ -330,7 +311,13 @@ def create_faq(
     db.flush()  # 取得 item.id
 
     _record_history(db, item, "created", current_user.id)
-    _record_audit(db, agent_id, item.id, "create", current_user.id)
+    record_audit(
+        db,
+        agent_id=agent_id,
+        item_id=item.id,
+        action="create",
+        user_id=current_user.id,
+    )
 
     db.commit()
     db.refresh(item)
@@ -360,10 +347,7 @@ def update_faq(
     # Lazy Expire 後檢查鎖
     _lazy_clear_lock(item, db)
     if item.locked_by and item.locked_by != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={"code": "LOCKED", "message": "FAQ 正在被他人編輯中"},
-        )
+        raise_locked("FAQ 正在被他人編輯中")
 
     diff: dict[str, Any] = {}
     if body.question is not None and body.question != item.question:
@@ -391,7 +375,14 @@ def update_faq(
 
         item.version += 1
         _record_history(db, item, "edited", current_user.id)
-        _record_audit(db, agent_id, item.id, "update", current_user.id, diff)
+        record_audit(
+            db,
+            agent_id=agent_id,
+            item_id=item.id,
+            action="update",
+            user_id=current_user.id,
+            diff=diff,
+        )
         db.commit()
         db.refresh(item)
         return {"success": True, "data": _faq_to_dict(item), "message": "更新成功"}
@@ -418,29 +409,27 @@ def update_faq_status(
 
     # rejected 時 reason 必填
     if new_status == "rejected" and not body.reason:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "VALIDATION_ERROR", "message": "退回時必須填寫理由"},
-        )
+        raise_validation_error("退回時必須填寫理由")
 
     # 決定有效角色
     effective_role = "superadmin" if current_user.is_superadmin else (role or "editor")
     allowed = _ALLOWED_TRANSITIONS.get(effective_role, set())
 
     if (old_status, new_status) not in allowed:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": "FORBIDDEN",
-                "message": f"您無權將狀態從 {old_status} 轉換至 {new_status}",
-            },
-        )
+        raise_forbidden(f"您無權將狀態從 {old_status} 轉換至 {new_status}")
 
     diff: dict[str, Any] = {"status": {"before": old_status, "after": new_status}}
     item.status = new_status
 
     _record_history(db, item, new_status, current_user.id, body.reason)
-    _record_audit(db, agent_id, item.id, new_status, current_user.id, diff)
+    record_audit(
+        db,
+        agent_id=agent_id,
+        item_id=item.id,
+        action=new_status,
+        user_id=current_user.id,
+        diff=diff,
+    )
 
     db.commit()
     db.refresh(item)
@@ -472,10 +461,7 @@ def acquire_lock(
     _lazy_clear_lock(item, db)
 
     if item.locked_by and item.locked_by != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={"code": "LOCKED", "message": "FAQ 正在被他人編輯中"},
-        )
+        raise_locked("FAQ 正在被他人編輯中")
 
     item.locked_by = current_user.id
     item.locked_at = datetime.now(timezone.utc)
@@ -496,10 +482,7 @@ def extend_lock(
     item = _get_faq_for_update_or_404(db, agent_id, faq_id)
 
     if item.locked_by != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={"code": "FORBIDDEN", "message": "只有鎖持有者可延長鎖時效"},
-        )
+        raise_forbidden("只有鎖持有者可延長鎖時效")
 
     item.locked_at = datetime.now(timezone.utc)
     db.commit()
@@ -526,10 +509,7 @@ def release_lock(
         and item.locked_by != current_user.id
         and not current_user.is_superadmin
     ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={"code": "FORBIDDEN", "message": "只有鎖持有者或 Superadmin 可釋放鎖"},
-        )
+        raise_forbidden("只有鎖持有者或 Superadmin 可釋放鎖")
 
     item.locked_by = None
     item.locked_at = None
@@ -558,18 +538,18 @@ def delete_faq(
         pass  # 全部允許
     elif role == "reviewer":
         if item_status in ("approved", "synced"):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail={"code": "FORBIDDEN", "message": "Reviewer 不可刪除已核准/已同步的 FAQ"},
-            )
+            raise_forbidden("Reviewer 不可刪除已核准/已同步的 FAQ")
     elif role == "editor":
         if item.created_by != current_user.id or item_status != "draft":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail={"code": "FORBIDDEN", "message": "Editor 僅可刪除自己建立的草稿"},
-            )
+            raise_forbidden("Editor 僅可刪除自己建立的草稿")
 
-    _record_audit(db, agent_id, item.id, "delete", current_user.id)
+    record_audit(
+        db,
+        agent_id=agent_id,
+        item_id=item.id,
+        action="delete",
+        user_id=current_user.id,
+    )
     db.delete(item)
     db.commit()
     logger.info(
@@ -644,10 +624,7 @@ def rollback_faq(
         .first()
     )
     if not target:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "NOT_FOUND", "message": f"版本 {body.version} 不存在"},
-        )
+        raise_not_found(f"版本 {body.version} 不存在")
 
     diff: dict[str, Any] = {
         "question": {"before": item.question, "after": target.question},
@@ -663,7 +640,14 @@ def rollback_faq(
     item.version += 1
 
     _record_history(db, item, "rollback", current_user.id)
-    _record_audit(db, agent_id, item.id, "rollback", current_user.id, diff)
+    record_audit(
+        db,
+        agent_id=agent_id,
+        item_id=item.id,
+        action="rollback",
+        user_id=current_user.id,
+        diff=diff,
+    )
 
     db.commit()
     db.refresh(item)

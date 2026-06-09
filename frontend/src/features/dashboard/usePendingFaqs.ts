@@ -1,31 +1,27 @@
-import { useEffect, useState, useCallback } from 'react'
 import { listFaqs } from '@/api/endpoints/faqs'
-import { extractErrorMessage } from '@/api/client'
 import { useAuthStore } from '@/store/useAuthStore'
-import type { Faq } from '@/api/types'
+import type { Faq, FaqListResponse } from '@/api/types'
+import { useApiResource } from '@/hooks/useApiResource'
+
+const EMPTY_RESP: FaqListResponse = { items: [], total: 0, page: 1, per_page: 5 }
 
 export function usePendingFaqs(agentId: string | undefined) {
-  const [items, setItems] = useState<Faq[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const isSuper = useAuthStore((s) => s.user?.is_superadmin ?? false)
+  // Reviewer / Superadmin 看 pending；Editor 看 draft（目前皆 pending，保留原邏輯）
+  const status = isSuper ? 'pending' : 'pending'
 
-  const reload = useCallback(() => {
-    if (!agentId) return
-    setLoading(true)
-    setError(null)
-    // Reviewer / Superadmin 看 pending；Editor 看 draft
-    const status = isSuper ? 'pending' : 'pending'
-    listFaqs(agentId, { status, per_page: 5 })
-      .then((resp) => setItems(resp.items))
-      .catch((err) => {
-        console.error('[usePendingFaqs]', err)
-        setError(extractErrorMessage(err))
-        setItems([])
-      })
-      .finally(() => setLoading(false))
-  }, [agentId, isSuper])
+  const { data, loading, error, reload } = useApiResource<FaqListResponse>(
+    () => (agentId ? listFaqs(agentId, { status, per_page: 5 }) : Promise.resolve(EMPTY_RESP)),
+    [agentId, isSuper],
+    {
+      initialLoading: true,
+      fallback: EMPTY_RESP,
+      logError: true,
+      logPrefix: '[usePendingFaqs]',
+      skip: !agentId,
+    },
+  )
 
-  useEffect(() => { reload() }, [reload])
+  const items: Faq[] = data?.items ?? []
   return { items, loading, error, reload }
 }

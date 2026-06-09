@@ -404,7 +404,9 @@ class TestImportSavepointRegression:
 
         call_count = [0]
 
-        def fake_resolve(db: object, agent_id: object, path: str) -> object:
+        def fake_resolve(
+            db: object, agent_id: object, path: str, **kwargs: object
+        ) -> object:
             call_count[0] += 1
             if call_count[0] == 3:
                 raise RuntimeError("simulated category resolve failure")

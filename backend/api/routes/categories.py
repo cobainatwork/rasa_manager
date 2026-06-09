@@ -11,7 +11,7 @@ from __future__ import annotations
 import uuid
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -23,6 +23,7 @@ from api.dependencies import (
     require_agent_access,
     require_reviewer_or_superadmin,
 )
+from api.errors import raise_http, raise_not_found, raise_unprocessable
 from api.schemas import CategoryCreate, CategoryPatch
 
 router = APIRouter(tags=["categories"])
@@ -148,15 +149,13 @@ def create_category(
             .first()
         )
         if not parent:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail={"code": "NOT_FOUND", "message": "父節點不存在"},
-            )
+            raise_not_found("父節點不存在")
         # 最大兩層（根 → 子），禁止在子分類下再建子分類
         if parent.parent_id is not None:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail={"code": "DEPTH_EXCEEDED", "message": "分類最多支援兩層，不允許再新增子分類"},
+            raise_http(
+                "DEPTH_EXCEEDED",
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "分類最多支援兩層，不允許再新增子分類",
             )
 
     cat = Category(
@@ -171,10 +170,11 @@ def create_category(
         db.commit()
     except IntegrityError:
         db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={"code": "DUPLICATE_NAME", "message": "同層級已有相同名稱的分類"},
-        ) from None
+        raise_http(
+            "DUPLICATE_NAME",
+            status.HTTP_409_CONFLICT,
+            "同層級已有相同名稱的分類",
+        )
     db.refresh(cat)
     return {
         "success": True,
@@ -208,10 +208,7 @@ def update_category(
         .first()
     )
     if not cat:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "NOT_FOUND", "message": "分類不存在"},
-        )
+        raise_not_found("分類不存在")
 
     if body.name is not None:
         cat.name = body.name
@@ -225,10 +222,11 @@ def update_category(
         db.commit()
     except IntegrityError:
         db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={"code": "DUPLICATE_NAME", "message": "同層級已有相同名稱的分類"},
-        ) from None
+        raise_http(
+            "DUPLICATE_NAME",
+            status.HTTP_409_CONFLICT,
+            "同層級已有相同名稱的分類",
+        )
     db.refresh(cat)
     return {
         "success": True,
@@ -260,10 +258,7 @@ def delete_category(
         .first()
     )
     if not cat:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "NOT_FOUND", "message": "分類不存在"},
-        )
+        raise_not_found("分類不存在")
 
     # 收集所有子孫節點 ID
     all_ids = _collect_descendants(db, category_id, agent_id)
@@ -276,10 +271,7 @@ def delete_category(
         .first()
     )
     if has_faq:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={"code": "UNPROCESSABLE", "message": "此分類或子分類含有 FAQ，無法刪除"},
-        )
+        raise_unprocessable("此分類或子分類含有 FAQ，無法刪除")
 
     # bulk DELETE 以單一 SQL 語句刪除全部節點（含自身）；
     # PostgreSQL NO ACTION FK 在語句結束時才檢查，不受集合迭代順序影響，

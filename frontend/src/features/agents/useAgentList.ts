@@ -1,7 +1,6 @@
-import { useEffect, useState, useCallback } from 'react'
 import { listAgents } from '@/api/endpoints/agents'
-import { extractErrorMessage } from '@/api/client'
 import type { Agent } from '@/api/types'
+import { useApiResource } from '@/hooks/useApiResource'
 
 export interface UseAgentListResult {
   agents: Agent[]
@@ -11,19 +10,10 @@ export interface UseAgentListResult {
 }
 
 export function useAgentList(): UseAgentListResult {
-  const [agents, setAgents] = useState<Agent[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  const reload = useCallback(() => {
-    setLoading(true)
-    setError(null)
-    listAgents()
-      .then(setAgents)
-      .catch((err) => setError(extractErrorMessage(err)))
-      .finally(() => setLoading(false))
-  }, [])
-
-  useEffect(() => { reload() }, [reload])
-  return { agents, loading, error, reload }
+  const { data, loading, error, reload } = useApiResource<Agent[]>(
+    () => listAgents(),
+    [],
+    { initialLoading: true },
+  )
+  return { agents: data ?? [], loading, error, reload }
 }

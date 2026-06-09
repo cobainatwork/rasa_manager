@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
@@ -17,6 +17,7 @@ from api.dependencies import (
     get_current_user,
     require_agent_access,
 )
+from api.errors import raise_conflict, raise_not_found, raise_unprocessable
 from api.schemas import AgentCreate, AgentUpdate, RoleAssignRequest
 
 router = APIRouter(prefix="/api/v1/agents", tags=["agents"])
@@ -62,10 +63,7 @@ def create_agent(
 ) -> dict:  # type: ignore[type-arg]
     existing = db.query(Agent).filter(Agent.name == body.name).first()
     if existing:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={"code": "CONFLICT", "message": "Agent 名稱已存在"},
-        )
+        raise_conflict("Agent 名稱已存在")
     agent = Agent(
         id=uuid.uuid4(),
         name=body.name,
@@ -134,16 +132,10 @@ def delete_agent(
         db.query(KnowledgeItem).filter(KnowledgeItem.agent_id == agent_id).first()
     )
     if has_items:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={"code": "UNPROCESSABLE", "message": "Agent 含有 FAQ 條目，無法刪除"},
-        )
+        raise_unprocessable("Agent 含有 FAQ 條目，無法刪除")
     has_categories = db.query(Category).filter(Category.agent_id == agent_id).first()
     if has_categories:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={"code": "UNPROCESSABLE", "message": "Agent 含有分類節點，無法刪除"},
-        )
+        raise_unprocessable("Agent 含有分類節點，無法刪除")
     db.delete(agent)
     db.commit()
 
@@ -199,10 +191,7 @@ def assign_role(
     _get_agent_or_404(agent_id, db)
     target_user = db.query(User).filter(User.id == body.user_id).first()
     if not target_user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "NOT_FOUND", "message": "使用者不存在"},
-        )
+        raise_not_found("使用者不存在")
     existing = (
         db.query(UserAgentRole)
         .filter(
@@ -254,9 +243,6 @@ def remove_role(
         .first()
     )
     if not uar:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "NOT_FOUND", "message": "角色分配不存在"},
-        )
+        raise_not_found("角色分配不存在")
     db.delete(uar)
     db.commit()

@@ -5,12 +5,13 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from api.database.models import User
 from api.database.session import get_db
 from api.dependencies import get_current_superadmin
+from api.errors import raise_conflict, raise_not_found, raise_validation_error
 from api.schemas import ResetPasswordRequest, UserCreate, UserUpdate
 from api.security.password import pwd_context as _pwd_context
 from api.security.password import validate_password_strength
@@ -23,10 +24,7 @@ def _validate_password(password: str) -> None:
     try:
         validate_password_strength(password)
     except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "VALIDATION_ERROR", "message": str(exc)},
-        )
+        raise_validation_error(str(exc))
 
 
 @router.get("")
@@ -59,10 +57,7 @@ def create_user(
     _validate_password(body.password)
     existing = db.query(User).filter(User.username == body.username).first()
     if existing:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={"code": "CONFLICT", "message": "使用者名稱已存在"},
-        )
+        raise_conflict("使用者名稱已存在")
     user = User(
         id=uuid.uuid4(),
         username=body.username,
@@ -95,10 +90,7 @@ def update_user(
 ) -> dict:  # type: ignore[type-arg]
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "NOT_FOUND", "message": "使用者不存在"},
-        )
+        raise_not_found("使用者不存在")
     if body.is_active is not None:
         user.is_active = body.is_active
     if body.is_superadmin is not None:
@@ -117,10 +109,7 @@ def reset_password(
     _validate_password(body.new_password)
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "NOT_FOUND", "message": "使用者不存在"},
-        )
+        raise_not_found("使用者不存在")
     user.password_hash = _pwd_context.hash(body.new_password)
     db.commit()
     return {"success": True, "message": "密碼重設成功"}

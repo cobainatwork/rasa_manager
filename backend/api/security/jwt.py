@@ -10,8 +10,9 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from fastapi import HTTPException, status
 from jose import JWTError, jwt
+
+from api.errors import raise_unauthorized
 
 _jwt_secret_raw = os.environ.get("JWT_SECRET", "")
 _UNSAFE_JWT_DEFAULTS = {"", "changeme-please-set-env", "change_me", "secret"}
@@ -61,10 +62,7 @@ def decode_token(token: str) -> dict[str, Any]:
         payload: dict[str, Any] = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload
     except JWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"code": "UNAUTHORIZED", "message": "Token 無效或已過期"},
-        )
+        raise_unauthorized("Token 無效或已過期")
 
 
 def decode_token_raw(token: str) -> dict[str, Any]:

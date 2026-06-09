@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 import structlog
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Cookie, Depends, Request, Response
 from jose import JWTError
 from sqlalchemy.orm import Session
 
@@ -24,6 +24,7 @@ from api.dependencies import (
     get_current_user,
     record_login_failure,
 )
+from api.errors import raise_unauthorized
 from api.schemas import LoginRequest
 from api.security.jwt import (
     ACCESS_MINUTES,
@@ -123,10 +124,7 @@ def login(
     if not user or not _pwd_context.verify(body.password, user.password_hash):
         record_login_failure(request, body.username)
         logger.warning("login_failed", username=body.username)
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"code": "UNAUTHORIZED", "message": "帳號或密碼錯誤"},
-        )
+        raise_unauthorized("帳號或密碼錯誤")
 
     clear_login_attempts(request, body.username)
     logger.info("login_success", user_id=str(user.id), username=user.username)
@@ -176,33 +174,21 @@ def refresh_token_endpoint(
     db: Session = Depends(get_db),
 ) -> dict:  # type: ignore[type-arg]
     if not refresh_token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"code": "UNAUTHORIZED", "message": "無 Refresh Token"},
-        )
+        raise_unauthorized("無 Refresh Token")
 
     try:
         payload: dict = decode_token_raw(refresh_token)  # type: ignore[type-arg]
     except JWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"code": "UNAUTHORIZED", "message": "Refresh Token 無效"},
-        )
+        raise_unauthorized("Refresh Token 無效")
 
     jti = payload.get("jti")
     token_type = payload.get("type")
     if token_type != "refresh" or not jti:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"code": "UNAUTHORIZED", "message": "Token 類型錯誤"},
-        )
+        raise_unauthorized("Token 類型錯誤")
 
     r = _get_redis()
     if r.get(f"revoked_refresh:{jti}"):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"code": "UNAUTHORIZED", "message": "Refresh Token 已失效"},
-        )
+        raise_unauthorized("Refresh Token 已失效")
 
     # 將舊 refresh token 加入黑名單（Rotation）
     exp = payload.get("exp", 0)
@@ -212,10 +198,7 @@ def refresh_token_endpoint(
 
     user_id_str: Optional[str] = payload.get("sub")
     if not user_id_str:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"code": "UNAUTHORIZED", "message": "Token 格式錯誤"},
-        )
+        raise_unauthorized("Token 格式錯誤")
 
     user = (
         db.query(User)
@@ -223,10 +206,7 @@ def refresh_token_endpoint(
         .first()
     )
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"code": "UNAUTHORIZED", "message": "使用者不存在"},
-        )
+        raise_unauthorized("使用者不存在")
 
     access_token, new_refresh_token = _issue_tokens(user)
     _set_auth_cookies(response, access_token, new_refresh_token)

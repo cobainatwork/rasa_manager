@@ -19,8 +19,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import * as userApi from '@/api/endpoints/users'
-import { extractErrorMessage } from '@/api/client'
-import { toast } from 'sonner'
+import { runWithToast } from '@/lib/runWithToast'
 import type { User } from '@/api/types'
 
 const pwSchema = z.object({
@@ -44,24 +43,22 @@ export function UserDangerZone({ user, onChanged }: Props) {
   })
 
   async function handleResetPw(data: PwForm) {
-    try {
-      await userApi.resetPassword(user.id, data.newPassword)
-      toast.success('密碼已重設')
+    const r = await runWithToast(
+      () => userApi.resetPassword(user.id, data.newPassword),
+      { success: '密碼已重設' },
+    )
+    if (r.ok) {
       reset()
       setShowResetPw(false)
-    } catch (err) {
-      toast.error(extractErrorMessage(err))
     }
   }
 
   async function handleDelete() {
-    try {
-      await userApi.deleteUser(user.id)
-      toast.success('使用者已刪除')
-      onChanged()
-    } catch (err) {
-      toast.error(extractErrorMessage(err))
-    }
+    const r = await runWithToast(
+      () => userApi.deleteUser(user.id),
+      { success: '使用者已刪除' },
+    )
+    if (r.ok) onChanged()
   }
 
   return (

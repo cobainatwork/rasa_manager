@@ -29,9 +29,10 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from api.database.models import AuditLog, Category, KnowledgeItem, User
+from api.database.models import Category, KnowledgeItem, User
 from api.database.session import get_db
 from api.dependencies import _get_redis, get_current_user, require_agent_access
+from api.services.audit import record_audit
 from api.utils.category_path import build_category_path, collect_category_subtree
 
 router = APIRouter(tags=["import-export"])
@@ -93,12 +94,45 @@ def _get_or_create_default_category(db: Session, agent_id: Any) -> Any:
     return cat.id
 
 
+def _preload_category_index(
+    db: Session, agent_id: Any
+) -> dict[tuple[Optional[Any], str], Any]:
+    """預載指定 agent 的全部分類，回傳 (parent_id, name) → category.id 的對照表。
+
+    用於匯入大量 FAQ 時避免每行每層 category_path 都打一次 SELECT；
+    可達成 O(rows × depth) → O(1) 預載 + dict lookup 的轉換。
+
+    對非預期 row 形態具備容錯（測試 mock 可能回非 3-tuple）：解構失敗的列略過，
+    僅放棄該列在 cache 內的命中（後續會回退到 DB 查詢路徑），不影響整體正確性。
+    """
+    rows = (
+        db.query(Category.id, Category.parent_id, Category.name)
+        .filter(Category.agent_id == agent_id)
+        .all()
+    )
+    index: dict[tuple[Optional[Any], str], Any] = {}
+    for row in rows:
+        try:
+            cid, parent_id, name = row
+        except (TypeError, ValueError):
+            continue
+        index[(parent_id, str(name))] = cid
+    return index
+
+
 def _resolve_category_path(
-    db: Session, agent_id: Any, path_str: str
+    db: Session,
+    agent_id: Any,
+    path_str: str,
+    cache: Optional[dict[tuple[Optional[Any], str], Any]] = None,
 ) -> tuple[Any, bool]:
     """
     解析 / 分隔的 category_path，自動建立缺少的節點。
     回傳 (最末層 category.id, 本次是否新建任何分類層)。
+
+    若提供 cache（由 _preload_category_index 建立），優先以 dict lookup 解析；
+    cache miss 才回退到 DB 查詢，並把建立的新節點回填 cache 供後續 row 共用。
+    維持原本 SAVEPOINT 內 db.flush() 的 semantic（建立分類後仍 flush 取得 id）。
     """
     parts = [p.strip() for p in path_str.split("/") if p.strip()]
     if not parts:
@@ -107,27 +141,39 @@ def _resolve_category_path(
     parent_id: Optional[Any] = None
     created = False
     for part in parts:
-        cat = (
-            db.query(Category)
-            .filter(
-                Category.agent_id == agent_id,
-                Category.name == part,
-                Category.parent_id == parent_id,
+        cat_id: Optional[Any] = None
+        key = (parent_id, part)
+        if cache is not None and key in cache:
+            cat_id = cache[key]
+        else:
+            cat = (
+                db.query(Category)
+                .filter(
+                    Category.agent_id == agent_id,
+                    Category.name == part,
+                    Category.parent_id == parent_id,
+                )
+                .first()
             )
-            .first()
-        )
-        if cat is None:
-            cat = Category(
+            if cat is not None:
+                cat_id = cat.id
+                if cache is not None:
+                    cache[key] = cat_id
+        if cat_id is None:
+            new_cat = Category(
                 id=uuid.uuid4(),
                 agent_id=agent_id,
                 parent_id=parent_id,
                 name=part,
                 sort_order=0,
             )
-            db.add(cat)
+            db.add(new_cat)
             db.flush()
+            cat_id = new_cat.id
+            if cache is not None:
+                cache[key] = cat_id
             created = True
-        parent_id = cat.id
+        parent_id = cat_id
 
     return parent_id, created
 
@@ -206,6 +252,12 @@ def import_faqs(
         }
     )
 
+    # ── 預載分類索引：避免每行每層 category_path 都打一次 SELECT ────────────────
+    # 5000 行 × 2 層深 → 從 10000 次 SELECT 縮成 1 次預載 + dict lookup。
+    category_cache: dict[tuple[Optional[Any], str], Any] = _preload_category_index(
+        db, agent_id
+    )
+
     # Superadmin 匯入直接核准（與 create_faq 行為一致），其他使用者建立為 draft
     initial_status = "approved" if current_user.is_superadmin else "draft"
 
@@ -257,7 +309,7 @@ def import_faqs(
                 # category_path 選填：有則解析路徑（自動建立缺失節點），無則歸入「未分類」
                 if category_path_val:
                     category_id, created = _resolve_category_path(
-                        db, agent_id, category_path_val
+                        db, agent_id, category_path_val, cache=category_cache
                     )
                     if created:
                         new_categories.add(category_path_val)
@@ -279,14 +331,14 @@ def import_faqs(
                 db.add(item)
                 db.flush()
 
-                db.add(AuditLog(
-                    id=uuid.uuid4(),
+                record_audit(
+                    db,
                     agent_id=agent_id,
                     item_id=item.id,
                     action="import",
-                    performed_by=current_user.id,
+                    user_id=current_user.id,
                     diff={"question": question, "category_path": category_path_val},
-                ))
+                )
 
             existing_questions.add(question)
             success += 1
@@ -354,14 +406,14 @@ def export_faqs(
         ])
 
     # 稽核紀錄
-    db.add(AuditLog(
-        id=uuid.uuid4(),
+    record_audit(
+        db,
         agent_id=agent_id,
         item_id=None,
         action="export",
-        performed_by=current_user.id,
+        user_id=current_user.id,
         diff={"count": len(items)},
-    ))
+    )
     db.commit()
 
     buf = io.BytesIO()
@@ -438,14 +490,14 @@ def export_category_faqs(
     wb.close()
     buf.seek(0)
 
-    db.add(AuditLog(
-        id=uuid.uuid4(),
+    record_audit(
+        db,
         agent_id=agent_id,
         item_id=None,
         action="export_category",
-        performed_by=current_user.id,
+        user_id=current_user.id,
         diff={"category_id": str(category_id), "count": len(items)},
-    ))
+    )
     db.commit()
 
     filename = _generate_export_filename(selected_cat_path, str(agent_id))
@@ -500,14 +552,14 @@ def import_category_faqs(
             db.delete(item)
         db.flush()
         if deleted_count > 0:
-            db.add(AuditLog(
-                id=uuid.uuid4(),
+            record_audit(
+                db,
                 agent_id=agent_id,
                 item_id=None,
                 action="bulk_delete_category",
-                performed_by=current_user.id,
+                user_id=current_user.id,
                 diff={"category_id": str(category_id), "deleted_count": deleted_count},
-            ))
+            )
 
     # 檔案格式與大小驗證
     filename = file.filename or ""
@@ -581,6 +633,11 @@ def import_category_faqs(
             .all()
         }
 
+    # 預載分類索引（同 import_faqs 邏輯，僅在檔案含 category_path 時用得到）
+    category_cache: dict[tuple[Optional[Any], str], Any] = _preload_category_index(
+        db, agent_id
+    )
+
     # Superadmin 匯入直接核准（與 create_faq 行為一致），其他使用者建立為 draft
     initial_status = "approved" if current_user.is_superadmin else "draft"
 
@@ -616,7 +673,9 @@ def import_category_faqs(
             with db.begin_nested():
                 # category_path 優先：有值則解析路徑（自動建立缺失節點），否則使用 URL 指定分類
                 if category_path_val:
-                    target_cat_id, _ = _resolve_category_path(db, agent_id, category_path_val)
+                    target_cat_id, _ = _resolve_category_path(
+                        db, agent_id, category_path_val, cache=category_cache
+                    )
                 else:
                     target_cat_id = category_id
 
@@ -634,18 +693,18 @@ def import_category_faqs(
                 db.add(item)
                 db.flush()
 
-                db.add(AuditLog(
-                    id=uuid.uuid4(),
+                record_audit(
+                    db,
                     agent_id=agent_id,
                     item_id=item.id,
                     action="import_category",
-                    performed_by=current_user.id,
+                    user_id=current_user.id,
                     diff={
                         "question": question,
                         "category_id": str(target_cat_id),
                         "category_path": category_path_val,
                     },
-                ))
+                )
 
             existing_questions.add(question)
             success += 1

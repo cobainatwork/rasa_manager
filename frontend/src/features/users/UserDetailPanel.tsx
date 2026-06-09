@@ -6,8 +6,7 @@ import { Switch } from '@/components/ui/switch'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { listAgents } from '@/api/endpoints/agents'
 import * as userApi from '@/api/endpoints/users'
-import { extractErrorMessage } from '@/api/client'
-import { toast } from 'sonner'
+import { runWithToast } from '@/lib/runWithToast'
 import { formatDate } from '@/lib/format'
 import { AgentRoleRow } from './AgentRoleRow'
 import { UserDangerZone } from './UserDangerZone'
@@ -29,13 +28,11 @@ export function UserDetailPanel({ user, userRoles, onChanged }: Props) {
   }, [])
 
   async function toggleActive(checked: boolean) {
-    try {
-      await userApi.updateUser(user.id, { is_active: checked })
-      toast.success(checked ? '已啟用' : '已停用')
-      onChanged()
-    } catch (err) {
-      toast.error(extractErrorMessage(err))
-    }
+    const r = await runWithToast(
+      () => userApi.updateUser(user.id, { is_active: checked }),
+      { success: checked ? '已啟用' : '已停用' },
+    )
+    if (r.ok) onChanged()
   }
 
   function roleOf(agentId: string): 'editor' | 'reviewer' | 'none' {

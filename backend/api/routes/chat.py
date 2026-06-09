@@ -9,12 +9,13 @@ from typing import Any
 
 import httpx
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from api.database.models import User
 from api.database.session import get_db
 from api.dependencies import get_current_user, require_agent_access
+from api.errors import raise_http, raise_unprocessable
 from api.schemas import ChatRequest
 
 logger = structlog.get_logger()
@@ -46,10 +47,7 @@ def test_chat(
     agent, _ = require_agent_access(agent_id, current_user, db)
 
     if not agent.rasa_rest_url:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={"code": "UNPROCESSABLE", "message": "此 Agent 未設定 Rasa REST URL"},
-        )
+        raise_unprocessable("此 Agent 未設定 Rasa REST URL")
 
     # sender：前端產生的 per-session UUID 優先（對齊 Rasa OpenAPI spec），
     # 未帶則 fallback 到 {agent_id}_{user_id}（向後相容，無 nonce 等同 v1 行為）。
@@ -74,10 +72,7 @@ def test_chat(
             url=webhook_url,
             error=str(exc),
         )
-        raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail={"code": "TIMEOUT", "message": "Rasa 服務回應逾時"},
-        )
+        raise_http("TIMEOUT", status.HTTP_504_GATEWAY_TIMEOUT, "Rasa 服務回應逾時")
     except httpx.HTTPStatusError as exc:
         logger.warning(
             "rasa_http_error",
@@ -86,12 +81,10 @@ def test_chat(
             status_code=exc.response.status_code,
             error=str(exc),
         )
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail={
-                "code": "BAD_GATEWAY",
-                "message": f"Rasa 服務回應 HTTP {exc.response.status_code}",
-            },
+        raise_http(
+            "BAD_GATEWAY",
+            status.HTTP_502_BAD_GATEWAY,
+            f"Rasa 服務回應 HTTP {exc.response.status_code}",
         )
     except httpx.RequestError as exc:
         # 連線錯誤：避免將完整 exc 訊息（可能含內網 URL）洩漏給呼叫端
@@ -102,9 +95,6 @@ def test_chat(
             error_type=type(exc).__name__,
             error=str(exc),
         )
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail={"code": "BAD_GATEWAY", "message": "Rasa 服務連線失敗"},
-        )
+        raise_http("BAD_GATEWAY", status.HTTP_502_BAD_GATEWAY, "Rasa 服務連線失敗")
 
     return {"success": True, "data": messages}

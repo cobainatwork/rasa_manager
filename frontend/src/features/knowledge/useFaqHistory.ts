@@ -1,34 +1,28 @@
-import { useEffect, useState, useCallback } from 'react'
 import * as api from '@/api/endpoints/faqs'
-import { extractErrorMessage } from '@/api/client'
-import { toast } from 'sonner'
 import type { FaqHistory } from '@/api/types'
+import { useApiResource } from '@/hooks/useApiResource'
+import { runWithToast } from '@/lib/runWithToast'
 
 export function useFaqHistory(agentId: string | undefined, faqId: string | null) {
-  const [history, setHistory] = useState<FaqHistory[]>([])
-  const [loading, setLoading] = useState(false)
-
-  const reload = useCallback(() => {
-    if (!agentId || !faqId) { setHistory([]); return }
-    setLoading(true)
-    api.getHistory(agentId, faqId)
-      .then(setHistory)
-      .catch(() => setHistory([]))
-      .finally(() => setLoading(false))
-  }, [agentId, faqId])
-
-  useEffect(() => { reload() }, [reload])
+  const enabled = !!agentId && !!faqId
+  const { data, loading, reload } = useApiResource<FaqHistory[]>(
+    () => (enabled ? api.getHistory(agentId!, faqId!) : Promise.resolve([])),
+    [agentId, faqId],
+    {
+      initialLoading: false,
+      fallback: [],
+      skip: !enabled,
+      silentError: true,
+    },
+  )
 
   async function rollback(version: number) {
-    if (!agentId || !faqId) return
-    try {
-      await api.rollback(agentId, faqId, version)
-      toast.success('已還原')
-      reload()
-    } catch (err) {
-      toast.error(extractErrorMessage(err))
-    }
+    if (!enabled) return
+    await runWithToast(
+      () => api.rollback(agentId!, faqId!, version),
+      { success: '已還原', onSuccess: () => reload() },
+    )
   }
 
-  return { history, loading, reload, rollback }
+  return { history: data ?? [], loading, reload, rollback }
 }

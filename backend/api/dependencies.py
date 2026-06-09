@@ -8,11 +8,12 @@ import uuid
 from typing import Optional
 
 import redis as redis_lib
-from fastapi import Cookie, Depends, HTTPException, Request, status
+from fastapi import Cookie, Depends, Request, status
 from sqlalchemy.orm import Session
 
 from api.database.models import Agent, User, UserAgentRole
 from api.database.session import get_db
+from api.errors import raise_forbidden, raise_http, raise_not_found, raise_unauthorized
 from api.security.jwt import decode_token
 
 REDIS_URL: str = os.environ.get("REDIS_URL", "redis://redis:6379/0")
@@ -37,46 +38,31 @@ def get_current_user(
     db: Session = Depends(get_db),
 ) -> User:
     if not access_token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"code": "UNAUTHORIZED", "message": "未提供認證 Token"},
-        )
+        raise_unauthorized("未提供認證 Token")
     payload = _verify_access_token(access_token)
     user_id_str: Optional[str] = payload.get("sub")
     if not user_id_str:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"code": "UNAUTHORIZED", "message": "Token 格式錯誤"},
-        )
+        raise_unauthorized("Token 格式錯誤")
     user = (
         db.query(User)
         .filter(User.id == uuid.UUID(user_id_str), User.is_active.is_(True))
         .first()
     )
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"code": "UNAUTHORIZED", "message": "使用者不存在或已停用"},
-        )
+        raise_unauthorized("使用者不存在或已停用")
     return user
 
 
 def get_current_superadmin(current_user: User = Depends(get_current_user)) -> User:
     if not current_user.is_superadmin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={"code": "FORBIDDEN", "message": "需要 Superadmin 權限"},
-        )
+        raise_forbidden("需要 Superadmin 權限")
     return current_user
 
 
 def _get_agent_or_404(agent_id: uuid.UUID, db: Session) -> Agent:
     agent = db.query(Agent).filter(Agent.id == agent_id).first()
     if not agent:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "NOT_FOUND", "message": "Agent 不存在"},
-        )
+        raise_not_found("Agent 不存在")
     return agent
 
 
@@ -98,10 +84,7 @@ def require_agent_access(
         .first()
     )
     if not uar:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={"code": "FORBIDDEN", "message": "您無此 Agent 的存取權限"},
-        )
+        raise_forbidden("您無此 Agent 的存取權限")
     return agent, str(uar.role)
 
 
@@ -112,10 +95,7 @@ def require_reviewer_or_superadmin(
 ) -> tuple[Agent, Optional[str]]:
     agent, role = require_agent_access(agent_id, current_user, db)
     if not current_user.is_superadmin and role != "reviewer":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={"code": "FORBIDDEN", "message": "需要 Reviewer 或 Superadmin 權限"},
-        )
+        raise_forbidden("需要 Reviewer 或 Superadmin 權限")
     return agent, role
 
 
@@ -136,9 +116,10 @@ def check_login_rate_limit(request: Request, username: str) -> None:
     key = f"login_attempts:{ip}:{username}"
     attempts = r.get(key)
     if attempts and int(str(attempts)) >= 5:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail={"code": "RATE_LIMIT", "message": "登入嘗試次數過多，請 15 分鐘後再試"},
+        raise_http(
+            "RATE_LIMIT",
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "登入嘗試次數過多，請 15 分鐘後再試",
         )
 
 
