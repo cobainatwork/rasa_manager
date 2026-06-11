@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from api.database.models import (
     Agent,
+    Category,
     KnowledgeItem,
     KnowledgeItemHistory,
     User,
@@ -36,6 +37,7 @@ from api.errors import (
 )
 from api.schemas import FaqCreate, FaqPatch, FaqStatusPatch, RollbackRequest
 from api.services.audit import record_audit
+from api.utils.category_path import collect_category_subtree
 
 logger = structlog.get_logger()
 
@@ -194,7 +196,11 @@ def list_faqs(
 
     query = db.query(KnowledgeItem).filter(KnowledgeItem.agent_id == agent_id)
     if category_id:
-        query = query.filter(KnowledgeItem.category_id == category_id)
+        # 含子樹：點 root 或中間層 category 也要看到所有子孫 category 下的 FAQ
+        cats = db.query(Category).filter(Category.agent_id == agent_id).all()
+        cat_map = {c.id: c for c in cats}
+        subtree_ids = collect_category_subtree(category_id, cat_map)
+        query = query.filter(KnowledgeItem.category_id.in_(subtree_ids))
     if status_filter:
         query = query.filter(KnowledgeItem.status == status_filter)
     if q:
@@ -251,7 +257,11 @@ def list_faq_ids(
 
     query = db.query(KnowledgeItem.id).filter(KnowledgeItem.agent_id == agent_id)
     if category_id:
-        query = query.filter(KnowledgeItem.category_id == category_id)
+        # 含子樹：與 list_faqs 一致，避免「全選分類」漏選子孫的 FAQ
+        cats = db.query(Category).filter(Category.agent_id == agent_id).all()
+        cat_map = {c.id: c for c in cats}
+        subtree_ids = collect_category_subtree(category_id, cat_map)
+        query = query.filter(KnowledgeItem.category_id.in_(subtree_ids))
     if status_filter:
         query = query.filter(KnowledgeItem.status == status_filter)
     if q:

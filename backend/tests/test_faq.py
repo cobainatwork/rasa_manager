@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from typing import Any
 from unittest.mock import MagicMock
 
 from fastapi.testclient import TestClient
@@ -22,6 +23,7 @@ from fastapi.testclient import TestClient
 from tests._faq_helpers import (
     CATEGORY_ID,
     FAQ_ID,
+    _agent_mock,
     _editor_then_faq_se,
     _make_faq,
     _superadmin_then_faq_se,
@@ -85,6 +87,213 @@ class TestListFaqs:
             f"/api/v1/agents/{AGENT_ID}/faqs?q=測試"
         )
         assert resp.status_code == 200
+
+
+# ── list_faqs / list_faq_ids：category_id 含子樹（regression）────────────────
+#
+# 既有 Bug：點 root 或中間層 category 看不到 FAQ，因為 FAQ 實際歸屬於 leaf。
+# 修補：filter `category_id` 時應收集該 category 及其所有子孫 IDs。
+
+class TestListFaqsCategorySubtree:
+    """category_id filter 必須含子樹（含自身 + 所有子孫）。"""
+
+    @staticmethod
+    def _build_cat_subtree_se(
+        cats: list[MagicMock], faqs: list[MagicMock]
+    ) -> Any:
+        """side_effect：
+          idx0 Agent；idx1 Category（.filter().all() 回 cats）；
+          idx2 KnowledgeItem 列出查詢；idx3 User 批次（locker 用，可選）。
+        """
+        from api.database.models import Category as _Cat
+        from api.database.models import KnowledgeItem as _KI
+
+        captured: dict[str, Any] = {}
+
+        def se(model: object, *args: object) -> MagicMock:
+            del args
+            q = MagicMock()
+            if model is _Cat:
+                q.filter.return_value.all.return_value = cats
+                return q
+            if model is _KI:
+                filtered = MagicMock()
+                filtered.first.return_value = faqs[0] if faqs else None
+                filtered.filter.return_value = filtered
+                filtered.count.return_value = len(faqs)
+                filtered.order_by.return_value.offset.return_value.limit.return_value.all.return_value = faqs
+                filtered.with_for_update.return_value.first.return_value = (
+                    faqs[0] if faqs else None
+                )
+
+                # 攔 .in_() 的呼叫，記錄傳入的 ids
+                original_filter = filtered.filter
+
+                def filter_with_capture(*fargs: object, **fkwargs: object) -> MagicMock:
+                    for arg in fargs:
+                        # SQLAlchemy clause 含 .right.value（in_ 的右值）
+                        try:
+                            right = getattr(arg, "right", None)
+                            if right is not None:
+                                val = getattr(right, "value", None)
+                                if val is not None:
+                                    captured.setdefault("in_values", []).append(val)
+                        except Exception:  # noqa: BLE001
+                            pass
+                    return original_filter(*fargs, **fkwargs)
+
+                filtered.filter = filter_with_capture
+                q.filter.return_value = filtered
+                return q
+            # idx0 Agent + 其他
+            q.filter.return_value.first.return_value = _agent_mock()
+            return q
+
+        # 包裝以暴露 captured 給測試
+        se.captured = captured  # type: ignore[attr-defined]
+        return se
+
+    def test_list_with_category_subtree_root(
+        self, client_superadmin: TestClient, mock_db: MagicMock
+    ) -> None:
+        """點 root → query 應該以子樹所有 ids（含自身）做 IN filter。"""
+        root_id = uuid.UUID("00000000-0000-0000-0000-000000000100")
+        mid_id  = uuid.UUID("00000000-0000-0000-0000-000000000101")
+        leaf_id = uuid.UUID("00000000-0000-0000-0000-000000000102")
+
+        root = MagicMock(id=root_id, parent_id=None)
+        mid  = MagicMock(id=mid_id, parent_id=root_id)
+        leaf = MagicMock(id=leaf_id, parent_id=mid_id)
+
+        # 模擬 FAQ 全在 leaf
+        faq = _make_faq()
+        faq.category_id = leaf_id
+
+        se = self._build_cat_subtree_se([root, mid, leaf], [faq])
+        mock_db.query.side_effect = se
+
+        resp = client_superadmin.get(
+            f"/api/v1/agents/{AGENT_ID}/faqs?category_id={root_id}"
+        )
+        assert resp.status_code == 200, resp.text
+
+        in_values = se.captured.get("in_values", [])  # type: ignore[attr-defined]
+        assert in_values, "category_id filter 必須使用 IN(subtree_ids)"
+        # 必須是 collection（IN clause），不可是單一 UUID（== clause，Bug 行為）
+        first = in_values[0]
+        assert not isinstance(first, uuid.UUID), (
+            f"category_id filter 仍用 == 單一值，應改為 IN(subtree_ids)；got {first!r}"
+        )
+        ids_set = set(first)
+        assert root_id in ids_set
+        assert mid_id  in ids_set
+        assert leaf_id in ids_set
+
+    def test_list_with_category_subtree_middle(
+        self, client_superadmin: TestClient, mock_db: MagicMock
+    ) -> None:
+        """點中間層 → 含該層 + 子孫，不含 root 兄弟。"""
+        root_id   = uuid.UUID("00000000-0000-0000-0000-000000000200")
+        mid_id    = uuid.UUID("00000000-0000-0000-0000-000000000201")
+        leaf_id   = uuid.UUID("00000000-0000-0000-0000-000000000202")
+        other_id  = uuid.UUID("00000000-0000-0000-0000-000000000203")
+
+        root  = MagicMock(id=root_id,  parent_id=None)
+        mid   = MagicMock(id=mid_id,   parent_id=root_id)
+        leaf  = MagicMock(id=leaf_id,  parent_id=mid_id)
+        other = MagicMock(id=other_id, parent_id=root_id)  # mid 的兄弟
+
+        faq = _make_faq()
+        faq.category_id = leaf_id
+        se = self._build_cat_subtree_se([root, mid, leaf, other], [faq])
+        mock_db.query.side_effect = se
+
+        resp = client_superadmin.get(
+            f"/api/v1/agents/{AGENT_ID}/faqs?category_id={mid_id}"
+        )
+        assert resp.status_code == 200, resp.text
+
+        in_values = se.captured.get("in_values", [])  # type: ignore[attr-defined]
+        assert in_values, "category_id filter 必須使用 IN(subtree_ids)"
+        first = in_values[0]
+        assert not isinstance(first, uuid.UUID), (
+            f"category_id filter 仍用 == 單一值，應改為 IN(subtree_ids)；got {first!r}"
+        )
+        ids_set = set(first)
+        assert mid_id in ids_set
+        assert leaf_id in ids_set
+        assert root_id not in ids_set
+        assert other_id not in ids_set
+
+    def test_list_faq_ids_with_category_subtree(
+        self, client_superadmin: TestClient, mock_db: MagicMock
+    ) -> None:
+        """list_faq_ids endpoint：category_id filter 同樣必須含子樹。"""
+        root_id = uuid.UUID("00000000-0000-0000-0000-000000000300")
+        leaf_id = uuid.UUID("00000000-0000-0000-0000-000000000301")
+        root = MagicMock(id=root_id, parent_id=None)
+        leaf = MagicMock(id=leaf_id, parent_id=root_id)
+
+        # list_faq_ids 用 db.query(KnowledgeItem.id)，回 row.id list
+        from api.database.models import Category as _Cat
+
+        captured: dict[str, Any] = {}
+        counter = [0]
+
+        def se(*args: object, **kwargs: object) -> MagicMock:
+            del kwargs
+            q = MagicMock()
+            idx = counter[0]
+            counter[0] += 1
+
+            if args and args[0] is _Cat:
+                q.filter.return_value.all.return_value = [root, leaf]
+                return q
+
+            if idx == 0:
+                # Agent
+                q.filter.return_value.first.return_value = _agent_mock()
+                return q
+
+            # KnowledgeItem.id 路徑
+            filtered = MagicMock()
+
+            def filter_capture(*fargs: object, **fkw: object) -> MagicMock:
+                del fkw
+                for arg in fargs:
+                    try:
+                        right = getattr(arg, "right", None)
+                        if right is not None:
+                            val = getattr(right, "value", None)
+                            if val is not None:
+                                captured.setdefault("in_values", []).append(val)
+                    except Exception:  # noqa: BLE001
+                        pass
+                return filtered
+
+            filtered.filter = filter_capture
+            row = MagicMock()
+            row.id = uuid.UUID("00000000-0000-0000-0000-000000000999")
+            filtered.all.return_value = [row]
+            q.filter.return_value = filtered
+            return q
+
+        mock_db.query.side_effect = se
+
+        resp = client_superadmin.get(
+            f"/api/v1/agents/{AGENT_ID}/faqs/ids?category_id={root_id}"
+        )
+        assert resp.status_code == 200, resp.text
+
+        in_values = captured.get("in_values", [])
+        assert in_values, "list_faq_ids 的 category_id filter 必須使用 IN(subtree_ids)"
+        first = in_values[0]
+        assert not isinstance(first, uuid.UUID), (
+            f"list_faq_ids 仍用 == 單一值，應改為 IN(subtree_ids)；got {first!r}"
+        )
+        ids_set = set(first)
+        assert root_id in ids_set
+        assert leaf_id in ids_set
 
 
 # ── get_faq ───────────────────────────────────────────────────────────────────
